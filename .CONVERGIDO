@@ -1,0 +1,33 @@
+FASE 4: App Flutter (Pasajero) - CONVERGIDA
+Timestamp: 2026-08-27 17:00:00
+
+Pantallas completadas:
+- lib/screens/auth/login_screen.dart
+- lib/screens/auth/register_screen.dart
+- lib/screens/passenger/home_screen.dart
+- lib/screens/passenger/search_trip_screen.dart
+- lib/screens/passenger/payment_screen.dart
+- lib/screens/passenger/active_trip_screen.dart
+- lib/screens/passenger/rating_screen.dart
+- lib/screens/passenger/wallet_screen.dart
+- lib/screens/shared/profile_screen.dart
+
+Modelos de datos:
+- lib/models/user_model.dart
+- lib/models/trip_model.dart
+- lib/models/driver_model.dart
+- lib/models/wallet_model.dart
+
+Configuración:
+- lib/main.dart (SplashScreen + Material theme)
+- lib/firebase_options.dart (Android/iOS config)
+- pubspec.yaml (50+ dependencias, todas instaladas)
+
+Estructura de directorios completada:
+- lib/screens/{auth,passenger,driver,shared}
+- lib/models/
+- lib/services/ (esqueleto listo para implementación)
+- lib/widgets/
+- lib/utils/
+
+Próximo: Pantallas de Conductor (Fase 4B) o Dashboard Web (Fase 5)

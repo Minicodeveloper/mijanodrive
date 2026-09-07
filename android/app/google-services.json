@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "335118881570",
+    "project_id": "mijanodrive-peru",
+    "storage_bucket": "mijanodrive-peru.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:335118881570:android:0a7f51b587f65f05eb4b7b",
+        "android_client_info": {
+          "package_name": "net.minicodevelopers.mijano_drive_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCMhmdJobdeH1aUJ87XLw3yRnqm-ufWLGc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
