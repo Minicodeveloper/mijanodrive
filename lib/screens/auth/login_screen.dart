@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
-import '../../models/user_model.dart';
-import '../../services/auth_service.dart';
+import 'package:mijano_drive_app/services/auth_service.dart';
+import 'package:mijano_drive_app/models/user_model.dart';
+
+
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
