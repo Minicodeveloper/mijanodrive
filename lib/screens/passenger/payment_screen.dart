@@ -1,15 +1,28 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import '../../models/trip_model.dart';
+import '../../services/auth_service.dart';
+import '../../services/firestore_service.dart';
 
 class PaymentScreen extends StatefulWidget {
   final String destination;
   final double fare;
   final String paymentMethod;
+  final double distanceKm;
+  final String city;
+  final GeoPoint origin;
+  final GeoPoint destinationGeoPoint;
 
   const PaymentScreen({
     Key? key,
     required this.destination,
     required this.fare,
     required this.paymentMethod,
+    required this.distanceKm,
+    required this.city,
+    required this.origin,
+    required this.destinationGeoPoint,
   }) : super(key: key);
 
   @override
@@ -23,28 +36,48 @@ class _PaymentScreenState extends State<PaymentScreen> {
     setState(() => _isProcessing = true);
 
     try {
-      // TODO: Process payment based on method
-      // For wallet: deduct from balance
-      // For cash: create trip with cash payment
-      await Future.delayed(const Duration(seconds: 2));
+      final user = AuthService.instance.currentUser;
 
-      // TODO: Navigate to active trip screen
-      if (mounted) {
-        Navigator.of(context).pushNamed(
-          '/active-trip',
-          arguments: {
-            'destination': widget.destination,
-            'fare': widget.fare,
-          },
-        );
+      if (user == null) {
+        throw Exception('No hay un usuario autenticado');
       }
+
+      final trip = Trip(
+  id: '',
+  passengerId: user.uid,
+  origin: widget.origin,
+  destination: widget.destinationGeoPoint,
+  status: TripStatus.pending,
+  fareAmount: widget.fare,
+  paymentMethod: widget.paymentMethod == 'cash'
+      ? PaymentMethod.cash
+      : PaymentMethod.wallet,
+  createdAt: DateTime.now(),
+  city: widget.city,
+  distanceKm: widget.distanceKm,
+);
+
+      await FirestoreService.instance.createTrip(trip);
+
+      if (!mounted) return;
+
+      Navigator.of(context).pushNamed(
+        '/active-trip',
+        arguments: {
+          'destination': widget.destination,
+          'fare': widget.fare,
+        },
+      );
     } catch (e) {
+      if (!mounted) return;
+
       setState(() => _isProcessing = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo crear el viaje: $e'),
+        ),
+      );
     }
   }
 
@@ -71,7 +104,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 20),
-              // Trip summary
+
               Container(
                 padding: const EdgeInsets.all(15),
                 decoration: BoxDecoration(
@@ -89,43 +122,63 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       ),
                     ),
                     const SizedBox(height: 15),
+
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      mainAxisAlignment:
+                          MainAxisAlignment.spaceBetween,
                       children: [
                         const Text('Destino:'),
-                        Text(
-                          widget.destination,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        Flexible(
+                          child: Text(
+                            widget.destination,
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
                       ],
                     ),
+
                     const SizedBox(height: 10),
+
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      mainAxisAlignment:
+                          MainAxisAlignment.spaceBetween,
                       children: [
                         const Text('Distancia:'),
-                        const Text(
-                          '5.2 km',
-                          style: TextStyle(fontWeight: FontWeight.bold),
+                        Text(
+                          '${widget.distanceKm.toStringAsFixed(2)} km',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ],
                     ),
+
                     const SizedBox(height: 10),
+
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      mainAxisAlignment:
+                          MainAxisAlignment.spaceBetween,
                       children: [
                         const Text('Forma de pago:'),
                         Text(
-                          widget.paymentMethod == 'cash' ? 'Efectivo' : 'Billetera',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                          widget.paymentMethod == 'cash'
+                              ? 'Efectivo'
+                              : 'Billetera',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ],
                     ),
                   ],
                 ),
               ),
+
               const SizedBox(height: 30),
-              // Fare breakdown
+
               Container(
                 padding: const EdgeInsets.all(15),
                 decoration: BoxDecoration(
@@ -133,7 +186,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  crossAxisAlignment:
+                      CrossAxisAlignment.stretch,
                   children: [
                     const Text(
                       'Desglose de tarifa',
@@ -142,37 +196,31 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
+
                     const SizedBox(height: 15),
+
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      mainAxisAlignment:
+                          MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('Tarifa base:'),
-                        Text('S/. 3.00'),
+                        const Text('Total del viaje:'),
+                        Text(
+                          'S/. ${widget.fare.toStringAsFixed(2)}',
+                        ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Distancia (5.2 km):'),
-                        Text('S/. ${(5.2 * 2).toStringAsFixed(2)}'),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Recargo:'),
-                        const Text('S/. 0.00'),
-                      ],
-                    ),
+
                     const Divider(),
+
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      mainAxisAlignment:
+                          MainAxisAlignment.spaceBetween,
                       children: [
                         const Text(
                           'Total:',
-                          style: TextStyle(fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                         Text(
                           'S/. ${widget.fare.toStringAsFixed(2)}',
@@ -187,19 +235,25 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   ],
                 ),
               ),
+
               const SizedBox(height: 30),
-              // Warning if cash payment
+
               if (widget.paymentMethod == 'cash')
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: Colors.orange[50],
-                    border: Border.all(color: Colors.orange[300]!),
+                    border: Border.all(
+                      color: Colors.orange[300]!,
+                    ),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Row(
                     children: [
-                      Icon(Icons.info, color: Colors.orange),
+                      Icon(
+                        Icons.info,
+                        color: Colors.orange,
+                      ),
                       SizedBox(width: 10),
                       Expanded(
                         child: Text(
@@ -210,25 +264,34 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     ],
                   ),
                 ),
+
               const SizedBox(height: 30),
-              // Confirm button
+
               ElevatedButton(
-                onPressed: _isProcessing ? null : _confirmPayment,
+                onPressed:
+                    _isProcessing ? null : _confirmPayment,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFF9D408),
+                  backgroundColor:
+                      const Color(0xFFF9D408),
                   disabledBackgroundColor: Colors.grey,
-                  padding: const EdgeInsets.symmetric(vertical: 15),
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 15),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius:
+                        BorderRadius.circular(8),
                   ),
                 ),
                 child: _isProcessing
                     ? const SizedBox(
                         height: 20,
                         width: 20,
-                        child: CircularProgressIndicator(
+                        child:
+                            CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation(Colors.black),
+                          valueColor:
+                              AlwaysStoppedAnimation(
+                            Colors.black,
+                          ),
                         ),
                       )
                     : const Text(
