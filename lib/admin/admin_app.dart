@@ -48,7 +48,7 @@ class _AdminShellState extends State<AdminShell> {
               title: const Text('Mijano Drive · Panel'),
               backgroundColor: MijanoTheme.sol,
             ),
-      drawer: wide ? null : Drawer(child: _sidebar()),
+      drawer: wide ? null : Drawer(child: _sidebar(closeDrawer: true)),
       body: Row(
         children: [
           if (wide) SizedBox(width: 250, child: _sidebar()),
@@ -63,7 +63,7 @@ class _AdminShellState extends State<AdminShell> {
     );
   }
 
-  Widget _sidebar() {
+  Widget _sidebar({bool closeDrawer = false}) {
     return Container(
       color: MijanoTheme.ink,
       child: Column(
@@ -82,28 +82,45 @@ class _AdminShellState extends State<AdminShell> {
                       letterSpacing: 0.5)),
             ]),
           ),
-          const SizedBox(height: 12),
-          for (int i = 0; i < _items.length; i++)
-            ListTile(
-              leading: Icon(_items[i].$1,
-                  color: _tab == i ? MijanoTheme.sol : Colors.white70),
-              title: Text(_items[i].$2,
+      const SizedBox(height: 12),
+        for (int i = 0; i < _items.length; i++)
+            Material(
+              color: Colors.transparent,
+              child: ListTile(
+                leading: Icon(
+                  _items[i].$1,
+                  color: _tab == i ? MijanoTheme.sol : Colors.white70,
+                ),
+                title: Text(
+                  _items[i].$2,
                   style: TextStyle(
-                      color: _tab == i ? MijanoTheme.sol : Colors.white70,
-                      fontWeight:
-                          _tab == i ? FontWeight.w700 : FontWeight.w500)),
-              selected: _tab == i,
-              selectedTileColor: Colors.white.withValues(alpha: 0.06),
-              onTap: () {
-                setState(() => _tab = i);
-                if (Scaffold.of(context).isDrawerOpen) Navigator.pop(context);
-              },
+                    color: _tab == i ? MijanoTheme.sol : Colors.white70,
+                    fontWeight:
+                        _tab == i ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+                selected: _tab == i,
+                selectedTileColor:
+                    Colors.white.withValues(alpha: 0.06),
+                onTap: () {
+                  setState(() => _tab = i);
+                  if (closeDrawer) {
+                    Navigator.pop(context);
+                  }
+                },
+              ),
             ),
+
           const Spacer(),
           const Padding(
             padding: EdgeInsets.all(16),
-            child: Text('Panel de administración',
-                style: TextStyle(color: Colors.white38, fontSize: 12)),
+            child: Text(
+              'Panel de administración',
+              style: TextStyle(
+                color: Colors.white38,
+                fontSize: 12,
+              ),
+            ),
           ),
         ],
       ),

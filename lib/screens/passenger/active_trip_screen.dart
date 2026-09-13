@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
+import '../../services/firestore_service.dart';
+import '../../models/trip_model.dart';
 
 class ActiveTripScreen extends StatefulWidget {
   final String destination;
   final double fare;
+  final String tripId;
 
   const ActiveTripScreen({
     Key? key,
     required this.destination,
     required this.fare,
+    required this.tripId,
   }) : super(key: key);
 
   @override
@@ -15,7 +19,6 @@ class ActiveTripScreen extends StatefulWidget {
 }
 
 class _ActiveTripScreenState extends State<ActiveTripScreen> {
-  bool _showDriverDetails = false;
   bool _isSosTriggered = false;
 
   // Mock driver data

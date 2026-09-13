@@ -70,7 +70,6 @@ class MijanoDriveApp extends StatelessWidget {
         page = const SearchTripScreen();
         break;
       case '/payment':
-        case '/payment':
   page = PaymentScreen(
     destination: args['destination'] ?? '',
     fare: (args['fare'] ?? 0).toDouble(),
@@ -87,6 +86,7 @@ class MijanoDriveApp extends StatelessWidget {
         page = ActiveTripScreen(
           destination: args['destination'] ?? '',
           fare: (args['fare'] ?? 0).toDouble(),
+          tripId: args['tripId'] ?? '',
         );
         break;
       case '/rating':

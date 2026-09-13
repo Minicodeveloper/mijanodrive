@@ -57,7 +57,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   distanceKm: widget.distanceKm,
 );
 
-      await FirestoreService.instance.createTrip(trip);
+      final tripId = await FirestoreService.instance.createTrip(trip);
 
       if (!mounted) return;
 
@@ -66,6 +66,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         arguments: {
           'destination': widget.destination,
           'fare': widget.fare,
+          'tripId': tripId,
         },
       );
     } catch (e) {
