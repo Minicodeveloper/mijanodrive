@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
+import 'package:flutter/services.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({Key? key}) : super(key: key);
@@ -185,6 +186,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
               TextField(
                 controller: _phoneController,
                 keyboardType: TextInputType.phone,
+                inputFormatters: [
+                LengthLimitingTextInputFormatter(9), // Limita estrictamente a 9 dígitos
+                ],
                 decoration: InputDecoration(
                   hintText: '+51 999999999',
                   labelText: 'Número de teléfono',
@@ -199,6 +203,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
               TextField(
                 controller: _nameController,
                 keyboardType: TextInputType.name,
+                inputFormatters:[
+                  LengthLimitingTextInputFormatter(100)
+                ],
                 decoration: InputDecoration(
                   hintText: 'Juan Perez',
                   labelText: 'Nombre completo',
