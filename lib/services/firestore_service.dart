@@ -189,4 +189,20 @@ class FirestoreService {
       .collection('alerts')
       .doc(id)
       .set({'status': 'resolved'}, SetOptions(merge: true));
+
+  Future<void> createSosAlert({
+  required String driverId,
+  required double latitude,
+  required double longitude,
+  required String city,
+}) =>
+    _db.collection('alerts').add({
+      'type': 'sos',
+      'driverId': driverId,
+      'latitude': latitude,
+      'longitude': longitude,
+      'city': city,
+      'status': 'open',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
 }

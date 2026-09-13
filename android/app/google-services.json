@@ -12,7 +12,16 @@
           "package_name": "net.minicodevelopers.mijano_drive_app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "335118881570-npgn5osn05a9fd5ijf78134t8mvq8hcf.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "net.minicodevelopers.mijano_drive_app",
+            "certificate_hash": "7655e987e915f6beaee9b6a4c0288fc1cf7d4ee9"
+          }
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCMhmdJobdeH1aUJ87XLw3yRnqm-ufWLGc"

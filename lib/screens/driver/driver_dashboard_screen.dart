@@ -52,14 +52,34 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     }
   }
 
-  void _sos() {
+Future<void> _sos() async {
+  try {
+    final pos = await LocationService.instance.current();
+
+    await _fs.createSosAlert(
+      driverId: _uid,
+      latitude: pos.latitude,
+      longitude: pos.longitude,
+      city: _city,
+    );
+
+    if (!mounted) return;
+
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        icon: const Icon(Icons.emergency, color: MijanoTheme.signal, size: 40),
+        icon: const Icon(
+          Icons.emergency,
+          color: MijanoTheme.signal,
+          size: 40,
+        ),
         title: const Text('Alerta S.O.S. enviada'),
-        content: const Text(
-            'Se notificó al panel de administración con tu ubicación GPS. Mantén la calma, te contactarán de inmediato.'),
+        content: Text(
+          'La alerta fue enviada al panel de administración '
+          'con tu ubicación GPS.\n\n'
+          'Ubicación: ${pos.latitude.toStringAsFixed(5)}, '
+          '${pos.longitude.toStringAsFixed(5)}',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -68,7 +88,16 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         ],
       ),
     );
+  } catch (e) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('No se pudo enviar la alerta S.O.S.'),
+      ),
+    );
   }
+}
 
   @override
   Widget build(BuildContext context) {

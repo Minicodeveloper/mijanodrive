@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'firebase_options.dart';
 import 'theme.dart';
@@ -69,12 +70,19 @@ class MijanoDriveApp extends StatelessWidget {
         page = const SearchTripScreen();
         break;
       case '/payment':
-        page = PaymentScreen(
-          destination: args['destination'] ?? '',
-          fare: (args['fare'] ?? 0).toDouble(),
-          paymentMethod: args['paymentMethod'] ?? 'cash',
-        );
-        break;
+        case '/payment':
+  page = PaymentScreen(
+    destination: args['destination'] ?? '',
+    fare: (args['fare'] ?? 0).toDouble(),
+    paymentMethod: args['paymentMethod'] ?? 'cash',
+    distanceKm: (args['distanceKm'] ?? 0).toDouble(),
+    city: args['city'] ?? 'Tarapoto',
+    origin: args['origin'] ??
+        const GeoPoint(-6.4869, -76.3654),
+    destinationGeoPoint: args['destinationGeoPoint'] ??
+        const GeoPoint(-6.4869, -76.3654),
+  );
+  break;
       case '/active-trip':
         page = ActiveTripScreen(
           destination: args['destination'] ?? '',
