@@ -19,6 +19,7 @@ import 'screens/passenger/rating_screen.dart';
 import 'screens/passenger/wallet_screen.dart';
 import 'screens/shared/profile_screen.dart';
 import 'screens/driver/driver_dashboard_screen.dart';
+import 'screens/auth/role-select.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -59,6 +60,9 @@ class MijanoDriveApp extends StatelessWidget {
         break;
       case '/register':
         page = const RegisterScreen();
+        break;
+      case '/role-select':
+        page = const RoleSelectScreen();
         break;
       case '/profile-setup':
         page = const ProfileSetupScreen();
@@ -198,7 +202,7 @@ class _SplashScreenState extends State<SplashScreen>
 
   Future<void> _go() async {
     await Future.delayed(const Duration(milliseconds: 3000));
-    if (mounted) Navigator.of(context).pushReplacementNamed('/login');
+    if (mounted) Navigator.of(context).pushReplacementNamed('/role-select');
   }
 
   @override
