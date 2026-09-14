@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+
+import '../../services/location_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -9,25 +12,49 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
+  GoogleMapController? _mapController;
+
+  static const LatLng _tarapoto = LatLng(-6.4869, -76.3654);
+  static const CameraPosition _initialCamera = CameraPosition(
+    target: _tarapoto,
+    zoom: 15,
+  );
+
+  @override
+  void dispose() {
+    _mapController?.dispose();
+    super.dispose();
+  }
+
+  void _onMapCreated(GoogleMapController controller) {
+    _mapController = controller;
+    _goToCurrentLocation();
+  }
+
+  Future<void> _goToCurrentLocation() async {
+    final pos = await LocationService.instance.current();
+    if (!mounted) return;
+    await _mapController?.animateCamera(
+      CameraUpdate.newLatLngZoom(
+        LatLng(pos.latitude, pos.longitude),
+        16,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         children: [
-          // Map placeholder
-          Container(
-            color: Colors.grey[300],
-            child: const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.map, size: 60, color: Colors.grey),
-                  SizedBox(height: 10),
-                  Text('Mapa en vivo'),
-                ],
-              ),
-            ),
+          GoogleMap(
+            initialCameraPosition: _initialCamera,
+            onMapCreated: _onMapCreated,
+            myLocationEnabled: true,
+            myLocationButtonEnabled: false,
+            zoomControlsEnabled: false,
+            mapToolbarEnabled: false,
+            compassEnabled: false,
           ),
           // Top action buttons
           Positioned(

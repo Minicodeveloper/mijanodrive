@@ -24,6 +24,12 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>GMSApiKey</key>
+	<string>AIzaSyD6cjdfoAhxKfZr--aCqvshyiS8jB7V_Sw</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Mijano Drive usa tu ubicación para mostrar el mapa y calcular tu viaje.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Mijano Drive usa tu ubicación para mostrar el mapa y calcular tu viaje.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
