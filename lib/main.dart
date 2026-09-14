@@ -118,56 +118,168 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> {
+class _SplashScreenState extends State<SplashScreen>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  
+  // Animaciones para el logo superior
+  late Animation<double> _logoScale;
+  late Animation<double> _logoOpacity;
+
+  // Animaciones para el logo_title (animación principal de carga)
+  late Animation<Offset> _titleSlide;
+  late Animation<double> _titleScale;
+  late Animation<double> _titleOpacity;
+
   @override
   void initState() {
     super.initState();
+
+    // Controlador con duración total de 1.8 segundos para la secuencia de animaciones
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+
+    // 1. Animación para logo.png (Ocurre de 0.0s a 0.8s)
+    _logoScale = Tween<double>(begin: 0.7, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.0, 0.5, curve: Curves.easeOut),
+      ),
+    );
+    _logoOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.0, 0.4, curve: Curves.easeIn),
+      ),
+    );
+
+    // 2. Animación de carga para logo_title.png (Ocurre de 0.4s a 1.2s)
+    // Desplazamiento desde abajo
+    _titleSlide = Tween<Offset>(
+      begin: const Offset(0.0, 0.4),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.3, 0.9, curve: Curves.easeOutBack),
+      ),
+    );
+
+    // Escala y rebote suave al cargar
+    _titleScale = Tween<double>(begin: 0.85, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.3, 0.9, curve: Curves.easeOutBack),
+      ),
+    );
+
+    // Opacidad progresiva
+    _titleOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.3, 0.7, curve: Curves.easeIn),
+      ),
+    );
+
+    // Iniciar la secuencia de animaciones
+    _controller.forward();
+
+    // Navegar después de 3 segundos
     _go();
   }
 
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   Future<void> _go() async {
-    await Future.delayed(const Duration(milliseconds: 1800));
+    await Future.delayed(const Duration(milliseconds: 3000));
     if (mounted) Navigator.of(context).pushReplacementNamed('/login');
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: MijanoTheme.sol,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: MijanoTheme.ink,
-                borderRadius: BorderRadius.circular(24),
+      backgroundColor: MijanoTheme.sol, // Mantiene el fondo amarillo característico
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
+          child: Column(
+            children: [
+              const Spacer(flex: 2),
+
+              // ==========================================
+              // 1. LOGO PRINCIPAL SUPERIOR (logo.png)
+              // ==========================================
+              FadeTransition(
+                opacity: _logoOpacity,
+                child: ScaleTransition(
+                  scale: _logoScale,
+                  child: Image.asset(
+                    'assets/images/logo.png',
+                    width: 220,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => const Text(
+                      'MIJANO DRIVE',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w900,
+                        color: MijanoTheme.ink,
+                      ),
+                    ),
+                  ),
+                ),
               ),
-              child: const Icon(Icons.two_wheeler,
-                  size: 64, color: MijanoTheme.sol),
-            ),
-            const SizedBox(height: 24),
-            const Text('MIJANO DRIVE',
-                style: TextStyle(
-                    fontSize: 30,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1,
-                    color: MijanoTheme.ink)),
-            const SizedBox(height: 6),
-            const Text('La App Oficial del Motokar',
-                style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: MijanoTheme.ink)),
-            const SizedBox(height: 40),
-            const SizedBox(
-              width: 26,
-              height: 26,
-              child: CircularProgressIndicator(
-                  strokeWidth: 3, color: MijanoTheme.ink),
-            ),
-          ],
+
+              const Spacer(flex: 2),
+
+              // ==========================================
+              // 2. LOGO TÍTULO CON ANIMACIÓN (logo_title.png)
+              // ==========================================
+              SlideTransition(
+                position: _titleSlide,
+                child: ScaleTransition(
+                  scale: _titleScale,
+                  child: FadeTransition(
+                    opacity: _titleOpacity,
+                    child: Image.asset(
+                      'assets/images/logo_title.png',
+                      width: MediaQuery.of(context).size.width * 0.85,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) => const Text(
+                        'LA APP OFICIAL DEL MOTOKAR',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                          color: MijanoTheme.ink,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              const Spacer(flex: 3),
+
+              // ==========================================
+              // 3. INDICADOR DE CARGA
+              // ==========================================
+              const SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  color: MijanoTheme.ink,
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
         ),
       ),
     );
