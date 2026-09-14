@@ -1,13 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../theme.dart';
 import '../models/trip_model.dart';
 import '../models/driver_model.dart';
 import '../services/firestore_service.dart';
 
+enum AdminRole {
+  superAdmin,
+  operator,
+}
+
 /// Panel de administración web de Mijano Drive.
 /// Mismo Firestore, mismo tema que la app móvil. Se muestra con kIsWeb.
 class AdminApp extends StatelessWidget {
-  const AdminApp({super.key});
+  final AdminRole role;
+  
+  const AdminApp({super.key, this.role = AdminRole.superAdmin});
 
   @override
   Widget build(BuildContext context) {
@@ -15,13 +23,14 @@ class AdminApp extends StatelessWidget {
       title: 'Mijano Drive · Panel',
       debugShowCheckedModeBanner: false,
       theme: MijanoTheme.light,
-      home: const AdminShell(),
+      home: AdminShell(role: role),
     );
   }
 }
 
 class AdminShell extends StatefulWidget {
-  const AdminShell({super.key});
+  final AdminRole role;
+  const AdminShell({super.key, required this.role});
   @override
   State<AdminShell> createState() => _AdminShellState();
 }
@@ -29,14 +38,23 @@ class AdminShell extends StatefulWidget {
 class _AdminShellState extends State<AdminShell> {
   int _tab = 0;
 
-  static const _items = [
-    (Icons.dashboard, 'Panel'),
-    (Icons.verified_user, 'Conductores'),
-    (Icons.attach_money, 'Tarifas'),
-    (Icons.account_balance_wallet, 'Billetera'),
-    (Icons.emergency, 'Alertas S.O.S.'),
-    (Icons.security, 'Seguridad'),
-  ];
+  List<(IconData, String)> get _items {
+    if (widget.role == AdminRole.operator) {
+      return [
+        (Icons.dashboard, 'Panel'),
+        (Icons.verified_user, 'Conductores'),
+        (Icons.emergency, 'Alertas S.O.S.'),
+      ];
+    }
+    return [
+      (Icons.dashboard, 'Panel'),
+      (Icons.verified_user, 'Conductores'),
+      (Icons.attach_money, 'Tarifas'),
+      (Icons.account_balance_wallet, 'Billetera'),
+      (Icons.emergency, 'Alertas S.O.S.'),
+      (Icons.security, 'Seguridad'),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -112,11 +130,11 @@ class _AdminShellState extends State<AdminShell> {
             ),
 
           const Spacer(),
-          const Padding(
-            padding: EdgeInsets.all(16),
+          Padding(
+            padding: const EdgeInsets.all(16),
             child: Text(
-              'Panel de administración',
-              style: TextStyle(
+              'Rol: ${widget.role == AdminRole.superAdmin ? 'SuperAdmin' : 'Operador'}',
+              style: const TextStyle(
                 color: Colors.white38,
                 fontSize: 12,
               ),
@@ -128,20 +146,15 @@ class _AdminShellState extends State<AdminShell> {
   }
 
   Widget _body() {
-    switch (_tab) {
-      case 0:
-        return const _DashboardModule();
-      case 1:
-        return const _DriversModule();
-      case 2:
-        return const _TariffsModule();
-      case 3:
-        return const _WalletModule();
-      case 4:
-        return const _AlertsModule();
-      default:
-        return const _SecurityModule();
-    }
+    final title = _items[_tab].$2;
+    if (title == 'Panel') return _DashboardModule(role: widget.role);
+    if (title == 'Conductores') return const _DriversModule();
+    if (title == 'Tarifas') return const _TariffsModule();
+    if (title == 'Billetera') return const _WalletModule();
+    if (title == 'Alertas S.O.S.') return const _AlertsModule();
+    if (title == 'Seguridad') return const _SecurityModule();
+    
+    return const Center(child: Text('Módulo no encontrado'));
   }
 }
 
@@ -178,7 +191,9 @@ Widget _card({required Widget child}) => Container(
 
 // ============ MÓDULO 1: PANEL ============
 class _DashboardModule extends StatelessWidget {
-  const _DashboardModule();
+  final AdminRole role;
+  const _DashboardModule({required this.role});
+  
   @override
   Widget build(BuildContext context) {
     final fs = FirestoreService.instance;
@@ -187,33 +202,176 @@ class _DashboardModule extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _Header('Panel de control', 'Viajes y conductores en vivo'),
+          const _Header('Panel de control', 'Visión general en tiempo real'),
+          
           StreamBuilder<List<Driver>>(
             stream: fs.allDrivers(),
             builder: (context, dsnap) {
               final drivers = dsnap.data ?? [];
               final online = drivers.where((d) => d.isAvailable).length;
+              
               return StreamBuilder<List<Trip>>(
                 stream: fs.allActiveTrips(),
                 builder: (context, tsnap) {
                   final trips = tsnap.data ?? [];
+                  
+                  // Calculando datos reales a partir de los viajes activos (Sin datos inventados)
+                  final dineroEnCurso = trips.fold<double>(
+                      0.0, (sum, t) => sum + t.fareAmount);
+                  
+                  // KPIs principales
                   return Wrap(
                     spacing: 16,
                     runSpacing: 16,
                     children: [
-                      _stat('Viajes activos', '${trips.length}', Icons.route),
-                      _stat('Conductores libres', '$online', Icons.two_wheeler),
-                      _stat('Conductores totales', '${drivers.length}',
-                          Icons.people),
+                      _stat('Viajes Activos', '${trips.length}', Icons.route, Colors.blue),
+                      _stat('Conductores Libres', '$online', Icons.two_wheeler, Colors.green),
+                      _stat('Total Conductores', '${drivers.length}', Icons.people, Colors.orange),
+                      if (role == AdminRole.superAdmin)
+                        _stat('S/ en Curso', 'S/ ${dineroEnCurso.toStringAsFixed(2)}', Icons.attach_money, Colors.purple),
                     ],
                   );
                 },
               );
             },
           ),
+          
+          const SizedBox(height: 24),
+          
+          // Sección de Mapas y Gráficos
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isWide = constraints.maxWidth > 800;
+              
+              final mapWidget = _card(
+                child: SizedBox(
+                  height: 350,
+                  width: double.infinity,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Stack(
+                      children: [
+                        // TODO(Equipo): Descomentar este bloque StreamBuilder y GoogleMap cuando se haya habilitado
+                        // "Maps JavaScript API" en Google Cloud para el entorno Web y se haya configurado la facturación.
+                        Container(
+                          color: Colors.grey.shade200,
+                          width: double.infinity,
+                          height: double.infinity,
+                          child: const Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.map_outlined, size: 48, color: Colors.grey),
+                                SizedBox(height: 12),
+                                Text(
+                                  'Mapa en vivo inactivo\n(Requiere habilitar Maps JavaScript API)',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: Colors.black54, fontWeight: FontWeight.w600),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        /*
+                        StreamBuilder<List<Driver>>(
+                          stream: fs.allDrivers(),
+                          builder: (context, dsnap) {
+                            final drivers = dsnap.data ?? [];
+                            final activeDrivers = drivers.where((d) => d.currentLatitude != null && d.currentLongitude != null).toList();
+                            
+                            final markers = activeDrivers.map((d) => Marker(
+                                      markerId: MarkerId(d.uid),
+                                      position: LatLng(d.currentLatitude!, d.currentLongitude!),
+                                      infoWindow: InfoWindow(title: 'Cond. ${d.plate}', snippet: d.isAvailable ? 'Libre' : 'Ocupado'),
+                                      icon: BitmapDescriptor.defaultMarkerWithHue(d.isAvailable ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueRed),
+                                    )).toSet();
+
+                            // Si hay conductores, centrar en el primero, sino en Lima
+                            final initialLat = activeDrivers.isNotEmpty ? activeDrivers.first.currentLatitude! : -12.046374;
+                            final initialLng = activeDrivers.isNotEmpty ? activeDrivers.first.currentLongitude! : -77.042793;
+
+                            return GoogleMap(
+                              initialCameraPosition: CameraPosition(
+                                target: LatLng(initialLat, initialLng),
+                                zoom: 11,
+                              ),
+                              markers: markers,
+                              myLocationEnabled: false,
+                              zoomControlsEnabled: true,
+                              onMapCreated: (GoogleMapController controller) {},
+                            );
+                          },
+                        ),
+                        */
+                        Positioned(
+                          top: 10,
+                          left: 10,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.9),
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
+                            ),
+                            child: const Text('Conectado en vivo', style: TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+              
+              final chartWidget = role == AdminRole.superAdmin ? _card(
+                child: Container(
+                  height: 350,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.bar_chart, size: 48, color: Colors.grey),
+                        SizedBox(height: 8),
+                        Text('Actividad Semanal', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 16)),
+                        SizedBox(height: 8),
+                        Text('Este módulo se integrará en una fase posterior del desarrollo.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                ),
+              ) : const SizedBox.shrink();
+              
+              if (role == AdminRole.operator) {
+                // Operador solo ve el mapa en ancho completo
+                return mapWidget;
+              }
+
+              if (isWide) {
+                return Row(
+                  children: [
+                    Expanded(flex: 2, child: mapWidget),
+                    const SizedBox(width: 16),
+                    Expanded(flex: 1, child: chartWidget),
+                  ],
+                );
+              }
+              return Column(
+                children: [
+                  mapWidget,
+                  const SizedBox(height: 16),
+                  chartWidget,
+                ],
+              );
+            },
+          ),
+          
           const SizedBox(height: 24),
           const Text('Viajes en curso',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: MijanoTheme.ink)),
           const SizedBox(height: 12),
           _card(
             child: StreamBuilder<List<Trip>>(
@@ -227,24 +385,48 @@ class _DashboardModule extends StatelessWidget {
                 final trips = snap.data ?? [];
                 if (trips.isEmpty) {
                   return const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text('No hay viajes en curso'));
+                      padding: EdgeInsets.all(32),
+                      child: Center(
+                        child: Column(
+                          children: [
+                            Icon(Icons.inbox, size: 40, color: Colors.black26),
+                            SizedBox(height: 8),
+                            Text('No hay viajes en curso', style: TextStyle(color: Colors.black54)),
+                          ],
+                        ),
+                      ));
                 }
                 return Column(
                   children: [
                     for (final t in trips)
                       ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: _statusColor(t.status),
-                          child: const Icon(Icons.two_wheeler,
-                              color: Colors.white, size: 18),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        hoverColor: Colors.grey.shade50,
+                        leading: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: _statusColor(t.status).withValues(alpha: 0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(Icons.two_wheeler, color: _statusColor(t.status), size: 24),
                         ),
                         title: Text(
-                            '${t.originAddress ?? "Origen"} → ${t.destinationAddress ?? "Destino"}'),
-                        subtitle: Text('${t.city} · ${_statusEs(t.status)}'),
-                        trailing: Text('S/ ${t.fareAmount.toStringAsFixed(2)}',
-                            style:
-                                const TextStyle(fontWeight: FontWeight.w800)),
+                            '${t.originAddress ?? "Origen"} → ${t.destinationAddress ?? "Destino"}',
+                            style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text('${t.city} · ${_statusEs(t.status)}'),
+                        ),
+                        trailing: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text('S/ ${t.fareAmount.toStringAsFixed(2)}',
+                                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: MijanoTheme.ink)),
+                            const Text('Efectivo', style: TextStyle(fontSize: 12, color: Colors.black54)),
+                          ],
+                        ),
                       ),
                   ],
                 );
@@ -256,27 +438,42 @@ class _DashboardModule extends StatelessWidget {
     );
   }
 
-  Widget _stat(String label, String value, IconData icon) => Container(
-        width: 220,
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.black12),
+  Widget _stat(String label, String value, IconData icon, Color color) {
+    return Container(
+      width: 240,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.black12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          )
+        ]
+      ),
+      child: Row(children: [
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: color, size: 28),
         ),
-        child: Row(children: [
-          CircleAvatar(
-              backgroundColor: MijanoTheme.sol,
-              child: Icon(icon, color: MijanoTheme.ink)),
-          const SizedBox(width: 14),
-          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(value,
-                style:
-                    const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
-            Text(label, style: const TextStyle(color: Colors.black54, fontSize: 12)),
+                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: MijanoTheme.ink)),
+            Text(label, style: const TextStyle(color: Colors.black54, fontSize: 13, fontWeight: FontWeight.w500)),
           ]),
-        ]),
-      );
+        ),
+      ]),
+    );
+  }
 }
 
 Color _statusColor(TripStatus s) {
@@ -672,6 +869,8 @@ class _WalletModule extends StatelessWidget {
           _Header('Billetera y recargas',
               'Pasarela digital (Culqi/Niubiz) y caja efectivo'),
           SizedBox(height: 8),
+          // TODO(Equipo): Conectar pasarela de pago (Culqi/Niubiz) y listar aquí el Stream de transacciones.
+          // Recomendado: Utilizar fs.transactions() para listar el historial financiero global o de comisiones.
           Text('Conecta Culqi/Niubiz para ver las transacciones aquí.',
               style: TextStyle(color: Colors.black54)),
         ],
@@ -748,6 +947,8 @@ class _SecurityModule extends StatelessWidget {
           _Header('Seguridad y permisos',
               'Roles: SuperAdmin (dueños) y Operador (gerente)'),
           SizedBox(height: 8),
+          // TODO(Equipo): Implementar control de Firebase Auth (Custom Claims).
+          // Aquí se debería permitir crear nuevos operadores o revocar sus accesos.
           Text('Gestión de accesos y revocación de tokens.',
               style: TextStyle(color: Colors.black54)),
         ],
