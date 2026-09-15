@@ -17,6 +17,25 @@ class AuthService {
   User? currentUser;
   String? _verificationId;
 
+  /// Restaura la sesión guardada desde Firebase Auth y Firestore al iniciar la app.
+  Future<bool> tryRestoreSession() async {
+    final fbUser = _fbAuth.currentUser;
+    if (fbUser == null) return false;
+
+    try {
+      if (fbUser.phoneNumber != null && fbUser.phoneNumber!.isNotEmpty) {
+        final existing = await _fs.getUserByPhone(fbUser.phoneNumber!);
+        if (existing != null) {
+          currentUser = existing;
+          return true;
+        }
+      }
+    } catch (e) {
+      print('Error al restaurar sesión: $e');
+    }
+    return false;
+  }
+
   /// Normaliza a formato internacional peruano (+51XXXXXXXXX).
   String _normalize(String phone) {
     var p = phone.replaceAll(RegExp(r'\s+'), '');
@@ -47,7 +66,6 @@ class AuthService {
           }
         },
         verificationFailed: (fb.FirebaseAuthException e) {
-          // IMPRESIÓN DIRECTA DEL ERROR EN CONSOLA
           print('==================================================');
           print('❌ ERROR CRÍTICO DE FIREBASE AUTH AL ENVIAR SMS:');
           print('Código de error (code): ${e.code}');
@@ -57,7 +75,6 @@ class AuthService {
 
           if (completer.isCompleted) return;
 
-          // Forzamos la devolución del error REAL a la pantalla
           completer.complete(
             (false, 'Error Firebase (${e.code}): ${e.message ?? "Sin mensaje"}'),
           );
@@ -113,7 +130,6 @@ class AuthService {
       }
     }
 
-    // Buscar usuario existente o crear perfil base.
     final number = _normalize(phone);
     final uid = number.replaceAll(RegExp(r'[^0-9]'), '');
     final existing = await _fs.getUserByPhone(number);
@@ -176,10 +192,14 @@ class AuthService {
     }
   }
 
-  void signOut() {
+  /// Cierra sesión de forma asíncrona en Firebase y limpia variables en memoria.
+  Future<void> signOut() async {
     currentUser = null;
+    _verificationId = null;
     try {
-      _fbAuth.signOut();
-    } catch (_) {}
+      await _fbAuth.signOut();
+    } catch (e) {
+      print('Error al cerrar sesión: $e');
+    }
   }
 }

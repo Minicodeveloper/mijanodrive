@@ -52,7 +52,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _signOut() async {
-    AuthService.instance.signOut();
+    await AuthService.instance.signOut();
     if (!mounted) return;
     // Redirige al Login eliminando las pantallas anteriores de la pila
     Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
