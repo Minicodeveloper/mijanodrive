@@ -8,11 +8,11 @@ class ActiveTripScreen extends StatefulWidget {
   final String tripId;
 
   const ActiveTripScreen({
-    Key? key,
+    super.key,
     required this.destination,
     required this.fare,
     required this.tripId,
-  }) : super(key: key);
+  });
 
   @override
   State<ActiveTripScreen> createState() => _ActiveTripScreenState();

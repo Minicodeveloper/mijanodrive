@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../theme.dart';
 
 class RoleSelectScreen extends StatelessWidget {
-  const RoleSelectScreen({Key? key}) : super(key: key);
+  const RoleSelectScreen({super.key});
 
   void _navigateToLogin(BuildContext context, String role) {
     // Redirige a la pantalla de login pasando el rol como argumento por si lo necesitas luego
@@ -90,13 +90,13 @@ class RoleSelectScreen extends StatelessWidget {
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.18),
+                color: Colors.black.withValues(alpha: 0.18),
                 blurRadius: 15,
                 spreadRadius: 1,
                 offset: const Offset(0, 8), // Sombra inferior para dar efecto elevado
               ),
               BoxShadow(
-                color: Colors.white.withOpacity(0.3),
+                color: Colors.white.withValues(alpha: 0.3),
                 blurRadius: 10,
                 offset: const Offset(-2, -2), // Brillo superior ligero
               ),

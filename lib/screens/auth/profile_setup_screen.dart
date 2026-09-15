@@ -9,7 +9,7 @@ import '../../theme.dart';
 /// Configuración obligatoria del perfil (primera vez):
 /// DNI + RENIEC autollenado, selfie en vivo, ciudad detectada, rol.
 class ProfileSetupScreen extends StatefulWidget {
-  const ProfileSetupScreen({Key? key}) : super(key: key);
+  const ProfileSetupScreen({super.key});
 
   @override
   State<ProfileSetupScreen> createState() => _ProfileSetupScreenState();
@@ -160,7 +160,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
             const SizedBox(height: 16),
             // Ciudad
             DropdownButtonFormField<String>(
-              value: _city,
+              initialValue: _city,
               decoration: const InputDecoration(
                 labelText: 'Ciudad',
                 prefixIcon: Icon(Icons.location_city),

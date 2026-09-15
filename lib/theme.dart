@@ -50,7 +50,7 @@ class MijanoTheme {
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: ink.withOpacity(0.25), width: 2),
+          borderSide: BorderSide(color: ink.withValues(alpha: 0.25), width: 2),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),

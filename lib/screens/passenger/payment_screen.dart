@@ -15,7 +15,7 @@ class PaymentScreen extends StatefulWidget {
   final GeoPoint destinationGeoPoint;
 
   const PaymentScreen({
-    Key? key,
+    super.key,
     required this.destination,
     required this.fare,
     required this.paymentMethod,
@@ -23,7 +23,7 @@ class PaymentScreen extends StatefulWidget {
     required this.city,
     required this.origin,
     required this.destinationGeoPoint,
-  }) : super(key: key);
+  });
 
   @override
   State<PaymentScreen> createState() => _PaymentScreenState();

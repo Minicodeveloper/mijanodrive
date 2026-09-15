@@ -5,10 +5,10 @@ class RatingScreen extends StatefulWidget {
   final String tripId;
 
   const RatingScreen({
-    Key? key,
+    super.key,
     required this.driverName,
     required this.tripId,
-  }) : super(key: key);
+  });
 
   @override
   State<RatingScreen> createState() => _RatingScreenState();

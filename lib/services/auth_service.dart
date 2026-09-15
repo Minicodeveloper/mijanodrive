@@ -166,8 +166,10 @@ class AuthService {
     try {
       return await _localAuth.authenticate(
         localizedReason: 'Confirma tu identidad para entrar a Mijano Drive',
-        biometricOnly: false,
-        persistAcrossBackgrounding: true,
+        options: const AuthenticationOptions(
+          biometricOnly: false,
+          stickyAuth: true,
+        ),
       );
     } catch (_) {
       return false;

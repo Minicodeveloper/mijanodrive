@@ -7,7 +7,7 @@ import '../../services/firestore_service.dart';
 import '../../services/location_service.dart';
 
 class SearchTripScreen extends StatefulWidget {
-  const SearchTripScreen({Key? key}) : super(key: key);
+  const SearchTripScreen({super.key});
 
   @override
   State<SearchTripScreen> createState() => _SearchTripScreenState();

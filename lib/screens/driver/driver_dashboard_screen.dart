@@ -8,7 +8,7 @@ import '../../theme.dart';
 /// Panel del conductor: disponibilidad, viajes pendientes en su ciudad,
 /// aceptar carrera y botón S.O.S.
 class DriverDashboardScreen extends StatefulWidget {
-  const DriverDashboardScreen({Key? key}) : super(key: key);
+  const DriverDashboardScreen({super.key});
 
   @override
   State<DriverDashboardScreen> createState() => _DriverDashboardScreenState();
@@ -138,7 +138,7 @@ Future<void> _sos() async {
                 ),
                 Switch(
                   value: _available,
-                  activeColor: MijanoTheme.ink,
+                  activeThumbColor: MijanoTheme.ink,
                   onChanged: _toggleAvailability,
                 ),
               ],
@@ -184,7 +184,7 @@ Future<void> _sos() async {
                       return ListView.separated(
                         padding: const EdgeInsets.all(16),
                         itemCount: trips.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        separatorBuilder: (_, _) => const SizedBox(height: 12),
                         itemBuilder: (_, i) => _tripCard(trips[i]),
                       );
                     },

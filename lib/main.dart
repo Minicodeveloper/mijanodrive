@@ -38,7 +38,7 @@ Future<void> main() async {
 }
 
 class MijanoDriveApp extends StatelessWidget {
-  const MijanoDriveApp({Key? key}) : super(key: key);
+  const MijanoDriveApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -116,7 +116,7 @@ class MijanoDriveApp extends StatelessWidget {
 }
 
 class SplashScreen extends StatefulWidget {
-  const SplashScreen({Key? key}) : super(key: key);
+  const SplashScreen({super.key});
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();

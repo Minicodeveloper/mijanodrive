@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 
 class WalletScreen extends StatefulWidget {
-  const WalletScreen({Key? key}) : super(key: key);
+  const WalletScreen({super.key});
 
   @override
   State<WalletScreen> createState() => _WalletScreenState();
 }
 
 class _WalletScreenState extends State<WalletScreen> {
-  double _balance = 45.50;
-  bool _isLoadingTransactions = false;
+  final double _balance = 45.50;
+  final bool _isLoadingTransactions = false;
 
   // Mock transactions
   final List<Map<String, dynamic>> _transactions = [
@@ -196,7 +196,7 @@ class _WalletScreenState extends State<WalletScreen> {
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: _transactions.length,
-                      separatorBuilder: (_, __) => const Divider(),
+                      separatorBuilder: (_, _) => const Divider(),
                       itemBuilder: (context, index) {
                         final tx = _transactions[index];
                         final isExpense = tx['amount'] < 0;

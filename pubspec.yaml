@@ -36,30 +36,30 @@ dependencies:
   cupertino_icons: ^1.0.8
 
   # Firebase
-  firebase_core: any
-  cloud_firestore: any
-  firebase_auth: any
+  firebase_core: ^2.27.0
+  cloud_firestore: ^4.15.8
+  firebase_auth: ^4.17.8
 
   # Maps & Location
-  google_maps_flutter: any
-  geolocator: any
-  geocoding: any
+  google_maps_flutter: ^2.5.3
+  geolocator: ^10.1.0
+  geocoding: ^4.0.0
 
   # UI & State Management
   provider: ^6.0.0
   cached_network_image: ^3.3.0
-  get: any
+  get: ^4.6.6
 
   # Local Storage
   hive: ^2.2.0
   hive_flutter: ^1.1.0
 
   # Authentication & Biometrics
-  local_auth: any
+  local_auth: ^2.1.8
 
   # Networking
   http: ^1.1.0
-  socket_io_client: any
+  socket_io_client: ^2.0.3
 
   # Payment (placeholders)
   # culqi_dart: (custom implementation)
@@ -68,13 +68,13 @@ dependencies:
   # twilio_flutter: (custom implementation)
 
   # Image Processing
-  image_picker: ^1.1.0
-  image_cropper: any
+  image_picker: ^1.0.7
+  image_cropper: ^8.0.0
 
   # Utilities
-  intl: any
+  intl: ^0.19.0
   uuid: ^4.0.0
-  dotenv: any
+  dotenv: ^4.2.0
 
 dev_dependencies:
   flutter_test:
@@ -86,6 +86,9 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+
+dependency_overrides:
+  js: ^0.7.1
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
