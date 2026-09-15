@@ -165,6 +165,40 @@ class FirestoreService {
       .doc(uid)
       .set({'isApproved': approved}, SetOptions(merge: true));
 
+  Future<void> updateDriverStatus(String uid, {bool? isApproved, bool? isBlocked}) {
+    final Map<String, dynamic> data = {};
+    if (isApproved != null) data['isApproved'] = isApproved;
+    if (isBlocked != null) data['isBlocked'] = isBlocked;
+    return _db.collection('drivers').doc(uid).set(data, SetOptions(merge: true));
+  }
+
+  /// Añadir transacción manual y actualizar billetera
+  Future<void> addManualTransaction(String walletId, double amount, String reason) async {
+    await _db.collection('transactions').add({
+      'walletId': walletId,
+      'amount': amount,
+      'type': reason,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    // Actualizar balance
+    await _db.collection('wallets').doc(walletId).set({
+      'balance': FieldValue.increment(amount),
+      'lastUpdated': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  /// Todos los reportes (Moderación)
+  Stream<List<Map<String, dynamic>>> allReports() => _db
+      .collection('reports')
+      .orderBy('createdAt', descending: true)
+      .snapshots()
+      .map((q) => q.docs.map((d) => {'id': d.id, ...d.data()}).toList());
+
+  Future<void> resolveReport(String id) => _db
+      .collection('reports')
+      .doc(id)
+      .set({'status': 'resolved'}, SetOptions(merge: true));
+
   /// Todas las ciudades para el módulo de tarifas.
   Stream<List<Map<String, dynamic>>> allCities() => _db
       .collection('cities')
