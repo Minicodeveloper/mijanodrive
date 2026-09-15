@@ -20,6 +20,9 @@ class _HomeScreenState extends State<HomeScreen> {
     zoom: 15,
   );
 
+  // Variable para guardar el texto de la ubicación actual
+  String _currentAddress = 'Obteniendo ubicación...';
+
   @override
   void dispose() {
     _mapController?.dispose();
@@ -34,6 +37,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _goToCurrentLocation() async {
     final pos = await LocationService.instance.current();
     if (!mounted) return;
+
+    setState(() {
+      _currentAddress = 'Mi ubicación actual';
+    });
+
     await _mapController?.animateCamera(
       CameraUpdate.newLatLngZoom(
         LatLng(pos.latitude, pos.longitude),
@@ -56,54 +64,52 @@ class _HomeScreenState extends State<HomeScreen> {
             mapToolbarEnabled: false,
             compassEnabled: false,
           ),
-          // Top action buttons
+
+          // Botones superiores (Perfil y Notificaciones)
           Positioned(
             top: 40,
             left: 20,
             right: 20,
-            child: Column(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // Profile button
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    IconButton(
-                      onPressed: () {
-                        // TODO: Navigate to profile
-                      },
-                      icon: const Icon(Icons.account_circle),
-                      color: Colors.black,
-                      iconSize: 30,
-                    ),
-                    IconButton(
-                      onPressed: () {
-                        // TODO: Navigate to notifications
-                      },
-                      icon: const Icon(Icons.notifications),
-                      color: Colors.black,
-                      iconSize: 30,
-                    ),
-                  ],
+                IconButton(
+                  onPressed: () {
+                    // TODO: Navegar a perfil
+                  },
+                  icon: const Icon(Icons.account_circle),
+                  color: Colors.black,
+                  iconSize: 30,
+                ),
+                IconButton(
+                  onPressed: () {
+                    // TODO: Navegar a notificaciones
+                  },
+                  icon: const Icon(Icons.notifications),
+                  color: Colors.black,
+                  iconSize: 30,
                 ),
               ],
             ),
           ),
-          // Bottom action cards
+
+          // Tarjeta inferior con el nuevo diseño de ruta
           Positioned(
             bottom: 0,
             left: 0,
             right: 0,
             child: Container(
               decoration: const BoxDecoration(
-                color: Colors.white,
+                color: Color(0xFFF9D408), // Color amarillo principal
                 borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(20),
-                  topRight: Radius.circular(20),
+                  topLeft: Radius.circular(24),
+                  topRight: Radius.circular(24),
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black12,
+                    color: Colors.black26,
                     blurRadius: 10,
+                    offset: Offset(0, -2),
                   ),
                 ],
               ),
@@ -112,7 +118,28 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Search destination
+                    // Título e Ícono
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: const [
+                        Text(
+                          'Introduce la ruta...',
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black,
+                          ),
+                        ),
+                        Icon(
+                          Icons.two_wheeler, // Ícono representativo de mototaxi
+                          size: 32,
+                          color: Colors.black,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 15),
+
+                    // Campo ORIGEN (De:)
                     GestureDetector(
                       onTap: () {
                         Navigator.of(context).pushNamed('/search-trip');
@@ -123,56 +150,81 @@ class _HomeScreenState extends State<HomeScreen> {
                           vertical: 12,
                         ),
                         decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey[300]!),
-                          borderRadius: BorderRadius.circular(8),
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Colors.black12,
+                              blurRadius: 4,
+                            ),
+                          ],
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.search, color: Colors.grey),
+                            const Icon(
+                              Icons.location_on,
+                              color: Colors.black,
+                            ),
                             const SizedBox(width: 10),
-                            Text(
-                              'A dónde vas?',
-                              style: TextStyle(
-                                color: Colors.grey[600],
-                                fontSize: 14,
+                            Expanded(
+                              child: Text(
+                                'De: $_currentAddress',
+                                style: const TextStyle(
+                                  color: Colors.black87,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           ],
                         ),
                       ),
                     ),
-                    const SizedBox(height: 15),
-                    // Action buttons
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              Navigator.of(context).pushNamed('/search-trip');
-                            },
-                            icon: const Icon(Icons.directions_bike),
-                            label: const Text('Viaje'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFF9D408),
-                              foregroundColor: Colors.black,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                            ),
-                          ),
+
+                    const SizedBox(height: 10),
+
+                    // Campo DESTINO (A:)
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.of(context).pushNamed('/search-trip');
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 15,
+                          vertical: 12,
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () {
-                              // TODO: Navigate to courier screen
-                            },
-                            icon: const Icon(Icons.local_shipping),
-                            label: const Text('Envío'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFFF9D408),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Colors.black12,
+                              blurRadius: 4,
                             ),
-                          ),
+                          ],
                         ),
-                      ],
+                        child: Row(
+                          children: const [
+                            Icon(
+                              Icons.flag,
+                              color: Colors.black,
+                            ),
+                            SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'A: ¿A dónde vas?',
+                                style: TextStyle(
+                                  color: Colors.black54,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -187,7 +239,6 @@ class _HomeScreenState extends State<HomeScreen> {
         unselectedItemColor: Colors.grey,
         onTap: (index) {
           setState(() => _selectedIndex = index);
-          // Handle navigation
         },
         items: const [
           BottomNavigationBarItem(
