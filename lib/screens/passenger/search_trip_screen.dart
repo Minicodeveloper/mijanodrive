@@ -5,6 +5,7 @@ import '../../config/app_config.dart';
 import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
 import '../../services/location_service.dart';
+import 'package:geocoding/geocoding.dart' as geo;
 
 class SearchTripScreen extends StatefulWidget {
   const SearchTripScreen({super.key});
@@ -31,9 +32,7 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
 
     if (destination.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Por favor ingresa un destino'),
-        ),
+        const SnackBar(content: Text('Por favor ingresa un destino')),
       );
       return;
     }
@@ -44,35 +43,39 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
       // 1. Obtener ubicación actual del pasajero.
       final originPosition = await LocationService.instance.current();
 
-      // 2. Coordenadas de demostración del destino.
-const destinationLatitude = -6.4869;
-const destinationLongitude = -76.3654;
+      // 2. Geocodificar destino.
+      final locations = await geo.locationFromAddress(destination);
+      if (locations.isEmpty) {
+        throw Exception('Dirección no encontrada');
+      }
+      final destinationLatitude = locations.first.latitude;
+      final destinationLongitude = locations.first.longitude;
 
       // 3. Calcular distancia real.
       final distanceKm = LocationService.instance.distanceKm(
-  originPosition.latitude,
-  originPosition.longitude,
-  destinationLatitude,
-  destinationLongitude,
-);
+        originPosition.latitude,
+        originPosition.longitude,
+        destinationLatitude,
+        destinationLongitude,
+      );
 
       // 4. Obtener ciudad del usuario.
       final user = AuthService.instance.currentUser;
       final city = user?.city ?? 'Tarapoto';
 
       // 5. Obtener tarifa de Firestore.
-      final firestoreTariff =
-          await FirestoreService.instance.getCityTariff(city);
+      final firestoreTariff = await FirestoreService.instance.getCityTariff(
+        city,
+      );
 
-      final tariffData = firestoreTariff ??
+      final tariffData =
+          firestoreTariff ??
           AppConfig.cityTariffs[city] ??
           AppConfig.cityTariffs['Tarapoto']!;
 
-      final baseFare =
-          (tariffData['base'] as num?)?.toDouble() ?? 3.0;
+      final baseFare = (tariffData['base'] as num?)?.toDouble() ?? 3.0;
 
-      final perKm =
-          (tariffData['perKm'] as num?)?.toDouble() ?? 1.8;
+      final perKm = (tariffData['perKm'] as num?)?.toDouble() ?? 1.8;
 
       // 6. Calcular tarifa.
       final fare = baseFare + (distanceKm * perKm);
@@ -93,14 +96,11 @@ const destinationLongitude = -76.3654;
           'paymentMethod': _selectedPaymentMethod,
           'distanceKm': distanceKm,
           'city': city,
-          'origin': GeoPoint(
-            originPosition.latitude,
-            originPosition.longitude,
-          ),
+          'origin': GeoPoint(originPosition.latitude, originPosition.longitude),
           'destinationGeoPoint': GeoPoint(
             destinationLatitude,
             destinationLongitude,
-         ),
+          ),
         },
       );
     } catch (e) {
@@ -127,16 +127,10 @@ const destinationLongitude = -76.3654;
         backgroundColor: const Color(0xFFF9D408),
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back,
-            color: Colors.black,
-          ),
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: const Text(
-          'Nuevo viaje',
-          style: TextStyle(color: Colors.black),
-        ),
+        title: const Text('Nuevo viaje', style: TextStyle(color: Colors.black)),
       ),
       body: SingleChildScrollView(
         child: Padding(
@@ -164,10 +158,7 @@ const destinationLongitude = -76.3654;
               // Lugares frecuentes.
               const Text(
                 'Lugares frecuentes',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
               ),
 
               const SizedBox(height: 10),
@@ -180,14 +171,8 @@ const destinationLongitude = -76.3654;
                 children: [
                   _buildQuickButton('Casa', Icons.home),
                   _buildQuickButton('Trabajo', Icons.work),
-                  _buildQuickButton(
-                    'Supermercado',
-                    Icons.shopping_cart,
-                  ),
-                  _buildQuickButton(
-                    'Hospital',
-                    Icons.local_hospital,
-                  ),
+                  _buildQuickButton('Supermercado', Icons.shopping_cart),
+                  _buildQuickButton('Hospital', Icons.local_hospital),
                 ],
               ),
 
@@ -201,14 +186,11 @@ const destinationLongitude = -76.3654;
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
-                  mainAxisAlignment:
-                      MainAxisAlignment.spaceBetween,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text(
                       'Tarifa estimada',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                     Text(
                       'S/. ${_estimatedFare.toStringAsFixed(2)}',
@@ -227,10 +209,7 @@ const destinationLongitude = -76.3654;
               // Forma de pago.
               const Text(
                 'Forma de pago',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
               ),
 
               const SizedBox(height: 10),
@@ -267,14 +246,11 @@ const destinationLongitude = -76.3654;
 
               // Buscar conductor.
               ElevatedButton(
-                onPressed: _isSearching
-                    ? null
-                    : _searchAndBook,
+                onPressed: _isSearching ? null : _searchAndBook,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFF9D408),
                   disabledBackgroundColor: Colors.grey,
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 15),
+                  padding: const EdgeInsets.symmetric(vertical: 15),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -285,10 +261,7 @@ const destinationLongitude = -76.3654;
                         width: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor:
-                              AlwaysStoppedAnimation(
-                            Colors.black,
-                          ),
+                          valueColor: AlwaysStoppedAnimation(Colors.black),
                         ),
                       )
                     : const Text(
@@ -307,10 +280,7 @@ const destinationLongitude = -76.3654;
     );
   }
 
-  Widget _buildQuickButton(
-    String label,
-    IconData icon,
-  ) {
+  Widget _buildQuickButton(String label, IconData icon) {
     return InkWell(
       onTap: () {
         _destinationController.text = label;
@@ -318,19 +288,13 @@ const destinationLongitude = -76.3654;
       child: Container(
         margin: const EdgeInsets.all(5),
         decoration: BoxDecoration(
-          border: Border.all(
-            color: Colors.grey[300]!,
-          ),
+          border: Border.all(color: Colors.grey[300]!),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Column(
-          mainAxisAlignment:
-              MainAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              icon,
-              color: const Color(0xFFF9D408),
-            ),
+            Icon(icon, color: const Color(0xFFF9D408)),
             const SizedBox(height: 5),
             Text(
               label,

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../services/auth_service.dart';
+import '../../models/user_model.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -8,16 +10,16 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  // Mock user data
-  final userName = 'Juan Pérez García';
-  final userPhone = '+51 999999999';
-  final userEmail = 'juan.perez@example.com';
-  final userDni = '12345678';
-  final userRole = 'Pasajero';
-  final userCity = 'Tarapoto';
-
   @override
   Widget build(BuildContext context) {
+    final user = AuthService.instance.currentUser;
+    final userName = user?.name ?? 'Sin nombre';
+    final userPhone = user?.phone ?? '';
+    final userEmail = user?.email ?? 'No registrado';
+    final userDni = user?.dni ?? 'No registrado';
+    final userRole = user?.role == UserRole.driver ? 'Conductor' : 'Pasajero';
+    final userCity = user?.city ?? 'Sin ciudad';
+
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
@@ -176,6 +178,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                         TextButton(
                           onPressed: () {
+                            AuthService.instance.signOut();
                             Navigator.pop(context);
                             Navigator.of(context).pushNamedAndRemoveUntil(
                               '/login',

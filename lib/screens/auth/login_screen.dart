@@ -16,8 +16,18 @@ class _LoginScreenState extends State<LoginScreen> {
   final _otpController = TextEditingController();
   bool _showOtpField = false;
   bool _isLoading = false;
+  UserRole? _selectedRole;
 
   final _auth = AuthService.instance;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is Map && args['role'] != null) {
+      _selectedRole = (args['role'] as String) == 'driver' ? UserRole.driver : UserRole.passenger;
+    }
+  }
 
   @override
   void dispose() {
@@ -51,7 +61,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     setState(() => _isLoading = true);
-    final (ok, msg) = await _auth.verifyOtp(_phoneController.text.trim(), otp);
+    final (ok, msg) = await _auth.verifyOtp(_phoneController.text.trim(), otp, role: _selectedRole);
     if (!mounted) return;
     setState(() => _isLoading = false);
 

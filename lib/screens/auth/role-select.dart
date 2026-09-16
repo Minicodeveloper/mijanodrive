@@ -6,7 +6,7 @@ class RoleSelectScreen extends StatelessWidget {
 
   void _navigateToLogin(BuildContext context, String role) {
     // Redirige a la pantalla de login pasando el rol como argumento por si lo necesitas luego
-    Navigator.of(context).pushNamed('/login-screen', arguments: {'role': role});
+    Navigator.of(context).pushNamed('/login', arguments: {'role': role});
   }
 
   @override
@@ -14,7 +14,8 @@ class RoleSelectScreen extends StatelessWidget {
     final size = MediaQuery.of(context).size;
 
     return Scaffold(
-      backgroundColor: MijanoTheme.sol, // Mantiene el fondo amarillo corporativo
+      backgroundColor:
+          MijanoTheme.sol, // Mantiene el fondo amarillo corporativo
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 28.0),
@@ -26,16 +27,22 @@ class RoleSelectScreen extends StatelessWidget {
               // LOGO SUPERIOR (logo.png)
               // ==========================================
               Center(
-                child: Image.asset(
-                  'assets/images/logo.png',
-                  width: size.width * 0.55,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) => const Text(
-                    'MIJANO DRIVE',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w900,
-                      color: MijanoTheme.ink,
+                child: GestureDetector(
+                  onTap: () => Navigator.of(context).pushNamed(
+                    '/admin',
+                    arguments: const {'createFirstAdmin': true},
+                  ),
+                  child: Image.asset(
+                    'assets/images/logo.png',
+                    width: size.width * 0.55,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => const Text(
+                      'MIJANO DRIVE',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w900,
+                        color: MijanoTheme.ink,
+                      ),
                     ),
                   ),
                 ),
@@ -93,7 +100,10 @@ class RoleSelectScreen extends StatelessWidget {
                 color: Colors.black.withValues(alpha: 0.18),
                 blurRadius: 15,
                 spreadRadius: 1,
-                offset: const Offset(0, 8), // Sombra inferior para dar efecto elevado
+                offset: const Offset(
+                  0,
+                  8,
+                ), // Sombra inferior para dar efecto elevado
               ),
               BoxShadow(
                 color: Colors.white.withValues(alpha: 0.3),

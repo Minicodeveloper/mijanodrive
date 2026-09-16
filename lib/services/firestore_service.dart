@@ -239,4 +239,20 @@ class FirestoreService {
       'status': 'open',
       'createdAt': FieldValue.serverTimestamp(),
     });
+
+  /// Stream de un conductor especifico en tiempo real.
+  Stream<Driver?> driverStream(String uid) => _db
+      .collection('drivers')
+      .doc(uid)
+      .snapshots()
+      .map((doc) => doc.exists ? Driver.fromFirestore(doc) : null);
+
+  /// Normaliza las claves de tarifa de Firestore.
+  static Map<String, double> normalizeTariff(Map<String, dynamic> raw) {
+    return {
+      'base': (raw['tariff_base'] ?? raw['base'] ?? 3.0 as num).toDouble(),
+      'perKm': (raw['tariff_per_km'] ?? raw['perKm'] ?? 1.8 as num).toDouble(),
+      'commission': (raw['commission_percent'] ?? raw['commission'] ?? 10.0 as num).toDouble(),
+    };
+  }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../services/firestore_service.dart';
 
 class RatingScreen extends StatefulWidget {
   final String driverName;
@@ -36,10 +37,10 @@ class _RatingScreenState extends State<RatingScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      // TODO: Call API to submit rating
-      // await ApiClient.submitRating(tripId, rating, feedback);
-
-      await Future.delayed(const Duration(seconds: 1));
+      await FirestoreService.instance.updateTrip(widget.tripId, {
+        'rating': _rating,
+        'feedback': _feedbackController.text.trim(),
+      });
 
       if (mounted) {
         Navigator.of(context).pushNamedAndRemoveUntil(

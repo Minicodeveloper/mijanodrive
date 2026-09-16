@@ -6,7 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'firebase_options.dart';
 import 'theme.dart';
-import 'admin/admin_app.dart';
+import 'admin/admin_login_screen.dart';
 
 import 'models/user_model.dart';
 import 'services/auth_service.dart';
@@ -22,6 +22,7 @@ import 'screens/passenger/rating_screen.dart';
 import 'screens/passenger/wallet_screen.dart';
 import 'screens/shared/profile_screen.dart';
 import 'screens/driver/driver_dashboard_screen.dart';
+import 'screens/driver/driver_active_trip_screen.dart';
 import 'screens/auth/role-select.dart';
 
 Future<void> main() async {
@@ -34,8 +35,23 @@ Future<void> main() async {
   try {
     await Hive.initFlutter();
   } catch (_) {}
+  // En web se sirve el PANEL ADMIN (con login); en móvil, la app de pasajero/conductor.
+  runApp(kIsWeb ? const _AdminWebApp() : const MijanoDriveApp());
+}
 
-  runApp(kIsWeb ? const AdminApp() : const MijanoDriveApp());
+/// Wrapper para web: muestra el login admin como home.
+class _AdminWebApp extends StatelessWidget {
+  const _AdminWebApp();
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Mijano Drive · Panel',
+      debugShowCheckedModeBanner: false,
+      theme: MijanoTheme.light,
+      home: const AdminLoginScreen(),
+    );
+  }
 }
 
 class MijanoDriveApp extends StatelessWidget {
@@ -108,6 +124,14 @@ class MijanoDriveApp extends StatelessWidget {
       case '/driver':
         page = const DriverDashboardScreen();
         break;
+      case '/driver-active-trip':
+        page = DriverActiveTripScreen(tripId: args['tripId'] ?? '');
+        break;
+      case '/admin':
+        page = AdminLoginScreen(
+          openFirstAdminDialog: args['createFirstAdmin'] == true,
+        );
+        break;
       default:
         page = const LoginScreen();
     }
@@ -155,15 +179,13 @@ class _SplashScreenState extends State<SplashScreen>
       ),
     );
 
-    _titleSlide = Tween<Offset>(
-      begin: const Offset(0.0, 0.4),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.3, 0.9, curve: Curves.easeOutBack),
-      ),
-    );
+    _titleSlide = Tween<Offset>(begin: const Offset(0.0, 0.4), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _controller,
+            curve: const Interval(0.3, 0.9, curve: Curves.easeOutBack),
+          ),
+        );
 
     _titleScale = Tween<double>(begin: 0.85, end: 1.0).animate(
       CurvedAnimation(

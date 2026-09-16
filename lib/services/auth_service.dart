@@ -106,7 +106,7 @@ class AuthService {
   }
 
   /// Verifica el código.
-  Future<(bool, String)> verifyOtp(String phone, String code) async {
+  Future<(bool, String)> verifyOtp(String phone, String code, {UserRole? role}) async {
     bool signedIn = false;
 
     if (_verificationId != null) {
@@ -139,7 +139,7 @@ class AuthService {
       currentUser = User(
         uid: uid,
         phone: number,
-        role: UserRole.passenger,
+        role: role ?? UserRole.passenger,
         createdAt: DateTime.now(),
       );
     }
