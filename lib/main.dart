@@ -8,9 +8,6 @@ import 'firebase_options.dart';
 import 'theme.dart';
 import 'admin/admin_app.dart';
 
-import 'models/user_model.dart';
-import 'services/auth_service.dart';
-
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/register_screen.dart';
 import 'screens/auth/profile_setup_screen.dart';
@@ -206,27 +203,7 @@ class _SplashScreenState extends State<SplashScreen>
 
   Future<void> _go() async {
     await Future.delayed(const Duration(milliseconds: 3000));
-    if (!mounted) return;
-
-    // Verificar si existe una sesión activa persistida en Firebase
-    final isLoggedIn = await AuthService.instance.tryRestoreSession();
-
-    if (!mounted) return;
-
-    if (isLoggedIn) {
-      final role = AuthService.instance.currentUser?.role;
-      if (role == UserRole.driver) {
-        Navigator.of(context).pushReplacementNamed('/driver');
-      } else if (role == UserRole.admin || role == UserRole.operator) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => AdminApp(role: role == UserRole.admin ? AdminRole.superAdmin : AdminRole.operator)),
-        );
-      } else {
-        Navigator.of(context).pushReplacementNamed('/home');
-      }
-    } else {
-      Navigator.of(context).pushReplacementNamed('/role-select');
-    }
+    if (mounted) Navigator.of(context).pushReplacementNamed('/role-select');
   }
 
   @override
@@ -239,6 +216,10 @@ class _SplashScreenState extends State<SplashScreen>
           child: Column(
             children: [
               const Spacer(flex: 2),
+
+              // ==========================================
+              // 1. LOGO PRINCIPAL SUPERIOR (logo.png)
+              // ==========================================
               FadeTransition(
                 opacity: _logoOpacity,
                 child: ScaleTransition(
@@ -258,7 +239,12 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                 ),
               ),
+
               const Spacer(flex: 2),
+
+              // ==========================================
+              // 2. LOGO TÍTULO CON ANIMACIÓN (logo_title.png)
+              // ==========================================
               SlideTransition(
                 position: _titleSlide,
                 child: ScaleTransition(
@@ -282,7 +268,12 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                 ),
               ),
+
               const Spacer(flex: 3),
+
+              // ==========================================
+              // 3. INDICADOR DE CARGA
+              // ==========================================
               const SizedBox(
                 width: 28,
                 height: 28,
