@@ -183,6 +183,15 @@ class AuthService {
         photoUrl = await uploadProfileImage(uid, profileImage);
       }
 
+<<<<<<< HEAD
+=======
+    final number = _normalize(phone);
+    final uid = number.replaceAll(RegExp(r'[^0-9]'), '');
+    final existing = await _fs.getUserByPhone(number);
+    if (existing != null) {
+      currentUser = existing;
+    } else {
+>>>>>>> 3aef7d0d7ce0688df6df9e74524f093dc16c6c5c
       currentUser = User(
         uid: uid,
         name: name,
@@ -353,6 +362,7 @@ class AuthService {
     }
   }
 
+<<<<<<< HEAD
   // ==========================================
   // MÉTODOS AUXILIARES
   // ==========================================
@@ -376,5 +386,16 @@ class AuthService {
     await _fbAuth.signOut();
     currentUser = null;
     _verificationId = null;
+=======
+  /// Cierra sesión de forma asíncrona en Firebase y limpia variables en memoria.
+  Future<void> signOut() async {
+    currentUser = null;
+    _verificationId = null;
+    try {
+      await _fbAuth.signOut();
+    } catch (e) {
+      print('Error al cerrar sesión: $e');
+    }
+>>>>>>> 3aef7d0d7ce0688df6df9e74524f093dc16c6c5c
   }
 }

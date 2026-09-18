@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../../services/auth_service.dart';
 import '../../services/location_service.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -11,6 +12,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   int _selectedIndex = 0;
   GoogleMapController? _mapController;
 
@@ -20,7 +22,6 @@ class _HomeScreenState extends State<HomeScreen> {
     zoom: 15,
   );
 
-  // Variable para guardar el texto de la ubicación actual
   String _currentAddress = 'Obteniendo ubicación...';
 
   @override
@@ -50,9 +51,87 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _signOut() async {
+    await AuthService.instance.signOut();
+    if (!mounted) return;
+    // Redirige al Login eliminando las pantallas anteriores de la pila
+    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final user = AuthService.instance.currentUser;
+
     return Scaffold(
+      key: _scaffoldKey,
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            UserAccountsDrawerHeader(
+              decoration: const BoxDecoration(
+                color: Color(0xFFF9D408),
+              ),
+              accountName: Text(
+                user?.name ?? 'Usuario',
+                style: const TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
+              ),
+              accountEmail: Text(
+                user?.email ?? 'correo@ejemplo.com',
+                style: const TextStyle(color: Colors.black87),
+              ),
+              currentAccountPicture: const CircleAvatar(
+                backgroundColor: Colors.white,
+                child: Icon(
+                  Icons.person,
+                  size: 40,
+                  color: Colors.black,
+                ),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.history),
+              title: const Text('Historial de viajes'),
+              onTap: () {
+                Navigator.pop(context);
+                // TODO: Navegar a historial
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.account_balance_wallet),
+              title: const Text('Billetera'),
+              onTap: () {
+                Navigator.pop(context);
+                // TODO: Navegar a billetera
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.settings),
+              title: const Text('Configuración'),
+              onTap: () {
+                Navigator.pop(context);
+                // TODO: Navegar a configuración
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.red),
+              title: const Text(
+                'Cerrar sesión',
+                style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+              ),
+              onTap: () async {
+                Navigator.pop(context);
+                await _signOut();
+              },
+            ),
+          ],
+        ),
+      ),
       body: Stack(
         children: [
           GoogleMap(
@@ -65,7 +144,7 @@ class _HomeScreenState extends State<HomeScreen> {
             compassEnabled: false,
           ),
 
-          // Botones superiores (Perfil y Notificaciones)
+          // Botones superiores
           Positioned(
             top: 40,
             left: 20,
@@ -75,11 +154,11 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 IconButton(
                   onPressed: () {
-                    // TODO: Navegar a perfil
+                    _scaffoldKey.currentState?.openDrawer();
                   },
                   icon: const Icon(Icons.account_circle),
                   color: Colors.black,
-                  iconSize: 30,
+                  iconSize: 32,
                 ),
                 IconButton(
                   onPressed: () {
@@ -93,14 +172,14 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
 
-          // Tarjeta inferior con el nuevo diseño de ruta
+          // Tarjeta inferior con diseño de ruta
           Positioned(
             bottom: 0,
             left: 0,
             right: 0,
             child: Container(
               decoration: const BoxDecoration(
-                color: Color(0xFFF9D408), // Color amarillo principal
+                color: Color(0xFFF9D408),
                 borderRadius: BorderRadius.only(
                   topLeft: Radius.circular(24),
                   topRight: Radius.circular(24),
@@ -118,7 +197,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Título e Ícono
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: const [
@@ -131,7 +209,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                         Icon(
-                          Icons.two_wheeler, // Ícono representativo de mototaxi
+                          Icons.two_wheeler,
                           size: 32,
                           color: Colors.black,
                         ),
@@ -139,7 +217,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(height: 15),
 
-                    // Campo ORIGEN (De:)
+                    // Campo ORIGEN
                     GestureDetector(
                       onTap: () {
                         Navigator.of(context).pushNamed('/search-trip');
@@ -184,7 +262,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                     const SizedBox(height: 10),
 
-                    // Campo DESTINO (A:)
+                    // Campo DESTINO
                     GestureDetector(
                       onTap: () {
                         Navigator.of(context).pushNamed('/search-trip');

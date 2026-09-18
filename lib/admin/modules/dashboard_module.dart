@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-// import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../theme.dart';
 import '../../models/trip_model.dart';
 import '../../models/driver_model.dart';
@@ -76,28 +76,6 @@ class DashboardModule extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                     child: Stack(
                       children: [
-                        // TODO(Equipo): Descomentar este bloque StreamBuilder y GoogleMap cuando se haya habilitado
-                        // "Maps JavaScript API" en Google Cloud para el entorno Web y se haya configurado la facturación.
-                        Container(
-                          color: Colors.grey.shade200,
-                          width: double.infinity,
-                          height: double.infinity,
-                          child: const Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.map_outlined, size: 48, color: Colors.grey),
-                                SizedBox(height: 12),
-                                Text(
-                                  'Mapa en vivo inactivo\n(Requiere habilitar Maps JavaScript API)',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(color: Colors.black54, fontWeight: FontWeight.w600),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        /*
                         StreamBuilder<List<Driver>>(
                           stream: fs.allDrivers(),
                           builder: (context, dsnap) {
@@ -123,14 +101,9 @@ class DashboardModule extends StatelessWidget {
                               markers: markers,
                               myLocationEnabled: false,
                               zoomControlsEnabled: true,
-                              onMapCreated: (GoogleMapController controller) {
-                                // Evitar warnings si no está configurada la facturación en Google Cloud
-                              },
-                              cloudMapId: null, // Desactiva mapas cloud-based temporalmente si da error de permisos.
                             );
                           },
                         ),
-                        */
                         Positioned(
                           top: 10,
                           left: 10,

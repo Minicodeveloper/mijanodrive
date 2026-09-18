@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../services/firestore_service.dart';
-import '../../models/trip_model.dart';
 
 class ActiveTripScreen extends StatefulWidget {
   final String destination;
