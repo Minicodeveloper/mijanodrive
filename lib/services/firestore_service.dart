@@ -156,12 +156,12 @@ class FirestoreService {
       .snapshots()
       .map((q) => q.docs.map((d) => Trip.fromFirestore(d)).toList());
 
-  /// Conductores pendientes de aprobación.
+  /// Conductores pendientes de aprobación (que no han sido rechazados definitivamente).
   Stream<List<Driver>> pendingDrivers() => _db
       .collection('drivers')
       .where('isApproved', isEqualTo: false)
       .snapshots()
-      .map((q) => q.docs.map((d) => Driver.fromFirestore(d)).toList());
+      .map((q) => q.docs.map((d) => Driver.fromFirestore(d)).where((d) => d.toMap()['isRejected'] != true).toList());
 
   /// Todos los conductores (aprobados + pendientes) para el mapa en vivo.
   Stream<List<Driver>> allDrivers() => _db
@@ -174,11 +174,23 @@ class FirestoreService {
       .doc(uid)
       .set({'isApproved': approved}, SetOptions(merge: true));
 
-  Future<void> updateDriverStatus(String uid, {bool? isApproved, bool? isBlocked}) {
+  Future<void> updateDriverStatus(String uid, {bool? isApproved, bool? isBlocked, bool? isRejected}) {
     final Map<String, dynamic> data = {};
     if (isApproved != null) data['isApproved'] = isApproved;
     if (isBlocked != null) data['isBlocked'] = isBlocked;
+    if (isRejected != null) data['isRejected'] = isRejected;
     return _db.collection('drivers').doc(uid).set(data, SetOptions(merge: true));
+  }
+
+  /// Notificar al conductor
+  Future<void> notifyDriver(String driverId, String title, String body) async {
+    await _db.collection('notifications').add({
+      'userId': driverId,
+      'title': title,
+      'body': body,
+      'createdAt': FieldValue.serverTimestamp(),
+      'isRead': false,
+    });
   }
 
   /// Añadir transacción manual y actualizar billetera
