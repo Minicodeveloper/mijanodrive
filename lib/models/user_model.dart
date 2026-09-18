@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum UserRole { passenger, driver }
+enum UserRole { passenger, driver, admin, operator }
 
 class User {
   final String uid;
@@ -43,6 +43,12 @@ class User {
   }
 
   factory User.fromMap(Map<String, dynamic> map) {
+    UserRole parsedRole = UserRole.passenger;
+    final r = map['role'];
+    if (r == 'driver') parsedRole = UserRole.driver;
+    else if (r == 'admin' || r == 'superAdmin') parsedRole = UserRole.admin;
+    else if (r == 'operator') parsedRole = UserRole.operator;
+
     return User(
       uid: map['uid'] ?? '',
       phone: map['phone'] ?? '',
@@ -50,7 +56,7 @@ class User {
       name: map['name'],
       dni: map['dni'],
       photoUrl: map['photoUrl'],
-      role: (map['role'] ?? 'passenger') == 'driver' ? UserRole.driver : UserRole.passenger,
+      role: parsedRole,
       createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       biometricEnabled: map['biometricEnabled'] ?? false,
       city: map['city'],

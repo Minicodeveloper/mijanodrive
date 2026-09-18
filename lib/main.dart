@@ -203,6 +203,10 @@ class _SplashScreenState extends State<SplashScreen>
       final role = AuthService.instance.currentUser?.role;
       if (role == UserRole.driver) {
         Navigator.of(context).pushReplacementNamed('/driver');
+      } else if (role == UserRole.admin || role == UserRole.operator) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => AdminApp(role: role == UserRole.admin ? AdminRole.superAdmin : AdminRole.operator)),
+        );
       } else {
         Navigator.of(context).pushReplacementNamed('/home');
       }
