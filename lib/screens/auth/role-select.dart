@@ -5,8 +5,11 @@ class RoleSelectScreen extends StatelessWidget {
   const RoleSelectScreen({super.key});
 
   void _navigateToLogin(BuildContext context, String role) {
-    // Redirige a la pantalla de login pasando el rol como argumento por si lo necesitas luego
-    Navigator.of(context).pushNamed('/login-screen', arguments: {'role': role});
+    
+    Navigator.of(context).pushNamed(
+      '/login', 
+      arguments: {'role': role},
+    );
   }
 
   @override
@@ -14,7 +17,7 @@ class RoleSelectScreen extends StatelessWidget {
     final size = MediaQuery.of(context).size;
 
     return Scaffold(
-      backgroundColor: MijanoTheme.sol, // Mantiene el fondo amarillo corporativo
+      backgroundColor: MijanoTheme.sol, 
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 28.0),
@@ -44,7 +47,7 @@ class RoleSelectScreen extends StatelessWidget {
               const Spacer(),
 
               // ==========================================
-              // OPCIÓN: COMO PASAJERO
+              // OPCIÓN: COMO PASAJERO -> Lleva al Login con rol pasajero
               // ==========================================
               _buildRoleCard(
                 context: context,
@@ -55,7 +58,7 @@ class RoleSelectScreen extends StatelessWidget {
               const SizedBox(height: 32),
 
               // ==========================================
-              // OPCIÓN: COMO CONDUCTOR
+              // OPCIÓN: COMO CONDUCTOR -> Lleva al Login con rol conductor
               // ==========================================
               _buildRoleCard(
                 context: context,
@@ -71,7 +74,7 @@ class RoleSelectScreen extends StatelessWidget {
     );
   }
 
-  // Tarjeta personalizada con la sombra y bordes redondeados de la imagen
+  
   Widget _buildRoleCard({
     required BuildContext context,
     required String title,
@@ -93,12 +96,12 @@ class RoleSelectScreen extends StatelessWidget {
                 color: Colors.black.withValues(alpha: 0.18),
                 blurRadius: 15,
                 spreadRadius: 1,
-                offset: const Offset(0, 8), // Sombra inferior para dar efecto elevado
+                offset: const Offset(0, 8), 
               ),
               BoxShadow(
                 color: Colors.white.withValues(alpha: 0.3),
                 blurRadius: 10,
-                offset: const Offset(-2, -2), // Brillo superior ligero
+                offset: const Offset(-2, -2), 
               ),
             ],
           ),

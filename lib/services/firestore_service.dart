@@ -96,6 +96,15 @@ class FirestoreService {
       .snapshots()
       .map((q) => q.docs.map((d) => Trip.fromFirestore(d)).toList());
 
+  
+  /// Viajes completados por un conductor (para la pantalla de historial).
+  Stream<List<Trip>> completedTripsForDriver(String driverId) => _db
+      .collection('trips')
+      .where('driverId', isEqualTo: driverId)
+      .where('status', isEqualTo: 'completed')
+      .snapshots()
+      .map((q) => q.docs.map((d) => Trip.fromFirestore(d)).toList());
+
   // ---- Billetera ----
   Future<Wallet> getOrCreateWallet(String uid) async {
     try {
