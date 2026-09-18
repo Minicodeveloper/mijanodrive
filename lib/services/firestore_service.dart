@@ -208,6 +208,25 @@ class FirestoreService {
       .doc(id)
       .set({'status': 'resolved'}, SetOptions(merge: true));
 
+  /// Todos los usuarios
+  Stream<List<Map<String, dynamic>>> allUsers() => _db
+      .collection('users')
+      .snapshots()
+      .map((q) => q.docs.map((d) => {'uid': d.id, ...d.data()}).toList());
+
+  Future<void> updateUserStatus(String uid, {bool? isReported}) {
+    final Map<String, dynamic> data = {};
+    if (isReported != null) data['isReported'] = isReported;
+    return _db.collection('users').doc(uid).set(data, SetOptions(merge: true));
+  }
+
+  /// Todas las reservas
+  Stream<List<Map<String, dynamic>>> allReservations() => _db
+      .collection('reservations')
+      .orderBy('scheduledAt', descending: false)
+      .snapshots()
+      .map((q) => q.docs.map((d) => {'id': d.id, ...d.data()}).toList());
+
   /// Todas las ciudades para el módulo de tarifas.
   Stream<List<Map<String, dynamic>>> allCities() => _db
       .collection('cities')

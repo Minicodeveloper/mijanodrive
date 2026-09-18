@@ -13,9 +13,7 @@ class SecurityModule extends StatelessWidget {
         children: [
           AdminHeader('Seguridad y permisos', 'Roles: SuperAdmin (dueños) y Operador (gerente)'),
           SizedBox(height: 8),
-          // TODO(Equipo): Implementar control de Firebase Auth (Custom Claims).
-          // Aquí se debería permitir crear nuevos operadores o revocar sus accesos.
-          Text('Gestión de accesos y revocación de tokens.', style: TextStyle(color: Colors.black54)),
+          Text('Gestión de accesos y revocación de tokens. Este módulo requiere configuración avanzada mediante Cloud Functions o Firebase Admin SDK (Plan Blaze). Por ahora, el rol se valida leyendo el campo "role" directamente desde Firestore.', style: TextStyle(color: Colors.black54)),
         ],
       ),
     );
