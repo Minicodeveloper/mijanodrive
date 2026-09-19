@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-// import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../theme.dart';
 import '../../models/trip_model.dart';
 import '../../models/driver_model.dart';
@@ -63,138 +63,172 @@ class DashboardModule extends StatelessWidget {
           
           const SizedBox(height: 24),
           
-          // Sección de Mapas y Gráficos
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final isWide = constraints.maxWidth > 800;
-              
-              final mapWidget = adminCard(
-                child: SizedBox(
-                  height: 350,
-                  width: double.infinity,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Stack(
-                      children: [
-                        // TODO(Equipo): Descomentar este bloque StreamBuilder y GoogleMap cuando se haya habilitado
-                        // "Maps JavaScript API" en Google Cloud para el entorno Web y se haya configurado la facturación.
-                        Container(
-                          color: Colors.grey.shade200,
-                          width: double.infinity,
-                          height: double.infinity,
-                          child: const Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.map_outlined, size: 48, color: Colors.grey),
-                                SizedBox(height: 12),
-                                Text(
-                                  'Mapa en vivo inactivo\n(Requiere habilitar Maps JavaScript API)',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(color: Colors.black54, fontWeight: FontWeight.w600),
+          // SECCIÓN DE SOLICITUDES PENDIENTES
+          const AdminHeader('Solicitudes Pendientes', 'Revisión de documentos de nuevos conductores'),
+          adminCard(
+            child: StreamBuilder<List<Driver>>(
+              stream: fs.pendingDrivers(),
+              builder: (context, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                
+                final List<Driver> pending = snap.data ?? [];
+                if (pending.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('No hay solicitudes pendientes', style: TextStyle(color: Colors.black54)),
+                  );
+                }
+
+                return ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: pending.length,
+                  itemBuilder: (ctx, i) {
+                    final d = pending[i];
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      leading: const CircleAvatar(
+                        backgroundColor: MijanoTheme.sol,
+                        child: Icon(Icons.person, color: MijanoTheme.ink),
+                      ),
+                      title: Text('Placa: ${d.plate} · Licencia: ${d.licenseNumber}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Ciudad: ${d.city}'),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 12,
+                            runSpacing: 12,
+                            children: [
+                              OutlinedButton.icon(
+                                icon: const Icon(Icons.visibility, size: 18),
+                                label: const Text('Ver Doc'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: MijanoTheme.ink,
+                                  side: const BorderSide(color: Colors.black26),
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                                 ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        /*
-                        StreamBuilder<List<Driver>>(
-                          stream: fs.allDrivers(),
-                          builder: (context, dsnap) {
-                            final drivers = dsnap.data ?? [];
-                            final activeDrivers = drivers.where((d) => d.currentLatitude != null && d.currentLongitude != null).toList();
-                            
-                            final markers = activeDrivers.map((d) => Marker(
-                                      markerId: MarkerId(d.uid),
-                                      position: LatLng(d.currentLatitude!, d.currentLongitude!),
-                                      infoWindow: InfoWindow(title: 'Cond. ${d.plate}', snippet: d.isAvailable ? 'Libre' : 'Ocupado'),
-                                      icon: BitmapDescriptor.defaultMarkerWithHue(d.isAvailable ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueRed),
-                                    )).toSet();
-
-                            // Si hay conductores, centrar en el primero, sino en Lima
-                            final initialLat = activeDrivers.isNotEmpty ? activeDrivers.first.currentLatitude! : -12.046374;
-                            final initialLng = activeDrivers.isNotEmpty ? activeDrivers.first.currentLongitude! : -77.042793;
-
-                            return GoogleMap(
-                              initialCameraPosition: CameraPosition(
-                                target: LatLng(initialLat, initialLng),
-                                zoom: 11,
+                                onPressed: () {
+                                  showDialog(
+                                    context: context,
+                                    builder: (_) => AlertDialog(
+                                      title: const Text('Documentos del Conductor'),
+                                      content: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text('SOAT: ${d.toMap()['soatPhotoUrl'] ?? 'Sin subir'}'),
+                                          const SizedBox(height: 8),
+                                          Text('Licencia: ${d.toMap()['licensePhotoUrl'] ?? 'Sin subir'}'),
+                                          const SizedBox(height: 16),
+                                          const Text('(Las imágenes se previsualizarán aquí)', style: TextStyle(color: Colors.black54, fontStyle: FontStyle.italic)),
+                                        ],
+                                      ),
+                                      actions: [
+                                        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cerrar', style: TextStyle(color: MijanoTheme.ink)))
+                                      ],
+                                    )
+                                  );
+                                },
                               ),
-                              markers: markers,
-                              myLocationEnabled: false,
-                              zoomControlsEnabled: true,
-                              onMapCreated: (GoogleMapController controller) {
-                                // Evitar warnings si no está configurada la facturación en Google Cloud
-                              },
-                              cloudMapId: null, // Desactiva mapas cloud-based temporalmente si da error de permisos.
-                            );
-                          },
-                        ),
-                        */
-                        Positioned(
-                          top: 10,
-                          left: 10,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.9),
-                              borderRadius: BorderRadius.circular(20),
-                              boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
-                            ),
-                            child: const Text('Conectado en vivo', style: TextStyle(fontWeight: FontWeight.bold)),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-              
-              final chartWidget = role == AdminRole.superAdmin ? adminCard(
-                child: Container(
-                  height: 350,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.bar_chart, size: 48, color: Colors.grey),
-                        SizedBox(height: 8),
-                        Text('Actividad Semanal', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 16)),
-                        SizedBox(height: 8),
-                        Text('Este módulo se integrará en una fase posterior del desarrollo.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 12)),
-                      ],
-                    ),
-                  ),
-                ),
-              ) : const SizedBox.shrink();
-              
-              if (role == AdminRole.operator) {
-                // Operador solo ve el mapa en ancho completo
-                return mapWidget;
-              }
-
-              if (isWide) {
-                return Row(
-                  children: [
-                    Expanded(flex: 2, child: mapWidget),
-                    const SizedBox(width: 16),
-                    Expanded(flex: 1, child: chartWidget),
-                  ],
+                              ElevatedButton.icon(
+                                icon: const Icon(Icons.close, size: 18),
+                                label: const Text('Rechazar'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red.shade50, 
+                                  foregroundColor: Colors.red.shade700, 
+                                  elevation: 0,
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                ),
+                                onPressed: () async {
+                                  await fs.updateDriverStatus(d.uid, isRejected: true);
+                                  await fs.notifyDriver(d.uid, 'Solicitud Rechazada', 'Revisa tus documentos e inténtalo de nuevo.');
+                                },
+                              ),
+                              ElevatedButton.icon(
+                                icon: const Icon(Icons.check, size: 18),
+                                label: const Text('Aprobar'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green.shade50, 
+                                  foregroundColor: Colors.green.shade700, 
+                                  elevation: 0,
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                ),
+                                onPressed: () async {
+                                  await fs.updateDriverStatus(d.uid, isApproved: true, isRejected: false);
+                                  await fs.notifyDriver(d.uid, '¡Aprobado!', 'Tus documentos han sido aprobados.');
+                                },
+                              ),
+                            ],
+                          )
+                        ],
+                      ),
+                    );
+                  },
                 );
-              }
-              return Column(
-                children: [
-                  mapWidget,
-                  const SizedBox(height: 16),
-                  chartWidget,
-                ],
-              );
-            },
+              },
+            ),
+          ),
+
+          const SizedBox(height: 24),
+          const AdminHeader('Mapa en vivo', 'Ubicación actual de conductores libres y ocupados'),
+          
+          // MAPA
+          adminCard(
+            child: SizedBox(
+              height: 350,
+              width: double.infinity,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Stack(
+                  children: [
+                    StreamBuilder<List<Driver>>(
+                      stream: fs.allDrivers(),
+                      builder: (context, dsnap) {
+                        final drivers = dsnap.data ?? [];
+                        final activeDrivers = drivers.where((d) => d.currentLatitude != null && d.currentLongitude != null).toList();
+                        
+                        final markers = activeDrivers.map((d) => Marker(
+                                  markerId: MarkerId(d.uid),
+                                  position: LatLng(d.currentLatitude!, d.currentLongitude!),
+                                  infoWindow: InfoWindow(title: 'Cond. ${d.plate}', snippet: d.isAvailable ? 'Libre' : 'Ocupado'),
+                                  icon: BitmapDescriptor.defaultMarkerWithHue(d.isAvailable ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueRed),
+                                )).toSet();
+
+                        final initialLat = activeDrivers.isNotEmpty ? activeDrivers.first.currentLatitude! : -12.046374;
+                        final initialLng = activeDrivers.isNotEmpty ? activeDrivers.first.currentLongitude! : -77.042793;
+
+                        return GoogleMap(
+                          initialCameraPosition: CameraPosition(
+                            target: LatLng(initialLat, initialLng),
+                            zoom: 11,
+                          ),
+                          markers: markers,
+                          myLocationEnabled: false,
+                          zoomControlsEnabled: true,
+                        );
+                      },
+                    ),
+                    Positioned(
+                      top: 10,
+                      left: 10,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.9),
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
+                        ),
+                        child: const Text('Conectado en vivo', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
           
           const SizedBox(height: 24),

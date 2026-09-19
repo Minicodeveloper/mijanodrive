@@ -8,9 +8,6 @@ import 'firebase_options.dart';
 import 'theme.dart';
 import 'admin/admin_login_screen.dart';
 
-import 'models/user_model.dart';
-import 'services/auth_service.dart';
-
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/register_screen.dart';
 import 'screens/auth/profile_setup_screen.dart';
@@ -24,6 +21,7 @@ import 'screens/shared/profile_screen.dart';
 import 'screens/driver/driver_dashboard_screen.dart';
 import 'screens/driver/driver_active_trip_screen.dart';
 import 'screens/auth/role-select.dart';
+import 'screens/driver/driver_main_layout.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,27 +29,14 @@ Future<void> main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
-  } catch (_) {}
+  } catch (_) {
+    
+  }
   try {
     await Hive.initFlutter();
   } catch (_) {}
-  // En web se sirve el PANEL ADMIN (con login); en móvil, la app de pasajero/conductor.
-  runApp(kIsWeb ? const _AdminWebApp() : const MijanoDriveApp());
-}
-
-/// Wrapper para web: muestra el login admin como home.
-class _AdminWebApp extends StatelessWidget {
-  const _AdminWebApp();
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Mijano Drive · Panel',
-      debugShowCheckedModeBanner: false,
-      theme: MijanoTheme.light,
-      home: const AdminLoginScreen(),
-    );
-  }
+  
+  runApp(kIsWeb ? const AdminApp() : const MijanoDriveApp());
 }
 
 class MijanoDriveApp extends StatelessWidget {
@@ -76,7 +61,9 @@ class MijanoDriveApp extends StatelessWidget {
         page = const LoginScreen();
         break;
       case '/register':
-        page = const RegisterScreen();
+        
+        final initialRole = args['initialRole'] ?? 'passenger';
+        page = RegisterScreen(initialRole: initialRole);
         break;
       case '/role-select':
         page = const RoleSelectScreen();
@@ -98,8 +85,7 @@ class MijanoDriveApp extends StatelessWidget {
           distanceKm: (args['distanceKm'] ?? 0).toDouble(),
           city: args['city'] ?? 'Tarapoto',
           origin: args['origin'] ?? const GeoPoint(-6.4869, -76.3654),
-          destinationGeoPoint:
-              args['destinationGeoPoint'] ?? const GeoPoint(-6.4869, -76.3654),
+          destinationGeoPoint: args['destinationGeoPoint'] ?? const GeoPoint(-6.4869, -76.3654),
         );
         break;
       case '/active-trip':
@@ -122,7 +108,7 @@ class MijanoDriveApp extends StatelessWidget {
         page = const ProfileScreen();
         break;
       case '/driver':
-        page = const DriverDashboardScreen();
+        page = const DriverMainLayout();
         break;
       case '/driver-active-trip':
         page = DriverActiveTripScreen(tripId: args['tripId'] ?? '');
@@ -149,10 +135,12 @@ class SplashScreen extends StatefulWidget {
 class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
-
+  
+  
   late Animation<double> _logoScale;
   late Animation<double> _logoOpacity;
 
+  
   late Animation<Offset> _titleSlide;
   late Animation<double> _titleScale;
   late Animation<double> _titleOpacity;
@@ -161,11 +149,13 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
 
+    
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1800),
     );
 
+    
     _logoScale = Tween<double>(begin: 0.7, end: 1.0).animate(
       CurvedAnimation(
         parent: _controller,
@@ -179,14 +169,19 @@ class _SplashScreenState extends State<SplashScreen>
       ),
     );
 
-    _titleSlide = Tween<Offset>(begin: const Offset(0.0, 0.4), end: Offset.zero)
-        .animate(
-          CurvedAnimation(
-            parent: _controller,
-            curve: const Interval(0.3, 0.9, curve: Curves.easeOutBack),
-          ),
-        );
+    
+    
+    _titleSlide = Tween<Offset>(
+      begin: const Offset(0.0, 0.4),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.3, 0.9, curve: Curves.easeOutBack),
+      ),
+    );
 
+    
     _titleScale = Tween<double>(begin: 0.85, end: 1.0).animate(
       CurvedAnimation(
         parent: _controller,
@@ -194,6 +189,7 @@ class _SplashScreenState extends State<SplashScreen>
       ),
     );
 
+    
     _titleOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _controller,
@@ -201,8 +197,10 @@ class _SplashScreenState extends State<SplashScreen>
       ),
     );
 
+  
     _controller.forward();
 
+    
     _go();
   }
 
@@ -214,35 +212,23 @@ class _SplashScreenState extends State<SplashScreen>
 
   Future<void> _go() async {
     await Future.delayed(const Duration(milliseconds: 3000));
-    if (!mounted) return;
-
-    // Verificar si existe una sesión activa persistida en Firebase
-    final isLoggedIn = await AuthService.instance.tryRestoreSession();
-
-    if (!mounted) return;
-
-    if (isLoggedIn) {
-      final role = AuthService.instance.currentUser?.role;
-      if (role == UserRole.driver) {
-        Navigator.of(context).pushReplacementNamed('/driver');
-      } else {
-        Navigator.of(context).pushReplacementNamed('/home');
-      }
-    } else {
-      Navigator.of(context).pushReplacementNamed('/role-select');
-    }
+    if (mounted) Navigator.of(context).pushReplacementNamed('/role-select');
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: MijanoTheme.sol,
+      backgroundColor: MijanoTheme.sol, 
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
           child: Column(
             children: [
               const Spacer(flex: 2),
+
+              // ==========================================
+              // 1. LOGO PRINCIPAL SUPERIOR (logo.png)
+              // ==========================================
               FadeTransition(
                 opacity: _logoOpacity,
                 child: ScaleTransition(
@@ -262,7 +248,12 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                 ),
               ),
+
               const Spacer(flex: 2),
+
+              // ==========================================
+              // 2. LOGO TÍTULO CON ANIMACIÓN (logo_title.png)
+              // ==========================================
               SlideTransition(
                 position: _titleSlide,
                 child: ScaleTransition(
@@ -286,7 +277,12 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                 ),
               ),
+
               const Spacer(flex: 3),
+
+              // ==========================================
+              // 3. INDICADOR DE CARGA
+              // ==========================================
               const SizedBox(
                 width: 28,
                 height: 28,

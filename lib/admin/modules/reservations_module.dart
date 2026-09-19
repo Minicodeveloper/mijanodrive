@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../theme.dart';
+import '../../services/firestore_service.dart';
 import 'shared_admin_widgets.dart';
 
 class ReservationsModule extends StatefulWidget {
@@ -12,44 +13,10 @@ class ReservationsModule extends StatefulWidget {
 class _ReservationsModuleState extends State<ReservationsModule> {
   String _cityFilter = 'Todas';
   String _statusFilter = 'Todos';
-
-  // TODO(Equipo): Reemplazar por stream real de FirestoreService para collection('reservations')
-  List<Map<String, dynamic>> _fetchMockReservations() {
-    return [
-      {
-        'id': 'res_001',
-        'passengerId': 'Juan Pérez',
-        'driverId': 'Sin asignar',
-        'origin': 'Av. Larco 123',
-        'destination': 'Aeropuerto Jorge Chavez',
-        'scheduledAt': '2026-10-15 08:00 AM',
-        'status': 'pending',
-        'city': 'Lima',
-        'fareAmount': 45.0,
-      },
-      {
-        'id': 'res_002',
-        'passengerId': 'Maria Gomez',
-        'driverId': 'Carlos Conductor',
-        'origin': 'Plaza de Armas',
-        'destination': 'Terminal Terrestre',
-        'scheduledAt': '2026-10-15 09:30 AM',
-        'status': 'assigned',
-        'city': 'Trujillo',
-        'fareAmount': 15.5,
-      },
-    ];
-  }
+  final fs = FirestoreService.instance;
 
   @override
   Widget build(BuildContext context) {
-    final allRes = _fetchMockReservations();
-    final filtered = allRes.where((r) {
-      final passCity = _cityFilter == 'Todas' || r['city'] == _cityFilter;
-      final passStatus = _statusFilter == 'Todos' || r['status'] == _statusFilter;
-      return passCity && passStatus;
-    }).toList();
-
     return SingleChildScrollView(
       padding: const EdgeInsets.all(28),
       child: Column(
@@ -84,40 +51,56 @@ class _ReservationsModuleState extends State<ReservationsModule> {
                   ],
                 ),
                 const SizedBox(height: 20),
-                if (filtered.isEmpty)
-                  const Text('No hay reservas agendadas.')
-                else
-                  ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: filtered.length,
-                    itemBuilder: (ctx, i) {
-                      final r = filtered[i];
-                      return ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: r['status'] == 'assigned' ? Colors.blue.shade100 : Colors.grey.shade200,
-                          child: const Icon(Icons.schedule, color: MijanoTheme.ink),
-                        ),
-                        title: Text('${r['origin']} → ${r['destination']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                        subtitle: Padding(
-                          padding: const EdgeInsets.only(top: 4.0),
-                          child: Text(
-                            'Pasajero: ${r['passengerId']}\nCond: ${r['driverId']}\nHora: ${r['scheduledAt']}',
-                            style: const TextStyle(height: 1.3),
+                StreamBuilder<List<Map<String, dynamic>>>(
+                  stream: fs.allReservations(),
+                  builder: (context, snap) {
+                    if (snap.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    final allRes = snap.data ?? [];
+                    final filtered = allRes.where((r) {
+                      final passCity = _cityFilter == 'Todas' || r['city'] == _cityFilter;
+                      final passStatus = _statusFilter == 'Todos' || r['status'] == _statusFilter;
+                      return passCity && passStatus;
+                    }).toList();
+
+                    if (filtered.isEmpty) {
+                      return const Text('No hay reservas agendadas.');
+                    }
+
+                    return ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: filtered.length,
+                      itemBuilder: (ctx, i) {
+                        final r = filtered[i];
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: r['status'] == 'assigned' ? Colors.blue.shade100 : Colors.grey.shade200,
+                            child: const Icon(Icons.schedule, color: MijanoTheme.ink),
                           ),
-                        ),
-                        isThreeLine: true,
-                        trailing: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text('S/ ${r['fareAmount'].toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                            Text(r['status'].toString().toUpperCase(), style: const TextStyle(fontSize: 9, color: Colors.black54)),
-                          ],
-                        ),
-                      );
-                    },
-                  )
+                          title: Text('${r['origin']} → ${r['destination']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 4.0),
+                            child: Text(
+                              'Pasajero: ${r['passengerId']}\nCond: ${r['driverId'] ?? 'Sin asignar'}\nHora: ${r['scheduledAt']}',
+                              style: const TextStyle(height: 1.3),
+                            ),
+                          ),
+                          isThreeLine: true,
+                          trailing: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text('S/ ${(r['fareAmount'] as num?)?.toStringAsFixed(2) ?? '0.00'}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                              Text(r['status']?.toString().toUpperCase() ?? '', style: const TextStyle(fontSize: 9, color: Colors.black54)),
+                            ],
+                          ),
+                        );
+                      },
+                    );
+                  },
+                )
               ],
             ),
           )
