@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../theme.dart';
 import '../../models/trip_model.dart';
@@ -32,11 +33,9 @@ class DashboardModule extends StatelessWidget {
                 builder: (context, tsnap) {
                   final trips = tsnap.data ?? [];
                   
-                  // Calculando datos reales a partir de los viajes activos
                   final dineroEnCurso = trips.fold<double>(
                       0.0, (sum, t) => sum + t.fareAmount);
                   
-                  // KPIs principales
                   return LayoutBuilder(
                     builder: (context, constraints) {
                       final isMobile = constraints.maxWidth < 600;
@@ -63,12 +62,21 @@ class DashboardModule extends StatelessWidget {
           
           const SizedBox(height: 24),
           
-          // SECCIÓN DE SOLICITUDES PENDIENTES
           const AdminHeader('Solicitudes Pendientes', 'Revisión de documentos de nuevos conductores'),
           adminCard(
             child: StreamBuilder<List<Driver>>(
               stream: fs.pendingDrivers(),
               builder: (context, snap) {
+                if (snap.hasError) {
+                  return Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      'Error de permisos o conexión:\n${snap.error}',
+                      style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                    ),
+                  );
+                }
+
                 if (snap.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
@@ -87,17 +95,37 @@ class DashboardModule extends StatelessWidget {
                   itemCount: pending.length,
                   itemBuilder: (ctx, i) {
                     final d = pending[i];
+                    final rawMap = d.toMap();
+                    
+                    final name = rawMap['name'] ?? rawMap['fullName'] ?? rawMap['nombres'] ?? 'Sin nombre';
+                    final email = rawMap['email'] ?? rawMap['correo'] ?? rawMap['mail'] ?? 'Sin correo';
+                    final photoUrl = rawMap['photoUrl'];
+                    
+                    final plate = d.plate.isNotEmpty ? d.plate : (rawMap['vehiclePlate'] ?? rawMap['plate'] ?? 'N/A');
+                    final brand = rawMap['vehicleBrand'] ?? '';
+                    final model = rawMap['vehicleModel'] ?? rawMap['vehicle'] ?? 'N/A';
+                    final vehicle = brand.isNotEmpty ? '$brand $model' : model;
+                    
+                    final Map<String, dynamic> documents = rawMap['documents'] ?? {};
+
                     return ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      leading: const CircleAvatar(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      leading: CircleAvatar(
                         backgroundColor: MijanoTheme.sol,
-                        child: Icon(Icons.person, color: MijanoTheme.ink),
+                        backgroundImage: (photoUrl != null && photoUrl.isNotEmpty)
+                            ? NetworkImage(photoUrl)
+                            : null,
+                        child: (photoUrl == null || photoUrl.isEmpty)
+                            ? const Icon(Icons.person, color: MijanoTheme.ink)
+                            : null,
                       ),
-                      title: Text('Placa: ${d.plate} · Licencia: ${d.licenseNumber}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                      title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Ciudad: ${d.city}'),
+                          Text(email, style: const TextStyle(color: Colors.black54, fontSize: 12)),
+                          const SizedBox(height: 4),
+                          Text('Placa: $plate · Vehículo: $vehicle'),
                           const SizedBox(height: 8),
                           Wrap(
                             spacing: 12,
@@ -112,26 +140,7 @@ class DashboardModule extends StatelessWidget {
                                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                                 ),
                                 onPressed: () {
-                                  showDialog(
-                                    context: context,
-                                    builder: (_) => AlertDialog(
-                                      title: const Text('Documentos del Conductor'),
-                                      content: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text('SOAT: ${d.toMap()['soatPhotoUrl'] ?? 'Sin subir'}'),
-                                          const SizedBox(height: 8),
-                                          Text('Licencia: ${d.toMap()['licensePhotoUrl'] ?? 'Sin subir'}'),
-                                          const SizedBox(height: 16),
-                                          const Text('(Las imágenes se previsualizarán aquí)', style: TextStyle(color: Colors.black54, fontStyle: FontStyle.italic)),
-                                        ],
-                                      ),
-                                      actions: [
-                                        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cerrar', style: TextStyle(color: MijanoTheme.ink)))
-                                      ],
-                                    )
-                                  );
+                                  _mostrarDialogoDocumentos(context, d.uid, documents);
                                 },
                               ),
                               ElevatedButton.icon(
@@ -176,7 +185,6 @@ class DashboardModule extends StatelessWidget {
           const SizedBox(height: 24),
           const AdminHeader('Mapa en vivo', 'Ubicación actual de conductores libres y ocupados'),
           
-          // MAPA
           adminCard(
             child: SizedBox(
               height: 350,
@@ -192,11 +200,11 @@ class DashboardModule extends StatelessWidget {
                         final activeDrivers = drivers.where((d) => d.currentLatitude != null && d.currentLongitude != null).toList();
                         
                         final markers = activeDrivers.map((d) => Marker(
-                                  markerId: MarkerId(d.uid),
-                                  position: LatLng(d.currentLatitude!, d.currentLongitude!),
-                                  infoWindow: InfoWindow(title: 'Cond. ${d.plate}', snippet: d.isAvailable ? 'Libre' : 'Ocupado'),
-                                  icon: BitmapDescriptor.defaultMarkerWithHue(d.isAvailable ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueRed),
-                                )).toSet();
+                            markerId: MarkerId(d.uid),
+                            position: LatLng(d.currentLatitude!, d.currentLongitude!),
+                            infoWindow: InfoWindow(title: 'Cond. ${d.plate}', snippet: d.isAvailable ? 'Libre' : 'Ocupado'),
+                            icon: BitmapDescriptor.defaultMarkerWithHue(d.isAvailable ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueRed),
+                          )).toSet();
 
                         final initialLat = activeDrivers.isNotEmpty ? activeDrivers.first.currentLatitude! : -12.046374;
                         final initialLng = activeDrivers.isNotEmpty ? activeDrivers.first.currentLongitude! : -77.042793;
@@ -296,6 +304,220 @@ class DashboardModule extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _mostrarDialogoDocumentos(BuildContext context, String driverUid, Map<String, dynamic> documents) {
+    final Map<String, String> nombresDocumentos = {
+      'docFront': 'DNI (Frente)',
+      'docBack': 'DNI (Reverso)',
+      'licensedDocument': 'Licencia de Conducir',
+      'soatPhoto': 'SOAT',
+      'propertyCardPhoto': 'Tarjeta de Propiedad',
+      'policeRecord': 'Antecedentes Policiales',
+      'criminalRecord': 'Antecedentes Penales',
+      'vehiclePhoto': 'Foto del Vehículo',
+    };
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setStateDialog) => AlertDialog(
+          title: const Text('Documentos del Conductor'),
+          content: SizedBox(
+            width: 500,
+            height: 500,
+            child: ListView(
+              children: documents.entries.map((entry) {
+                String key = entry.key;
+                dynamic value = entry.value;
+                String label = nombresDocumentos[key] ?? key;
+
+                String url = '';
+                String status = 'pending';
+
+                if (value is Map) {
+                  url = value['url'] ?? '';
+                  status = value['status'] ?? 'pending';
+                } else if (value is String) {
+                  url = value;
+                }
+
+                if (url.isEmpty) return const SizedBox.shrink();
+
+                return Card(
+                  margin: const EdgeInsets.symmetric(vertical: 6),
+                  elevation: 1,
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+                            ),
+                            _buildStatusBadge(status),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            InkWell(
+                              onTap: () => _mostrarImagenEnGrande(context, label, url),
+                              child: Container(
+                                width: 50,
+                                height: 50,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[200],
+                                  borderRadius: BorderRadius.circular(6),
+                                  image: DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  TextButton.icon(
+                                    style: TextButton.styleFrom(foregroundColor: Colors.red),
+                                    icon: const Icon(Icons.close, size: 16),
+                                    label: const Text('Rechazar', style: TextStyle(fontSize: 12)),
+                                    onPressed: () async {
+                                      documents[key] = {
+                                        'url': '',
+                                        'status': 'rejected',
+                                      };
+                                      
+                                      
+                                      await FirebaseFirestore.instance.collection('users').doc(driverUid).set({
+                                        'documents': documents,
+                                      }, SetOptions(merge: true));
+
+                                      await FirestoreService.instance.notifyDriver(
+                                        driverUid, 
+                                        'Documento Rechazado', 
+                                        'Tu documento "$label" fue rechazado. Por favor, vuelva a subirlo o tomar foto otra vez.'
+                                      );
+
+                                      setStateDialog(() {});
+                                    },
+                                  ),
+                                  const SizedBox(width: 4),
+                                  ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.green.shade50,
+                                      foregroundColor: Colors.green.shade700,
+                                      elevation: 0,
+                                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                                    ),
+                                    icon: const Icon(Icons.check, size: 16),
+                                    label: const Text('Aprobar', style: TextStyle(fontSize: 12)),
+                                    onPressed: () async {
+                                      documents[key] = {
+                                        'url': url,
+                                        'status': 'approved',
+                                      };
+
+                                      
+                                      await FirebaseFirestore.instance.collection('users').doc(driverUid).set({
+                                        'documents': documents,
+                                      }, SetOptions(merge: true));
+
+                                      setStateDialog(() {});
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cerrar', style: TextStyle(color: MijanoTheme.ink)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusBadge(String status) {
+    Color color;
+    String text;
+    switch (status) {
+      case 'approved':
+        color = Colors.green;
+        text = 'Aprobado';
+        break;
+      case 'rejected':
+        color = Colors.red;
+        text = 'Rechazado';
+        break;
+      default:
+        color = Colors.orange;
+        text = 'Pendiente';
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color),
+      ),
+      child: Text(text, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  void _mostrarImagenEnGrande(BuildContext context, String titulo, String url) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          constraints: const BoxConstraints(maxWidth: 600, maxHeight: 600),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(titulo, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Expanded(
+                child: Image.network(
+                  url,
+                  fit: BoxFit.contain,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return const Center(child: CircularProgressIndicator());
+                  },
+                  errorBuilder: (context, error, stackTrace) => const Center(
+                    child: Text('No se pudo cargar la imagen del documento'),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

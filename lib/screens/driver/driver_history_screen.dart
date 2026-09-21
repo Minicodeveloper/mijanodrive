@@ -15,7 +15,7 @@ class DriverHistoryScreen extends StatelessWidget {
 
     return Scaffold(
       body: StreamBuilder<List<Trip>>(
-        // Aquí conectamos con tu FirestoreService para filtrar los viajes completados de este conductor
+        
         stream: fs.completedTripsForDriver(driverId),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {

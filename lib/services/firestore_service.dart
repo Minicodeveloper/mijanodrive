@@ -4,8 +4,7 @@ import '../models/trip_model.dart';
 import '../models/driver_model.dart';
 import '../models/wallet_model.dart';
 
-/// Acceso a Firestore (proyecto mijanodrive-peru).
-/// Métodos defensivos: devuelven null/[] si algo falla, no crashean.
+
 class FirestoreService {
   static final FirestoreService instance = FirestoreService._();
   FirestoreService._();
@@ -96,7 +95,6 @@ class FirestoreService {
       .snapshots()
       .map((q) => q.docs.map((d) => Trip.fromFirestore(d)).toList());
 
-  
   /// Viajes completados por un conductor (para la pantalla de historial).
   Stream<List<Trip>> completedTripsForDriver(String driverId) => _db
       .collection('trips')
@@ -156,12 +154,25 @@ class FirestoreService {
       .snapshots()
       .map((q) => q.docs.map((d) => Trip.fromFirestore(d)).toList());
 
-  /// Conductores pendientes de aprobación (que no han sido rechazados definitivamente).
+  
+  /// Conductores pendientes de aprobación optimizados para la consola web.
   Stream<List<Driver>> pendingDrivers() => _db
-      .collection('drivers')
-      .where('isApproved', isEqualTo: false)
+      .collection('users')
+      .where('role', isEqualTo: 'driver')
+      .where('status', isEqualTo: 'pending')
       .snapshots()
-      .map((q) => q.docs.map((d) => Driver.fromFirestore(d)).where((d) => d.toMap()['isRejected'] != true).toList());
+      .map((q) {
+        print('Total de documentos encontrados en pendingDrivers: ${q.docs.length}');
+        return q.docs.map((d) {
+          try {
+            print('Procesando driver ID: ${d.id} con datos: ${d.data()}');
+            return Driver.fromFirestore(d);
+          } catch (e) {
+            print('⚠️ Error detallado al parsear el conductor ${d.id}: $e');
+            return null;
+          }
+        }).whereType<Driver>().toList();
+      });
 
   /// Todos los conductores (aprobados + pendientes) para el mapa en vivo.
   Stream<List<Driver>> allDrivers() => _db
@@ -170,16 +181,22 @@ class FirestoreService {
       .map((q) => q.docs.map((d) => Driver.fromFirestore(d)).toList());
 
   Future<void> approveDriver(String uid, bool approved) => _db
-      .collection('drivers')
+      .collection('users')
       .doc(uid)
-      .set({'isApproved': approved}, SetOptions(merge: true));
+      .set({'isApproved': approved, 'status': approved ? 'approved' : 'rejected'}, SetOptions(merge: true));
 
   Future<void> updateDriverStatus(String uid, {bool? isApproved, bool? isBlocked, bool? isRejected}) {
     final Map<String, dynamic> data = {};
-    if (isApproved != null) data['isApproved'] = isApproved;
+    if (isApproved != null) {
+      data['isApproved'] = isApproved;
+      data['status'] = isApproved ? 'approved' : 'pending';
+    }
     if (isBlocked != null) data['isBlocked'] = isBlocked;
-    if (isRejected != null) data['isRejected'] = isRejected;
-    return _db.collection('drivers').doc(uid).set(data, SetOptions(merge: true));
+    if (isRejected != null) {
+      data['isRejected'] = isRejected;
+      if (isRejected) data['status'] = 'rejected';
+    }
+    return _db.collection('users').doc(uid).set(data, SetOptions(merge: true));
   }
 
   /// Notificar al conductor
@@ -265,18 +282,18 @@ class FirestoreService {
       .set({'status': 'resolved'}, SetOptions(merge: true));
 
   Future<void> createSosAlert({
-  required String driverId,
-  required double latitude,
-  required double longitude,
-  required String city,
-}) =>
-    _db.collection('alerts').add({
-      'type': 'sos',
-      'driverId': driverId,
-      'latitude': latitude,
-      'longitude': longitude,
-      'city': city,
-      'status': 'open',
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+    required String driverId,
+    required double latitude,
+    required double longitude,
+    required String city,
+  }) =>
+      _db.collection('alerts').add({
+        'type': 'sos',
+        'driverId': driverId,
+        'latitude': latitude,
+        'longitude': longitude,
+        'city': city,
+        'status': 'open',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
 }

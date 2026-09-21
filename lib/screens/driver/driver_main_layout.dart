@@ -14,7 +14,7 @@ class DriverMainLayout extends StatefulWidget {
 class _DriverMainLayoutState extends State<DriverMainLayout> {
   int _currentIndex = 0;
 
-  // Las 3 vistas principales del conductor
+  
   final List<Widget> _screens = [
     const DriverDashboardScreen(),
     const DriverHistoryScreen(),
@@ -31,7 +31,7 @@ class _DriverMainLayoutState extends State<DriverMainLayout> {
                 ? 'Historial de viajes'
                 : 'Mi Cuenta'),
         backgroundColor: MijanoTheme.sol,
-        automaticallyImplyLeading: false, // Evita la flecha de retroceso por defecto
+        automaticallyImplyLeading: false, 
       ),
       body: IndexedStack(
         index: _currentIndex,

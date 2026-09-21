@@ -7,7 +7,6 @@ import 'package:local_auth/local_auth.dart';
 import 'package:mijano_drive_app/models/user_model.dart';
 
 class AuthService {
-  
   static final AuthService instance = AuthService._internal();
   AuthService._internal();
 
@@ -18,7 +17,6 @@ class AuthService {
   String? _verificationId;
   User? currentUser;
 
-  
   String _normalize(String phone) {
     final clean = phone.trim();
     if (clean.startsWith('+')) return clean;
@@ -32,13 +30,17 @@ class AuthService {
     try {
       final ref = fbs.FirebaseStorage.instance
           .ref()
-          .child('profile_images')
+          .child('drivers')
+          .child(uid)
           .child('$uid.jpg');
 
+      print("Subiendo imagen para UID: $uid...");
       await ref.putFile(imageFile);
       final downloadUrl = await ref.getDownloadURL();
+      print("¡Imagen subida con éxito! URL: $downloadUrl");
       return downloadUrl;
     } catch (e) {
+      print(" ERROR AL SUBIR LA IMAGEN A STORAGE: $e");
       return null;
     }
   }
@@ -46,7 +48,7 @@ class AuthService {
   // ==========================================
   // 1. INICIAR SESIÓN (Correo y Contraseña)
   // ==========================================
-  Future<(bool, String, UserRole?)> login(String email, String password) async {
+  Future<(bool, String, UserRole?, String?)> login(String email, String password) async {
     try {
       fb.UserCredential credential = await _fbAuth.signInWithEmailAndPassword(
         email: email.trim(),
@@ -54,15 +56,17 @@ class AuthService {
       );
 
       final uid = credential.user!.uid;
-      
-      
       DocumentSnapshot userDoc = await _firestore.collection('users').doc(uid).get();
       
       if (userDoc.exists) {
-        currentUser = User.fromMap(userDoc.data() as Map<String, dynamic>);
-        return (true, '¡Bienvenido de nuevo!', currentUser!.role);
+        final data = userDoc.data() as Map<String, dynamic>;
+        currentUser = User.fromMap(data);
+        
+        String? status = data['status'] ?? (currentUser!.role == UserRole.driver ? 'pending' : 'approved');
+        
+        return (true, '¡Bienvenido de nuevo!', currentUser!.role, status);
       } else {
-        return (false, 'No se encontraron los datos del usuario en el sistema.', null);
+        return (false, 'No se encontraron los datos del usuario en el sistema.', null, null);
       }
     } on fb.FirebaseAuthException catch (e) {
       String message = 'Error al iniciar sesión';
@@ -73,9 +77,9 @@ class AuthService {
       } else if (e.code == 'user-disabled') {
         message = 'Esta cuenta ha sido deshabilitada.';
       }
-      return (false, message, null);
+      return (false, message, null, null);
     } catch (e) {
-      return (false, 'Error inesperado: $e', null);
+      return (false, 'Error inesperado: $e', null, null);
     }
   }
 
@@ -88,9 +92,7 @@ class AuthService {
 
     await _fbAuth.verifyPhoneNumber(
       phoneNumber: number,
-      verificationCompleted: (fb.PhoneAuthCredential credential) async {
-      
-      },
+      verificationCompleted: (fb.PhoneAuthCredential credential) async {},
       verificationFailed: (fb.FirebaseAuthException e) {
         if (!completer.isCompleted) {
           String errorMsg = 'Error al enviar SMS';
@@ -131,7 +133,6 @@ class AuthService {
       fb.UserCredential userCredential = await _fbAuth.signInWithCredential(credential);
       final uid = userCredential.user!.uid;
 
-      // Buscar si el usuario ya existe en Firestore
       DocumentSnapshot userDoc = await _firestore.collection('users').doc(uid).get();
       if (userDoc.exists) {
         currentUser = User.fromMap(userDoc.data() as Map<String, dynamic>);
@@ -157,7 +158,14 @@ class AuthService {
     required String dni,
     required String city,
     required UserRole role,
-    File? profileImage, 
+    File? profileImage,
+    String? vehiclePlate,
+    String? vehicleBrand,
+    String? vehicleModel,
+    String? vehicleColor,
+    String? vehicleYear,
+    String? vehicleType,
+    String? licenseNumber,
   }) async {
     try {
       if (_verificationId == null) {
@@ -169,53 +177,32 @@ class AuthService {
         smsCode: smsCode,
       );
 
-      fb.UserCredential userCredential = await _fbAuth.createUserWithEmailAndPassword(
-        email: email.trim(),
-        password: password.trim(),
-      );
-
-      final uid = userCredential.user!.uid;
-      final number = _normalize(phone);
-
-      
-      String? photoUrl;
-      if (profileImage != null) {
-        photoUrl = await uploadProfileImage(uid, profileImage);
-      }
-
-      currentUser = User(
-        uid: uid,
+      return await _createAccountInFirebase(
         name: name,
-        email: email.trim(),
-        phone: number,
+        email: email,
+        password: password,
+        phone: phone,
         dni: dni,
         city: city,
         role: role,
-        photoUrl: photoUrl, 
-        createdAt: DateTime.now(),
+        profileImage: profileImage,
+        vehiclePlate: vehiclePlate,
+        vehicleBrand: vehicleBrand,
+        vehicleModel: vehicleModel,
+        vehicleColor: vehicleColor,
+        vehicleYear: vehicleYear,
+        vehicleType: vehicleType,
+        licenseNumber: licenseNumber,
       );
-
-      await _firestore.collection('users').doc(uid).set(currentUser!.toMap());
-      await _getOrCreateWallet(uid);
-
-      return (true, '¡Cuenta registrada con éxito!');
     } on fb.FirebaseAuthException catch (e) {
-      String message = 'Error en el registro';
-      if (e.code == 'weak-password') {
-        message = 'La contraseña es demasiado débil (mínimo 6 caracteres).';
-      } else if (e.code == 'email-already-in-use') {
-        message = 'El correo electrónico ya se encuentra registrado.';
-      } else if (e.code == 'invalid-email') {
-        message = 'El formato del correo electrónico es inválido.';
-      }
-      return (false, message);
+      return (false, 'Código inválido o expirado: ${e.message}');
     } catch (e) {
-      return (false, 'Error inesperado al registrar: $e');
+      return (false, 'Error inesperado: $e');
     }
   }
 
   // ==========================================
-  // 5. REGISTRO ESTÁNDAR (Correo, Contraseña y Firestore)
+  // 5. REGISTRO ESTÁNDAR (Correo y Contraseña)
   // ==========================================
   Future<(bool, String)> register({
     required String name,
@@ -225,7 +212,53 @@ class AuthService {
     required String dni,
     required String city,
     required UserRole role,
-    File? profileImage, 
+    File? profileImage,
+    String? vehiclePlate,
+    String? vehicleBrand,
+    String? vehicleModel,
+    String? vehicleColor,
+    String? vehicleYear,
+    String? vehicleType,
+    String? licenseNumber,
+  }) async {
+    return await _createAccountInFirebase(
+      name: name,
+      email: email,
+      password: password,
+      phone: phone,
+      dni: dni,
+      city: city,
+      role: role,
+      profileImage: profileImage,
+      vehiclePlate: vehiclePlate,
+      vehicleBrand: vehicleBrand,
+      vehicleModel: vehicleModel,
+      vehicleColor: vehicleColor,
+      vehicleYear: vehicleYear,
+      vehicleType: vehicleType,
+      licenseNumber: licenseNumber,
+    );
+  }
+
+  // ==========================================
+  // MÉTODO PRIVADO UNIFICADO
+  // ==========================================
+  Future<(bool, String)> _createAccountInFirebase({
+    required String name,
+    required String email,
+    required String password,
+    required String phone,
+    required String dni,
+    required String city,
+    required UserRole role,
+    File? profileImage,
+    String? vehiclePlate,
+    String? vehicleBrand,
+    String? vehicleModel,
+    String? vehicleColor,
+    String? vehicleYear,
+    String? vehicleType,
+    String? licenseNumber,
   }) async {
     try {
       fb.UserCredential userCredential = await _fbAuth.createUserWithEmailAndPassword(
@@ -236,11 +269,12 @@ class AuthService {
       final uid = userCredential.user!.uid;
       final number = _normalize(phone);
 
-      
       String? photoUrl;
       if (profileImage != null) {
         photoUrl = await uploadProfileImage(uid, profileImage);
       }
+
+      final initialStatus = (role == UserRole.driver) ? 'pending' : 'approved';
 
       currentUser = User(
         uid: uid,
@@ -252,9 +286,27 @@ class AuthService {
         role: role,
         photoUrl: photoUrl, 
         createdAt: DateTime.now(),
+        status: initialStatus,
+        vehiclePlate: vehiclePlate,
+        vehicleBrand: vehicleBrand,
+        vehicleModel: vehicleModel,
+        vehicleColor: vehicleColor,
+        vehicleYear: vehicleYear,
+        vehicleType: vehicleType,
+        licenseNumber: licenseNumber,
       );
 
-      await _firestore.collection('users').doc(uid).set(currentUser!.toMap());
+      final userData = currentUser!.toMap();
+
+      if (role == UserRole.driver) {
+        userData['documents'] = [
+          {'id': 'dni', 'name': 'Documento de Identidad (DNI)', 'status': 'pending', 'url': ''},
+          {'id': 'license', 'name': 'Licencia de Conducir', 'status': 'pending', 'url': ''},
+          {'id': 'soat', 'name': 'SOAT / Seguro del Vehículo', 'status': 'pending', 'url': ''},
+        ];
+      }
+
+      await _firestore.collection('users').doc(uid).set(userData);
       await _getOrCreateWallet(uid);
 
       return (true, '¡Cuenta registrada con éxito!');
@@ -322,7 +374,7 @@ class AuthService {
         if (photoUrl != null) 'photoUrl': photoUrl,
       });
     } catch (e) {
-      // Manejar error de actualización
+      // Manejar error silenciosamente
     }
   }
 

@@ -13,6 +13,17 @@ class User {
   final DateTime createdAt;
   bool biometricEnabled;
   final String? city;
+  final String status;
+
+  // Campos específicos para conductores y sus vehículos
+  final String? vehiclePlate;
+  final String? vehicleBrand;
+  final String? vehicleModel;
+  final String? vehicleColor;
+  final String? vehicleYear;
+  final String? vehicleType;
+  final String? licenseNumber;
+  final Map<String, dynamic> documents;
 
   User({
     required this.uid,
@@ -25,6 +36,15 @@ class User {
     required this.createdAt,
     this.biometricEnabled = false,
     this.city,
+    this.status = 'approved',
+    this.vehiclePlate,
+    this.vehicleBrand,
+    this.vehicleModel,
+    this.vehicleColor,
+    this.vehicleYear,
+    this.vehicleType,
+    this.licenseNumber,
+    this.documents = const {},
   });
 
   Map<String, dynamic> toMap() {
@@ -39,6 +59,15 @@ class User {
       'createdAt': createdAt,
       'biometricEnabled': biometricEnabled,
       'city': city,
+      'status': status,
+      'vehiclePlate': vehiclePlate,
+      'vehicleBrand': vehicleBrand,
+      'vehicleModel': vehicleModel,
+      'vehicleColor': vehicleColor,
+      'vehicleYear': vehicleYear,
+      'vehicleType': vehicleType,
+      'licenseNumber': licenseNumber,
+      'documents': documents,
     };
   }
 
@@ -60,6 +89,15 @@ class User {
       createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       biometricEnabled: map['biometricEnabled'] ?? false,
       city: map['city'],
+      status: map['status'] ?? 'approved',
+      vehiclePlate: map['vehiclePlate'],
+      vehicleBrand: map['vehicleBrand'],
+      vehicleModel: map['vehicleModel'],
+      vehicleColor: map['vehicleColor'],
+      vehicleYear: map['vehicleYear'],
+      vehicleType: map['vehicleType'],
+      licenseNumber: map['licenseNumber'],
+      documents: Map<String, dynamic>.from(map['documents'] ?? {}),
     );
   }
 
@@ -78,6 +116,15 @@ class User {
     DateTime? createdAt,
     bool? biometricEnabled,
     String? city,
+    String? status,
+    String? vehiclePlate,
+    String? vehicleBrand,
+    String? vehicleModel,
+    String? vehicleColor,
+    String? vehicleYear,
+    String? vehicleType,
+    String? licenseNumber,
+    Map<String, dynamic>? documents,
   }) {
     return User(
       uid: uid ?? this.uid,
@@ -90,6 +137,15 @@ class User {
       createdAt: createdAt ?? this.createdAt,
       biometricEnabled: biometricEnabled ?? this.biometricEnabled,
       city: city ?? this.city,
+      status: status ?? this.status,
+      vehiclePlate: vehiclePlate ?? this.vehiclePlate,
+      vehicleBrand: vehicleBrand ?? this.vehicleBrand,
+      vehicleModel: vehicleModel ?? this.vehicleModel,
+      vehicleColor: vehicleColor ?? this.vehicleColor,
+      vehicleYear: vehicleYear ?? this.vehicleYear,
+      vehicleType: vehicleType ?? this.vehicleType,
+      licenseNumber: licenseNumber ?? this.licenseNumber,
+      documents: documents ?? this.documents,
     );
   }
 }

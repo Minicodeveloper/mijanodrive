@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mijano_drive_app/services/auth_service.dart';
 import 'package:mijano_drive_app/models/user_model.dart';
+import 'package:mijano_drive_app/screens/driver/pending_account_screen.dart'; 
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -34,8 +35,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _isLoading = true);
     
-  
-    final (ok, msg, role) = await _auth.login(email, password);
+    final (ok, msg, role, status) = await _auth.login(email, password);
     
     if (!mounted) return;
     setState(() => _isLoading = false);
@@ -43,8 +43,17 @@ class _LoginScreenState extends State<LoginScreen> {
     _snack(msg);
 
     if (ok) {
-      if (role == UserRole.driver) {
-        Navigator.of(context).pushNamedAndRemoveUntil('/driver', (r) => false);
+      if (role == UserRole.admin) { 
+        Navigator.of(context).pushNamedAndRemoveUntil('/admin', (r) => false); 
+      } else if (role == UserRole.driver) {
+        if (status == 'approved') {
+          Navigator.of(context).pushNamedAndRemoveUntil('/driver', (r) => false);
+        } else {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const PendingAccountScreen()),
+            (r) => false,
+          );
+        }
       } else {
         Navigator.of(context).pushNamedAndRemoveUntil('/home', (r) => false);
       }
@@ -70,11 +79,73 @@ class _LoginScreenState extends State<LoginScreen> {
     final user = _auth.currentUser;
     if (user == null || user.name == null || user.name!.isEmpty) {
       Navigator.of(context).pushReplacementNamed('/profile-setup');
+    } else if (user.role == UserRole.admin) { 
+      Navigator.of(context).pushNamedAndRemoveUntil('/admin', (r) => false);
     } else if (user.role == UserRole.driver) {
-      Navigator.of(context).pushNamedAndRemoveUntil('/driver', (r) => false);
+      if (user.status == 'approved') {
+        Navigator.of(context).pushNamedAndRemoveUntil('/driver', (r) => false);
+      } else {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const PendingAccountScreen()),
+          (r) => false,
+        );
+      }
     } else {
       Navigator.of(context).pushNamedAndRemoveUntil('/home', (r) => false);
     }
+  }
+
+  
+  void _mostrarModalClaveAdmin(BuildContext context) {
+    final TextEditingController pinController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Acceso Restringido'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Ingrese la clave maestra de administrador para continuar:'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: pinController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Clave Secreta',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF9D408)),
+            onPressed: () {
+              
+              const String claveMaestra = 'MijanoDriveAdmin2026*';
+
+              if (pinController.text == claveMaestra) {
+                Navigator.pop(context); // Cierra el diálogo
+                
+                
+                Navigator.of(context).pushNamed('/register-admin'); 
+
+                _snack('Acceso concedido.');
+              } else {
+                Navigator.pop(context);
+                _snack('Clave incorrecta. Acceso denegado.');
+              }
+            },
+            child: const Text('Verificar', style: TextStyle(color: Colors.black)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _snack(String m) => ScaffoldMessenger.of(context)
@@ -82,7 +153,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    
     final args = ModalRoute.of(context)?.settings.arguments as Map?;
     final currentRole = args?['role'] ?? 'passenger'; 
 
@@ -96,12 +166,19 @@ class _LoginScreenState extends State<LoginScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               SizedBox(height: MediaQuery.of(context).size.height * 0.1),
-              // Logo
-              const Icon(
-                Icons.two_wheeler,
-                size: 80,
-                color: Color(0xFFF9D408),
+              
+              
+              Center(
+                child: GestureDetector(
+                  onLongPress: () => _mostrarModalClaveAdmin(context),
+                  child: const Icon(
+                    Icons.two_wheeler,
+                    size: 80,
+                    color: Color(0xFFF9D408),
+                  ),
+                ),
               ),
+              
               const SizedBox(height: 20),
               const Text(
                 'Mijano Drive',
@@ -129,7 +206,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 20),
 
-              // Password input
+              
               TextField(
                 controller: _passwordController,
                 obscureText: true,
@@ -144,7 +221,6 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 30),
 
-              
               ElevatedButton(
                 onPressed: _isLoading ? null : _login,
                 style: ElevatedButton.styleFrom(
@@ -175,7 +251,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 30),
 
-              // Divider
+              
               const Row(
                 children: [
                   Expanded(child: Divider()),
@@ -187,7 +263,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 20),
 
-              // Biometric login button
+              
               OutlinedButton.icon(
                 onPressed: _biometricLogin,
                 icon: const Icon(Icons.fingerprint),
@@ -199,7 +275,6 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 30),
 
-              
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [

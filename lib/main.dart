@@ -7,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
 import 'theme.dart';
 import 'admin/admin_app.dart';
+import 'admin/register_admin_screen.dart';
 
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/register_screen.dart';
@@ -28,14 +29,12 @@ Future<void> main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
-  } catch (_) {
-    
-  }
+  } catch (_) {}
   try {
     await Hive.initFlutter();
   } catch (_) {}
   
-  runApp(kIsWeb ? const AdminApp() : const MijanoDriveApp());
+  runApp(const MijanoDriveApp());
 }
 
 class MijanoDriveApp extends StatelessWidget {
@@ -60,9 +59,11 @@ class MijanoDriveApp extends StatelessWidget {
         page = const LoginScreen();
         break;
       case '/register':
-        
         final initialRole = args['initialRole'] ?? 'passenger';
         page = RegisterScreen(initialRole: initialRole);
+        break;
+      case '/register-admin':
+        page = const RegisterAdminScreen();
         break;
       case '/role-select':
         page = const RoleSelectScreen();
@@ -109,6 +110,10 @@ class MijanoDriveApp extends StatelessWidget {
       case '/driver':
         page = const DriverMainLayout();
         break;
+      case '/admin': 
+        final adminRole = args['role'] ?? AdminRole.superAdmin;
+        page = AdminApp(role: adminRole);
+        break;
       default:
         page = const LoginScreen();
     }
@@ -127,11 +132,9 @@ class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   
-  
   late Animation<double> _logoScale;
   late Animation<double> _logoOpacity;
 
-  
   late Animation<Offset> _titleSlide;
   late Animation<double> _titleScale;
   late Animation<double> _titleOpacity;
@@ -140,13 +143,11 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
 
-    
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1800),
     );
 
-    
     _logoScale = Tween<double>(begin: 0.7, end: 1.0).animate(
       CurvedAnimation(
         parent: _controller,
@@ -160,8 +161,6 @@ class _SplashScreenState extends State<SplashScreen>
       ),
     );
 
-    
-    
     _titleSlide = Tween<Offset>(
       begin: const Offset(0.0, 0.4),
       end: Offset.zero,
@@ -172,7 +171,6 @@ class _SplashScreenState extends State<SplashScreen>
       ),
     );
 
-    
     _titleScale = Tween<double>(begin: 0.85, end: 1.0).animate(
       CurvedAnimation(
         parent: _controller,
@@ -180,7 +178,6 @@ class _SplashScreenState extends State<SplashScreen>
       ),
     );
 
-    
     _titleOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _controller,
@@ -188,10 +185,7 @@ class _SplashScreenState extends State<SplashScreen>
       ),
     );
 
-  
     _controller.forward();
-
-    
     _go();
   }
 
@@ -217,9 +211,7 @@ class _SplashScreenState extends State<SplashScreen>
             children: [
               const Spacer(flex: 2),
 
-              // ==========================================
               // 1. LOGO PRINCIPAL SUPERIOR (logo.png)
-              // ==========================================
               FadeTransition(
                 opacity: _logoOpacity,
                 child: ScaleTransition(
@@ -242,9 +234,7 @@ class _SplashScreenState extends State<SplashScreen>
 
               const Spacer(flex: 2),
 
-              // ==========================================
               // 2. LOGO TÍTULO CON ANIMACIÓN (logo_title.png)
-              // ==========================================
               SlideTransition(
                 position: _titleSlide,
                 child: ScaleTransition(
@@ -271,9 +261,7 @@ class _SplashScreenState extends State<SplashScreen>
 
               const Spacer(flex: 3),
 
-              // ==========================================
               // 3. INDICADOR DE CARGA
-              // ==========================================
               const SizedBox(
                 width: 28,
                 height: 28,

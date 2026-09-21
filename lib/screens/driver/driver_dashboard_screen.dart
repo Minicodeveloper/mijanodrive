@@ -7,7 +7,7 @@ import '../../services/firestore_service.dart';
 import '../../services/location_service.dart';
 import '../../theme.dart';
 
-/// mapa interactivo, aceptar carrera y botón S.O.S.
+
 class DriverDashboardScreen extends StatefulWidget {
   const DriverDashboardScreen({super.key});
 
@@ -20,11 +20,11 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   final _auth = AuthService.instance;
   bool _available = true;
 
-  // Controlador y posición inicial para Google Maps
+  
   final Completer<GoogleMapController> _mapController = Completer();
   
   static const CameraPosition _initialPosition = CameraPosition(
-    target: LatLng(-6.48694, -76.36472), // Coordenadas predeterminadas (Tarapoto)
+    target: LatLng(-6.48694, -76.36472), 
     zoom: 14.0,
   );
 
