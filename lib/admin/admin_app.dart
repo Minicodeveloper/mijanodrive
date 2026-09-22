@@ -13,8 +13,6 @@ enum AdminRole {
   operator,
 }
 
-/// Panel de administración web de Mijano Drive.
-/// Mismo Firestore, mismo tema que la app móvil. Se muestra con kIsWeb.
 class AdminApp extends StatelessWidget {
   final AdminRole role;
   
@@ -245,7 +243,7 @@ class _DashboardModule extends StatelessWidget {
                 builder: (context, tsnap) {
                   final trips = tsnap.data ?? [];
                   
-                  // Calculando datos reales a partir de los viajes activos (Sin datos inventados)
+                  
                   final dineroEnCurso = trips.fold<double>(
                       0.0, (sum, t) => sum + t.fareAmount);
                   
@@ -281,8 +279,6 @@ class _DashboardModule extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                     child: Stack(
                       children: [
-                        // TODO(Equipo): Descomentar este bloque StreamBuilder y GoogleMap cuando se haya habilitado
-                        // "Maps JavaScript API" en Google Cloud para el entorno Web y se haya configurado la facturación.
                         Container(
                           color: Colors.grey.shade200,
                           width: double.infinity,
@@ -899,8 +895,6 @@ class _WalletModule extends StatelessWidget {
           _Header('Billetera y recargas',
               'Pasarela digital (Culqi/Niubiz) y caja efectivo'),
           SizedBox(height: 8),
-          // TODO(Equipo): Conectar pasarela de pago (Culqi/Niubiz) y listar aquí el Stream de transacciones.
-          // Recomendado: Utilizar fs.transactions() para listar el historial financiero global o de comisiones.
           Text('Conecta Culqi/Niubiz para ver las transacciones aquí.',
               style: TextStyle(color: Colors.black54)),
         ],
@@ -1037,7 +1031,7 @@ class _SecurityModuleState extends State<_SecurityModule> {
 
       setState(() {
         _feedback =
-            '✅ Admin "${_nameCtrl.text.isEmpty ? _emailCtrl.text : 'nuevo'}" creado. '
+            ' Admin "${_nameCtrl.text.isEmpty ? _emailCtrl.text : 'nuevo'}" creado. '
             'Nota: Tu sesión se ha cerrado. Vuelve a iniciar sesión.';
         _feedbackIsError = false;
       });

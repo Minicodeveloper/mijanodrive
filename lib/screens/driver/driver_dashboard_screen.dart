@@ -9,7 +9,7 @@ import '../../theme.dart';
 
 
 class DriverDashboardScreen extends StatefulWidget {
-  const DriverDashboardScreen({Key? key}) : super(key: key);
+  const DriverDashboardScreen({super.key});
 
   @override
   State<DriverDashboardScreen> createState() => _DriverDashboardScreenState();
@@ -19,11 +19,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   final _fs = FirestoreService.instance;
   final _auth = AuthService.instance;
   bool _available = true;
-  GoogleMapController? _mapController;
-
-  // Tarapoto default position
-  static const LatLng _defaultPosition = LatLng(-6.4869, -76.3654);
-  LatLng _currentPosition = _defaultPosition;
 
   
   final Completer<GoogleMapController> _mapController = Completer();
@@ -39,37 +34,14 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   @override
   void initState() {
     super.initState();
-    _refreshCurrentPosition();
+    _pushLocation();
   }
 
-  void _onMapCreated(GoogleMapController controller) {
-    _mapController = controller;
-    _moveCameraToCurrentPosition();
-  }
-
-  Future<void> _refreshCurrentPosition() async {
+  Future<void> _pushLocation() async {
     try {
       final pos = await LocationService.instance.current();
-      if (!mounted) return;
-
-      final target = LatLng(pos.latitude, pos.longitude);
-      setState(() => _currentPosition = target);
-      await _mapController?.animateCamera(
-        CameraUpdate.newLatLngZoom(target, 15),
-      );
-
-      // El mapa y el marcador no dependen de que Firestore esté disponible.
-      // Guardamos la posición en segundo plano para el panel administrativo.
-      try {
-        await _fs.updateDriverLocation(_uid, pos.latitude, pos.longitude);
-      } catch (_) {}
+      await _fs.updateDriverLocation(_uid, pos.latitude, pos.longitude);
     } catch (_) {}
-  }
-
-  Future<void> _moveCameraToCurrentPosition() async {
-    await _mapController?.animateCamera(
-      CameraUpdate.newLatLngZoom(_currentPosition, 15),
-    );
   }
 
   void _toggleAvailability(bool v) {
@@ -78,55 +50,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   }
 
   Future<void> _accept(Trip trip) async {
-    await _fs.updateTrip(trip.id, {'driverId': _uid, 'status': 'accepted'});
+    await _fs.updateTrip(trip.id, {
+      'driverId': _uid,
+      'status': 'accepted',
+    });
     if (mounted) {
-      Navigator.of(
-        context,
-      ).pushNamed('/driver-active-trip', arguments: {'tripId': trip.id});
-    }
-  }
-
-  Future<void> _sos() async {
-    try {
-      final pos = await LocationService.instance.current();
-
-      await _fs.createSosAlert(
-        driverId: _uid,
-        latitude: pos.latitude,
-        longitude: pos.longitude,
-        city: _city,
-      );
-
-      if (!mounted) return;
-
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          icon: const Icon(
-            Icons.emergency,
-            color: MijanoTheme.signal,
-            size: 40,
-          ),
-          title: const Text('Alerta S.O.S. enviada'),
-          content: Text(
-            'La alerta fue enviada al panel de administración '
-            'con tu ubicación GPS.\n\n'
-            'Ubicación: ${pos.latitude.toStringAsFixed(5)}, '
-            '${pos.longitude.toStringAsFixed(5)}',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Entendido'),
-            ),
-          ],
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No se pudo enviar la alerta S.O.S.')),
+        SnackBar(content: Text('Aceptaste el viaje a ${trip.destinationAddress ?? ''}')),
       );
     }
   }
@@ -197,71 +127,30 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         icon: const Icon(Icons.emergency),
         label: const Text('S.O.S.'),
       ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      body: Stack(
+      body: Column(
         children: [
-          // ==========================================
-          // GOOGLE MAP BACKGROUND
-          // ==========================================
-          GoogleMap(
-            initialCameraPosition: CameraPosition(
-              target: _currentPosition,
-              zoom: 15,
-            ),
-            myLocationEnabled: true,
-            myLocationButtonEnabled: false,
-            zoomControlsEnabled: false,
-            mapToolbarEnabled: false,
-            compassEnabled: false,
-            onMapCreated: _onMapCreated,
-            markers: {
-              Marker(
-                markerId: const MarkerId('driver'),
-                position: _currentPosition,
-                icon: BitmapDescriptor.defaultMarkerWithHue(
-                  BitmapDescriptor.hueYellow,
+          // Estado de disponibilidad
+          Container(
+            color: MijanoTheme.sol,
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+            child: Row(
+              children: [
+                Icon(_available ? Icons.check_circle : Icons.pause_circle,
+                    color: MijanoTheme.ink),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    _available ? 'Disponible para viajes' : 'No disponible',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w800, color: MijanoTheme.ink),
+                  ),
                 ),
-                infoWindow: const InfoWindow(title: 'Tu ubicación'),
-              ),
-            },
-          ),
-
-          // ==========================================
-          // AVAILABILITY TOGGLE (top overlay)
-          // ==========================================
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              color: MijanoTheme.sol,
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-              child: SafeArea(
-                top: false,
-                child: Row(
-                  children: [
-                    Icon(
-                      _available ? Icons.check_circle : Icons.pause_circle,
-                      color: MijanoTheme.ink,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        _available ? 'Disponible para viajes' : 'No disponible',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: MijanoTheme.ink,
-                        ),
-                      ),
-                    ),
-                    Switch(
-                      value: _available,
-                      activeColor: MijanoTheme.ink,
-                      onChanged: _toggleAvailability,
-                    ),
-                  ],
+                Switch(
+                  value: _available,
+                  activeThumbColor: MijanoTheme.ink,
+                  onChanged: _toggleAvailability,
                 ),
-              ),
+              ],
             ),
           ),
           
@@ -318,64 +207,16 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                                   style: TextStyle(color: Colors.black54)),
                             ],
                           ),
-                        ],
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    Expanded(
-                      child: !_available
-                          ? const Center(
-                              child: Text(
-                                'Actívate para recibir viajes',
-                                style: TextStyle(color: Colors.black54),
-                              ),
-                            )
-                          : StreamBuilder<List<Trip>>(
-                              stream: _fs.pendingTripsForCity(_city),
-                              builder: (context, snap) {
-                                if (snap.connectionState ==
-                                    ConnectionState.waiting) {
-                                  return const Center(
-                                    child: CircularProgressIndicator(),
-                                  );
-                                }
-                                final trips = snap.data ?? [];
-                                if (trips.isEmpty) {
-                                  return const Center(
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          Icons.two_wheeler,
-                                          size: 48,
-                                          color: Colors.black26,
-                                        ),
-                                        SizedBox(height: 12),
-                                        Text(
-                                          'No hay viajes por ahora',
-                                          style: TextStyle(
-                                            color: Colors.black54,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }
-                                return ListView.separated(
-                                  controller: scrollController,
-                                  padding: const EdgeInsets.all(16),
-                                  itemCount: trips.length,
-                                  separatorBuilder: (_, __) =>
-                                      const SizedBox(height: 12),
-                                  itemBuilder: (_, i) => _tripCard(trips[i]),
-                                );
-                              },
-                            ),
-                    ),
-                  ],
-                ),
-              );
-            },
+                        );
+                      }
+                      return ListView.separated(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: trips.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 12),
+                        itemBuilder: (_, i) => _tripCard(trips[i]),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
@@ -409,31 +250,20 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
           ),
           Row(
             children: [
-              const Icon(
-                Icons.location_on,
-                size: 16,
-                color: MijanoTheme.signal,
-              ),
+              const Icon(Icons.location_on, size: 16, color: MijanoTheme.signal),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  trip.destinationAddress ?? 'Destino',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
+                  child: Text(trip.destinationAddress ?? 'Destino',
+                      style: const TextStyle(fontWeight: FontWeight.w700))),
             ],
           ),
           const Divider(height: 24),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'S/ ${trip.fareAmount.toStringAsFixed(2)}',
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
+              Text('S/ ${trip.fareAmount.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                      fontSize: 20, fontWeight: FontWeight.w900)),
               ElevatedButton(
                 onPressed: () => _accept(trip),
                 child: const Text('Aceptar'),
