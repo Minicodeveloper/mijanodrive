@@ -3,6 +3,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../services/auth_service.dart';
 import '../../services/location_service.dart';
+import 'edit_profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -44,10 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     await _mapController?.animateCamera(
-      CameraUpdate.newLatLngZoom(
-        LatLng(pos.latitude, pos.longitude),
-        16,
-      ),
+      CameraUpdate.newLatLngZoom(LatLng(pos.latitude, pos.longitude), 16),
     );
   }
 
@@ -56,6 +54,15 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted) return;
     // Redirige al Login eliminando las pantallas anteriores de la pila
     Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+  }
+
+  void _navigateToEditProfile() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const EditProfileScreen(),
+      ),
+    );
   }
 
   @override
@@ -69,9 +76,7 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: EdgeInsets.zero,
           children: [
             UserAccountsDrawerHeader(
-              decoration: const BoxDecoration(
-                color: Color(0xFFF9D408),
-              ),
+              decoration: const BoxDecoration(color: Color(0xFFF9D408)),
               accountName: Text(
                 user?.name ?? 'Usuario',
                 style: const TextStyle(
@@ -86,11 +91,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               currentAccountPicture: const CircleAvatar(
                 backgroundColor: Colors.white,
-                child: Icon(
-                  Icons.person,
-                  size: 40,
-                  color: Colors.black,
-                ),
+                child: Icon(Icons.person, size: 40, color: Colors.black),
               ),
             ),
             ListTile(
@@ -113,8 +114,8 @@ class _HomeScreenState extends State<HomeScreen> {
               leading: const Icon(Icons.settings),
               title: const Text('Configuración'),
               onTap: () {
-                Navigator.pop(context);
-                // TODO: Navegar a configuración
+                Navigator.pop(context); // Cierra el menú lateral
+                _navigateToEditProfile();
               },
             ),
             const Divider(),
@@ -122,7 +123,10 @@ class _HomeScreenState extends State<HomeScreen> {
               leading: const Icon(Icons.logout, color: Colors.red),
               title: const Text(
                 'Cerrar sesión',
-                style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: Colors.red,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               onTap: () async {
                 Navigator.pop(context);
@@ -208,11 +212,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             color: Colors.black,
                           ),
                         ),
-                        Icon(
-                          Icons.two_wheeler,
-                          size: 32,
-                          color: Colors.black,
-                        ),
+                        Icon(Icons.two_wheeler, size: 32, color: Colors.black),
                       ],
                     ),
                     const SizedBox(height: 15),
@@ -231,18 +231,12 @@ class _HomeScreenState extends State<HomeScreen> {
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(12),
                           boxShadow: const [
-                            BoxShadow(
-                              color: Colors.black12,
-                              blurRadius: 4,
-                            ),
+                            BoxShadow(color: Colors.black12, blurRadius: 4),
                           ],
                         ),
                         child: Row(
                           children: [
-                            const Icon(
-                              Icons.location_on,
-                              color: Colors.black,
-                            ),
+                            const Icon(Icons.location_on, color: Colors.black),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
@@ -276,18 +270,12 @@ class _HomeScreenState extends State<HomeScreen> {
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(12),
                           boxShadow: const [
-                            BoxShadow(
-                              color: Colors.black12,
-                              blurRadius: 4,
-                            ),
+                            BoxShadow(color: Colors.black12, blurRadius: 4),
                           ],
                         ),
                         child: Row(
                           children: const [
-                            Icon(
-                              Icons.flag,
-                              color: Colors.black,
-                            ),
+                            Icon(Icons.flag, color: Colors.black),
                             SizedBox(width: 10),
                             Expanded(
                               child: Text(
@@ -317,12 +305,12 @@ class _HomeScreenState extends State<HomeScreen> {
         unselectedItemColor: Colors.grey,
         onTap: (index) {
           setState(() => _selectedIndex = index);
+          if (index == 3) {
+            _navigateToEditProfile();
+          }
         },
         items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Inicio',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Inicio'),
           BottomNavigationBarItem(
             icon: Icon(Icons.history),
             label: 'Historial',
