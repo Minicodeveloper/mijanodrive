@@ -162,13 +162,11 @@ class FirestoreService {
       .where('status', isEqualTo: 'pending')
       .snapshots()
       .map((q) {
-        print('Total de documentos encontrados en pendingDrivers: ${q.docs.length}');
+        
         return q.docs.map((d) {
           try {
-            print('Procesando driver ID: ${d.id} con datos: ${d.data()}');
             return Driver.fromFirestore(d);
           } catch (e) {
-            print('⚠️ Error detallado al parsear el conductor ${d.id}: $e');
             return null;
           }
         }).whereType<Driver>().toList();

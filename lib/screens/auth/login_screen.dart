@@ -14,8 +14,18 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
+  UserRole? _selectedRole;
 
   final _auth = AuthService.instance;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is Map && args['role'] != null) {
+      _selectedRole = (args['role'] as String) == 'driver' ? UserRole.driver : UserRole.passenger;
+    }
+  }
 
   @override
   void dispose() {

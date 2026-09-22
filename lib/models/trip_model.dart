@@ -43,7 +43,6 @@ class Trip {
 
   Map<String, dynamic> toMap() {
     return {
-      'id': id,
       'passengerId': passengerId,
       'driverId': driverId,
       'origin': origin,

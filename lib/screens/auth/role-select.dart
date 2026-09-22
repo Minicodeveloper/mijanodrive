@@ -29,16 +29,22 @@ class RoleSelectScreen extends StatelessWidget {
               // LOGO SUPERIOR (logo.png)
               // ==========================================
               Center(
-                child: Image.asset(
-                  'assets/images/logo.png',
-                  width: size.width * 0.55,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) => const Text(
-                    'MIJANO DRIVE',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w900,
-                      color: MijanoTheme.ink,
+                child: GestureDetector(
+                  onTap: () => Navigator.of(context).pushNamed(
+                    '/admin',
+                    arguments: const {'createFirstAdmin': true},
+                  ),
+                  child: Image.asset(
+                    'assets/images/logo.png',
+                    width: size.width * 0.55,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => const Text(
+                      'MIJANO DRIVE',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w900,
+                        color: MijanoTheme.ink,
+                      ),
                     ),
                   ),
                 ),

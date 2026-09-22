@@ -20,6 +20,7 @@ import 'screens/passenger/rating_screen.dart';
 import 'screens/passenger/wallet_screen.dart';
 import 'screens/shared/profile_screen.dart';
 import 'screens/driver/driver_dashboard_screen.dart';
+import 'screens/driver/driver_active_trip_screen.dart';
 import 'screens/auth/role-select.dart';
 import 'screens/driver/driver_main_layout.dart';
 
