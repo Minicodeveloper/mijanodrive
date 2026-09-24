@@ -59,6 +59,33 @@ class _AdminShellState extends State<AdminShell> {
     ];
   }
 
+  
+  Future<void> _actualizarEstadoDocumento(BuildContext context, Driver driver, String campoEstado, String nuevoEstado, StateSetter setStateDialog) async {
+    try {
+      
+      await FirebaseFirestore.instance.collection('drivers').doc(driver.uid).update({
+        'documents.$campoEstado': nuevoEstado,
+      });
+
+      
+      setStateDialog(() {
+        driver.documents[campoEstado] = nuevoEstado;
+      });
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Documento actualizado a: $nuevoEstado')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al actualizar: $e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.of(context).size.width > 900;
@@ -177,8 +204,8 @@ class _AdminShellState extends State<AdminShell> {
 
   Widget _body() {
     final title = _items[_tab].$2;
-    if (title == 'Panel') return _DashboardModule(role: widget.role);
-    if (title == 'Conductores') return const _DriversModule();
+    if (title == 'Panel') return _DashboardModule(role: widget.role, parentState: this);
+    if (title == 'Conductores') return _DriversModule(parentState: this);
     if (title == 'Tarifas') return const _TariffsModule();
     if (title == 'Billetera') return const _WalletModule();
     if (title == 'Alertas S.O.S.') return const _AlertsModule();
@@ -222,7 +249,8 @@ Widget _card({required Widget child}) => Container(
 // ============ MÓDULO 1: PANEL ============
 class _DashboardModule extends StatelessWidget {
   final AdminRole role;
-  const _DashboardModule({required this.role});
+  final _AdminShellState parentState;
+  const _DashboardModule({required this.role, required this.parentState});
   
   @override
   Widget build(BuildContext context) {
@@ -233,6 +261,7 @@ class _DashboardModule extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const _Header('Panel de control', 'Visión general en tiempo real'),
+          const SizedBox(height: 24),
           
           StreamBuilder<List<Driver>>(
             stream: fs.allDrivers(),
@@ -245,11 +274,9 @@ class _DashboardModule extends StatelessWidget {
                 builder: (context, tsnap) {
                   final trips = tsnap.data ?? [];
                   
-                  // Calculando datos reales a partir de los viajes activos (Sin datos inventados)
                   final dineroEnCurso = trips.fold<double>(
                       0.0, (sum, t) => sum + t.fareAmount);
                   
-                  // KPIs principales
                   return Wrap(
                     spacing: 16,
                     runSpacing: 16,
@@ -267,135 +294,181 @@ class _DashboardModule extends StatelessWidget {
           ),
           
           const SizedBox(height: 24),
-          
-          // Sección de Mapas y Gráficos
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final isWide = constraints.maxWidth > 800;
-              
-              final mapWidget = _card(
-                child: SizedBox(
-                  height: 350,
-                  width: double.infinity,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Stack(
-                      children: [
-                        // TODO(Equipo): Descomentar este bloque StreamBuilder y GoogleMap cuando se haya habilitado
-                        // "Maps JavaScript API" en Google Cloud para el entorno Web y se haya configurado la facturación.
-                        Container(
-                          color: Colors.grey.shade200,
-                          width: double.infinity,
-                          height: double.infinity,
-                          child: const Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
+          const Text(
+            'Solicitudes Pendientes',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: MijanoTheme.ink),
+          ),
+          const SizedBox(height: 12),
+          _card(
+            child: StreamBuilder<List<Driver>>(
+              stream: fs.pendingDrivers(),
+              builder: (context, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                final pendingDrivers = snap.data ?? [];
+                if (pendingDrivers.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(
+                      child: Text(
+                        'No hay solicitudes pendientes de nuevos conductores',
+                        style: TextStyle(color: Colors.black54),
+                      ),
+                    ),
+                  );
+                }
+                return Column(
+                  children: [
+                    for (final d in pendingDrivers)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            CircleAvatar(
+                              radius: 28,
+                              backgroundColor: MijanoTheme.sol,
+                              backgroundImage: (d.photoUrl != null && d.photoUrl!.isNotEmpty)
+                                  ? NetworkImage(d.photoUrl!)
+                                  : null,
+                              child: (d.photoUrl == null || d.photoUrl!.isEmpty)
+                                  ? const Icon(Icons.person, color: MijanoTheme.ink, size: 28)
+                                  : null,
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    d.name.isNotEmpty ? d.name : 'Conductor sin nombre',
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w800,
+                                      color: MijanoTheme.ink,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    d.email.isNotEmpty ? d.email : 'Licencia: ${d.licenseNumber}',
+                                    style: const TextStyle(color: Colors.black54, fontSize: 13),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Placa: ${d.plate} · Vehículo: ${d.vehicleModel}',
+                                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: MijanoTheme.ink),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Wrap(
+                              spacing: 8,
                               children: [
-                                Icon(Icons.map_outlined, size: 48, color: Colors.grey),
-                                SizedBox(height: 12),
-                                Text(
-                                  'Mapa en vivo inactivo\n(Requiere habilitar Maps JavaScript API)',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(color: Colors.black54, fontWeight: FontWeight.w600),
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  icon: const Icon(Icons.visibility_outlined, size: 16),
+                                  label: const Text('Ver Doc'),
+                                  onPressed: () => parentState._mostrarDialogoDocumentos(context, d),
+                                ),
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.red.shade50,
+                                    foregroundColor: Colors.red.shade700,
+                                    elevation: 0,
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  icon: const Icon(Icons.close, size: 16),
+                                  label: const Text('Rechazar'),
+                                  onPressed: () => fs.approveDriver(d.uid, false),
+                                ),
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.green.shade50,
+                                    foregroundColor: Colors.green.shade700,
+                                    elevation: 0,
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  icon: const Icon(Icons.check, size: 16),
+                                  label: const Text('Aprobar'),
+                                  onPressed: () => fs.approveDriver(d.uid, true),
                                 ),
                               ],
                             ),
-                          ),
+                          ],
                         ),
-                        /*
-                        StreamBuilder<List<Driver>>(
-                          stream: fs.allDrivers(),
-                          builder: (context, dsnap) {
-                            final drivers = dsnap.data ?? [];
-                            final activeDrivers = drivers.where((d) => d.currentLatitude != null && d.currentLongitude != null).toList();
-                            
-                            final markers = activeDrivers.map((d) => Marker(
-                                      markerId: MarkerId(d.uid),
-                                      position: LatLng(d.currentLatitude!, d.currentLongitude!),
-                                      infoWindow: InfoWindow(title: 'Cond. ${d.plate}', snippet: d.isAvailable ? 'Libre' : 'Ocupado'),
-                                      icon: BitmapDescriptor.defaultMarkerWithHue(d.isAvailable ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueRed),
-                                    )).toSet();
-
-                            // Si hay conductores, centrar en el primero, sino en Lima
-                            final initialLat = activeDrivers.isNotEmpty ? activeDrivers.first.currentLatitude! : -12.046374;
-                            final initialLng = activeDrivers.isNotEmpty ? activeDrivers.first.currentLongitude! : -77.042793;
-
-                            return GoogleMap(
-                              initialCameraPosition: CameraPosition(
-                                target: LatLng(initialLat, initialLng),
-                                zoom: 11,
-                              ),
-                              markers: markers,
-                              myLocationEnabled: false,
-                              zoomControlsEnabled: true,
-                              onMapCreated: (GoogleMapController controller) {},
-                            );
-                          },
-                        ),
-                        */
-                        Positioned(
-                          top: 10,
-                          left: 10,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.9),
-                              borderRadius: BorderRadius.circular(20),
-                              boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
-                            ),
-                            child: const Text('Conectado en vivo', style: TextStyle(fontWeight: FontWeight.bold)),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-              
-              final chartWidget = role == AdminRole.superAdmin ? _card(
-                child: Container(
-                  height: 350,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.bar_chart, size: 48, color: Colors.grey),
-                        SizedBox(height: 8),
-                        Text('Actividad Semanal', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 16)),
-                        SizedBox(height: 8),
-                        Text('Este módulo se integrará en una fase posterior del desarrollo.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 12)),
-                      ],
-                    ),
-                  ),
-                ),
-              ) : const SizedBox.shrink();
-              
-              if (role == AdminRole.operator) {
-                // Operador solo ve el mapa en ancho completo
-                return mapWidget;
-              }
-
-              if (isWide) {
-                return Row(
-                  children: [
-                    Expanded(flex: 2, child: mapWidget),
-                    const SizedBox(width: 16),
-                    Expanded(flex: 1, child: chartWidget),
+                      ),
                   ],
                 );
-              }
-              return Column(
-                children: [
-                  mapWidget,
-                  const SizedBox(height: 16),
-                  chartWidget,
-                ],
+              },
+            ),
+          ),
+          
+          const SizedBox(height: 24),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final mapWidget = _card(
+                child: SizedBox(
+                  height: 400,
+                  width: double.infinity,
+                  child: ClipRRect(
+  borderRadius: BorderRadius.circular(12),
+  child: Stack(
+    children: [
+      
+      StreamBuilder<List<Driver>>(
+        stream: fs.allDrivers(),
+        builder: (context, snapshot) {
+          final drivers = snapshot.data ?? [];
+          
+          
+          final Set<Marker> markers = drivers.where((d) => d.currentLatitude != null && d.currentLongitude != null).map((d) {
+            return Marker(
+              markerId: MarkerId(d.uid),
+              position: LatLng(d.currentLatitude!, d.currentLongitude!),
+              infoWindow: InfoWindow(title: d.name, snippet: 'Placa: ${d.plate}'),
+            );
+          }).toSet();
+
+          return GoogleMap(
+            initialCameraPosition: const CameraPosition(
+              target: LatLng(-12.0464, -77.0428), // Coordenadas centrado por defecto (ej. Lima)
+              zoom: 13,
+            ),
+            markers: markers,
+            myLocationButtonEnabled: false,
+            zoomControlsEnabled: true,
+          );
+        },
+      ),
+      Positioned(
+        top: 10,
+        left: 10,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.9),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
+          ),
+          child: const Text('Conectado en vivo', style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
+      ),
+    ],
+  ),
+),
+                ),
               );
+              return mapWidget;
             },
           ),
           
@@ -532,9 +605,10 @@ String _statusEs(TripStatus s) {
   }
 }
 
-// ============ MÓDULO 2: CONDUCTORES ============
 class _DriversModule extends StatelessWidget {
-  const _DriversModule();
+  final _AdminShellState parentState;
+  const _DriversModule({required this.parentState});
+
   @override
   Widget build(BuildContext context) {
     final fs = FirestoreService.instance;
@@ -543,46 +617,136 @@ class _DriversModule extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _Header('Aprobación de conductores',
-              'Revisa documentos y aprueba postulantes'),
+          const _Header(
+            'Solicitudes Pendientes',
+            'Revisión de documentos de nuevos conductores',
+          ),
+          const SizedBox(height: 16),
           _card(
             child: StreamBuilder<List<Driver>>(
               stream: fs.pendingDrivers(),
               builder: (context, snap) {
                 if (snap.connectionState == ConnectionState.waiting) {
                   return const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Center(child: CircularProgressIndicator()));
+                    padding: EdgeInsets.all(24),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
                 }
                 final drivers = snap.data ?? [];
                 if (drivers.isEmpty) {
                   return const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text('No hay conductores pendientes'));
+                    padding: EdgeInsets.all(24),
+                    child: Center(
+                      child: Text(
+                        'No hay solicitudes pendientes de conductores',
+                        style: TextStyle(color: Colors.black54),
+                      ),
+                    ),
+                  );
                 }
                 return Column(
                   children: [
                     for (final d in drivers)
-                      ListTile(
-                        leading: const CircleAvatar(
-                            backgroundColor: MijanoTheme.sol,
-                            child: Icon(Icons.person, color: MijanoTheme.ink)),
-                        title: Text('Placa ${d.plate}'),
-                        subtitle: Text(
-                            'Licencia ${d.licenseNumber} · ${d.city}'),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            TextButton(
-                              onPressed: () =>
-                                  fs.approveDriver(d.uid, false),
-                              child: const Text('Rechazar',
-                                  style: TextStyle(color: MijanoTheme.signal)),
+                            CircleAvatar(
+                              radius: 32,
+                              backgroundColor: MijanoTheme.sol,
+                              backgroundImage: (d.photoUrl != null && d.photoUrl!.isNotEmpty)
+                                  ? NetworkImage(d.photoUrl!)
+                                  : null,
+                              child: (d.photoUrl == null || d.photoUrl!.isEmpty)
+                                  ? const Icon(Icons.person, color: MijanoTheme.ink, size: 32)
+                                  : null,
                             ),
-                            const SizedBox(width: 8),
-                            ElevatedButton(
-                              onPressed: () => fs.approveDriver(d.uid, true),
-                              child: const Text('Aprobar'),
+                            const SizedBox(width: 20),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    d.name.isNotEmpty
+                                        ? d.name
+                                        : 'Conductor sin nombre',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w800,
+                                      color: MijanoTheme.ink,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    d.email.isNotEmpty
+                                        ? d.email
+                                        : 'Licencia: ${d.licenseNumber} · ${d.city}',
+                                    style: const TextStyle(
+                                      color: Colors.black54,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Placa: ${d.plate} · Vehículo: ${d.vehicleModel}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      color: MijanoTheme.ink,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Wrap(
+                              spacing: 12,
+                              runSpacing: 8,
+                              alignment: WrapAlignment.end,
+                              children: [
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 12),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  icon: const Icon(Icons.visibility_outlined, size: 18),
+                                  label: const Text('Ver Doc'),
+                                  onPressed: () => parentState._mostrarDialogoDocumentos(context, d),
+                                ),
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.red.shade50,
+                                    foregroundColor: Colors.red.shade700,
+                                    elevation: 0,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 12),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  icon: const Icon(Icons.close, size: 18),
+                                  label: const Text('Rechazar'),
+                                  onPressed: () => fs.approveDriver(d.uid, false),
+                                ),
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.green.shade50,
+                                    foregroundColor: Colors.green.shade700,
+                                    elevation: 0,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 12),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  icon: const Icon(Icons.check, size: 18),
+                                  label: const Text('Aprobar'),
+                                  onPressed: () => fs.approveDriver(d.uid, true),
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -899,8 +1063,6 @@ class _WalletModule extends StatelessWidget {
           _Header('Billetera y recargas',
               'Pasarela digital (Culqi/Niubiz) y caja efectivo'),
           SizedBox(height: 8),
-          // TODO(Equipo): Conectar pasarela de pago (Culqi/Niubiz) y listar aquí el Stream de transacciones.
-          // Recomendado: Utilizar fs.transactions() para listar el historial financiero global o de comisiones.
           Text('Conecta Culqi/Niubiz para ver las transacciones aquí.',
               style: TextStyle(color: Colors.black54)),
         ],
@@ -974,7 +1136,6 @@ class _SecurityModule extends StatefulWidget {
 class _SecurityModuleState extends State<_SecurityModule> {
   final _db = FirebaseFirestore.instance;
 
-  // Formulario para crear nuevo admin
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
@@ -1001,11 +1162,9 @@ class _SecurityModuleState extends State<_SecurityModule> {
     });
 
     try {
-      // Guardar la sesión actual del superAdmin.
       final currentUser = fb.FirebaseAuth.instance.currentUser;
       final currentEmail = currentUser?.email;
 
-      // Crear el nuevo usuario en Firebase Auth.
       final cred =
           await fb.FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: _emailCtrl.text.trim(),
@@ -1015,7 +1174,6 @@ class _SecurityModuleState extends State<_SecurityModule> {
       final uid = cred.user?.uid;
       if (uid == null) throw Exception('No se obtuvo UID');
 
-      // Registrar en Firestore.
       await _db.collection('admins').doc(uid).set({
         'email': _emailCtrl.text.trim(),
         'name': _nameCtrl.text.trim(),
@@ -1024,25 +1182,19 @@ class _SecurityModuleState extends State<_SecurityModule> {
         'createdBy': currentEmail ?? 'unknown',
       });
 
-      // Volver a iniciar sesión como el superAdmin actual.
-      // Nota: createUserWithEmailAndPassword cambia la sesión activa.
-      // Restauramos la sesión previa si conocemos las credenciales.
-      // Como no almacenamos la contraseña, solo cerramos sesión del nuevo.
       await fb.FirebaseAuth.instance.signOut();
 
-      // Indicar al usuario que debe volver a iniciar sesión.
       _nameCtrl.clear();
       _emailCtrl.clear();
       _passCtrl.clear();
 
       setState(() {
         _feedback =
-            '✅ Admin "${_nameCtrl.text.isEmpty ? _emailCtrl.text : 'nuevo'}" creado. '
+            ' Admin "${_nameCtrl.text.isEmpty ? _emailCtrl.text : 'nuevo'}" creado. '
             'Nota: Tu sesión se ha cerrado. Vuelve a iniciar sesión.';
         _feedbackIsError = false;
       });
 
-      // Re-login automático si tenemos el email (pedimos relogin manual)
       if (mounted) {
         Future.delayed(const Duration(seconds: 2), () {
           if (mounted) {
@@ -1139,8 +1291,6 @@ class _SecurityModuleState extends State<_SecurityModule> {
           const _Header('Seguridad y permisos',
               'Roles: SuperAdmin (dueños) y Operador (gerente)'),
           const SizedBox(height: 24),
-
-          // ── Lista de admins existentes ──
           const Text('Administradores registrados',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
@@ -1180,8 +1330,6 @@ class _SecurityModuleState extends State<_SecurityModule> {
           ),
 
           const SizedBox(height: 32),
-
-          // ── Formulario crear nuevo admin ──
           const Text('Crear nuevo administrador',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
@@ -1209,7 +1357,6 @@ class _SecurityModuleState extends State<_SecurityModule> {
                           : null,
                     ),
                     const SizedBox(height: 12),
-
                     TextFormField(
                       controller: _emailCtrl,
                       keyboardType: TextInputType.emailAddress,
@@ -1224,7 +1371,6 @@ class _SecurityModuleState extends State<_SecurityModule> {
                       },
                     ),
                     const SizedBox(height: 12),
-
                     TextFormField(
                       controller: _passCtrl,
                       obscureText: true,
@@ -1239,8 +1385,6 @@ class _SecurityModuleState extends State<_SecurityModule> {
                       },
                     ),
                     const SizedBox(height: 12),
-
-                    // Selector de rol
                     DropdownButtonFormField<String>(
                       value: _selectedRole,
                       decoration: const InputDecoration(
@@ -1260,8 +1404,6 @@ class _SecurityModuleState extends State<_SecurityModule> {
                       onChanged: (v) => setState(() => _selectedRole = v!),
                     ),
                     const SizedBox(height: 16),
-
-                    // Feedback
                     if (_feedback != null) ...[
                       Container(
                         width: double.infinity,
@@ -1285,7 +1427,6 @@ class _SecurityModuleState extends State<_SecurityModule> {
                       ),
                       const SizedBox(height: 12),
                     ],
-
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
@@ -1349,4 +1490,288 @@ class _SecurityModuleState extends State<_SecurityModule> {
             ),
     );
   }
+}
+
+// =========================================================================
+// MÉTODOS DE VISUALIZACIÓN DE DOCUMENTOS (INTEGRADOS CON ACCIONES)
+// =========================================================================
+
+extension _DocumentDialogExtension on _AdminShellState {
+  void _mostrarDialogoDocumentos(BuildContext context, Driver driver) {
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setStateDialog) {
+          return AlertDialog(
+            title: const Text('Documentos del Conductor'),
+            content: SizedBox(
+              width: 500,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // 1. DNI (Frente)
+                    _buildDocItem(
+                      title: 'DNI (Frente)',
+                      url: driver.documents['docFront'],
+                      status: driver.documents['docFrontStatus'] ?? 'pendiente',
+                      onView: () => _showFullImage(context, driver.documents['docFront']),
+                      onApprove: () => _actualizarEstadoDocumento(context, driver, 'docFrontStatus', 'aprobado', setStateDialog),
+                      onReject: () => _actualizarEstadoDocumento(context, driver, 'docFrontStatus', 'rechazado', setStateDialog),
+                    ),
+                    const Divider(height: 16),
+
+                    // 2. DNI (Reverso)
+                    _buildDocItem(
+                      title: 'DNI (Reverso)',
+                      url: driver.documents['docBack'],
+                      status: driver.documents['docBackStatus'] ?? 'pendiente',
+                      onView: () => _showFullImage(context, driver.documents['docBack']),
+                      onApprove: () => _actualizarEstadoDocumento(context, driver, 'docBackStatus', 'aprobado', setStateDialog),
+                      onReject: () => _actualizarEstadoDocumento(context, driver, 'docBackStatus', 'rechazado', setStateDialog),
+                    ),
+                    const Divider(height: 16),
+
+                    // 3. Licencia de Conducir
+                    _buildDocItem(
+                      title: 'Licencia de Conducir',
+                      url: driver.licensePhotoUrl ?? driver.documents['licensedDocument'],
+                      status: driver.documents['licensedDocumentStatus'] ?? driver.documents['licenseStatus'] ?? 'pendiente',
+                      onView: () => _showFullImage(context, driver.licensePhotoUrl ?? driver.documents['licensedDocument']),
+                      onApprove: () => _actualizarEstadoDocumento(context, driver, 'licensedDocumentStatus', 'aprobado', setStateDialog),
+                      onReject: () => _actualizarEstadoDocumento(context, driver, 'licensedDocumentStatus', 'rechazado', setStateDialog),
+                    ),
+                    const Divider(height: 16),
+
+                    // 4. SOAT / Revisión Técnica
+                    _buildDocItem(
+                      title: 'SOAT / Revisión Técnica',
+                      url: driver.soatPhotoUrl ?? driver.documents['soatPhoto'],
+                      status: driver.documents['soatPhotoStatus'] ?? driver.documents['soatStatus'] ?? 'pendiente',
+                      onView: () => _showFullImage(context, driver.soatPhotoUrl ?? driver.documents['soatPhoto']),
+                      onApprove: () => _actualizarEstadoDocumento(context, driver, 'soatPhotoStatus', 'aprobado', setStateDialog),
+                      onReject: () => _actualizarEstadoDocumento(context, driver, 'soatPhotoStatus', 'rechazado', setStateDialog),
+                    ),
+                    const Divider(height: 16),
+
+                    // 5. Antecedentes Policiales
+                    _buildDocItem(
+                      title: 'Antecedentes Policiales',
+                      url: driver.documents['policeRecord'],
+                      status: driver.documents['policeRecordStatus'] ?? 'pendiente',
+                      onView: () => _showFullImage(context, driver.documents['policeRecord']),
+                      onApprove: () => _actualizarEstadoDocumento(context, driver, 'policeRecordStatus', 'aprobado', setStateDialog),
+                      onReject: () => _actualizarEstadoDocumento(context, driver, 'policeRecordStatus', 'rechazado', setStateDialog),
+                    ),
+                    const Divider(height: 16),
+
+                    // 6. Antecedentes Penales
+                    _buildDocItem(
+                      title: 'Antecedentes Penales',
+                      url: driver.documents['criminalRecord'],
+                      status: driver.documents['criminalRecordStatus'] ?? 'pendiente',
+                      onView: () => _showFullImage(context, driver.documents['criminalRecord']),
+                      onApprove: () => _actualizarEstadoDocumento(context, driver, 'criminalRecordStatus', 'aprobado', setStateDialog),
+                      onReject: () => _actualizarEstadoDocumento(context, driver, 'criminalRecordStatus', 'rechazado', setStateDialog),
+                    ),
+                    const Divider(height: 16),
+
+                    // 7. Tarjeta de Propiedad
+                    _buildDocItem(
+                      title: 'Tarjeta de Propiedad',
+                      url: driver.documents['propertyCardPhoto'],
+                      status: driver.documents['propertyCardPhotoStatus'] ?? 'pendiente',
+                      onView: () => _showFullImage(context, driver.documents['propertyCardPhoto']),
+                      onApprove: () => _actualizarEstadoDocumento(context, driver, 'propertyCardPhotoStatus', 'aprobado', setStateDialog),
+                      onReject: () => _actualizarEstadoDocumento(context, driver, 'propertyCardPhotoStatus', 'rechazado', setStateDialog),
+                    ),
+                    const Divider(height: 16),
+
+                    // 8. Foto del Vehículo
+                    _buildDocItem(
+                      title: 'Foto del Vehículo',
+                      url: driver.documents['vehiclePhoto'],
+                      status: driver.documents['vehiclePhotoStatus'] ?? 'pendiente',
+                      onView: () => _showFullImage(context, driver.documents['vehiclePhoto']),
+                      onApprove: () => _actualizarEstadoDocumento(context, driver, 'vehiclePhotoStatus', 'aprobado', setStateDialog),
+                      onReject: () => _actualizarEstadoDocumento(context, driver, 'vehiclePhotoStatus', 'rechazado', setStateDialog),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.black, 
+                ),
+                child: const Text('Cerrar', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _showFullImage(BuildContext context, String? imageUrl) {
+    if (imageUrl == null || imageUrl.isEmpty) return;
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          constraints: const BoxConstraints(maxWidth: 700, maxHeight: 700),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Previsualización de Documento', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: InteractiveViewer(
+                    child: Image.network(imageUrl, fit: BoxFit.contain),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Widget _buildDocItem({
+  required String title,
+  required String? url,
+  required String status,
+  required VoidCallback onView,
+  required VoidCallback onApprove,
+  required VoidCallback onReject,
+}) {
+  Color statusColor;
+  String statusText;
+
+  switch (status.toLowerCase()) {
+    case 'aprobado':
+      statusColor = Colors.green;
+      statusText = 'Aprobado';
+      break;
+    case 'rechazado':
+      statusColor = Colors.red;
+      statusText = 'Rechazado';
+      break;
+    default:
+      statusColor = Colors.orange;
+      statusText = 'Pendiente';
+  }
+
+  return Container(
+    margin: const EdgeInsets.symmetric(vertical: 8),
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: const Color(0xFFFAF6EE),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: Colors.brown.withOpacity(0.12)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: statusColor.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: statusColor.withOpacity(0.4)),
+              ),
+              child: Text(
+                statusText,
+                style: TextStyle(
+                  color: statusColor,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            InkWell(
+              onTap: (url != null && url.isNotEmpty) ? onView : null,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: (url != null && url.isNotEmpty)
+                    ? Image.network(
+                        url,
+                        width: 65,
+                        height: 65,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          width: 65,
+                          height: 65,
+                          color: Colors.grey.shade200,
+                          child: const Icon(Icons.broken_image, size: 24, color: Colors.grey),
+                        ),
+                      )
+                    : Container(
+                        width: 65,
+                        height: 65,
+                        color: Colors.grey.shade200,
+                        child: const Icon(Icons.insert_drive_file_outlined, size: 24, color: Colors.grey),
+                      ),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton.icon(
+                    onPressed: onReject,
+                    style: TextButton.styleFrom(foregroundColor: Colors.red),
+                    icon: const Icon(Icons.close, size: 16),
+                    label: const Text('Rechazar', style: TextStyle(fontSize: 13)),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: onApprove,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFE3FCEF),
+                      foregroundColor: const Color(0xFF006644),
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: const Icon(Icons.check, size: 16),
+                    label: const Text('Aprobar', style: TextStyle(fontSize: 13)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
 }
