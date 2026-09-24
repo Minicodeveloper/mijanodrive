@@ -35,7 +35,7 @@ Future<void> main() async {
     await Hive.initFlutter();
   } catch (_) {}
   
-  runApp(const MijanoDriveApp());
+  runApp(kIsWeb ? const AdminApp() : const MijanoDriveApp());
 }
 
 class MijanoDriveApp extends StatelessWidget {

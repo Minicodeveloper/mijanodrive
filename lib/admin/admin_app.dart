@@ -7,6 +7,14 @@ import '../models/trip_model.dart';
 import '../models/driver_model.dart';
 import '../services/firestore_service.dart';
 import 'admin_login_screen.dart';
+import 'modules/users_module.dart';
+import 'modules/reservations_module.dart';
+import 'modules/tariffs_module.dart';
+import 'modules/wallet_module.dart';
+import 'modules/reports_module.dart';
+import 'modules/analytics_module.dart';
+import 'modules/alerts_module.dart';
+import 'modules/security_module.dart';
 
 enum AdminRole {
   superAdmin,
@@ -17,7 +25,7 @@ enum AdminRole {
 /// Mismo Firestore, mismo tema que la app móvil. Se muestra con kIsWeb.
 class AdminApp extends StatelessWidget {
   final AdminRole role;
-  
+
   const AdminApp({super.key, this.role = AdminRole.superAdmin});
 
   @override
@@ -45,15 +53,21 @@ class _AdminShellState extends State<AdminShell> {
     if (widget.role == AdminRole.operator) {
       return [
         (Icons.dashboard, 'Panel'),
+        (Icons.people, 'Usuarios'),
         (Icons.verified_user, 'Conductores'),
+        (Icons.schedule, 'Reservas'),
+        (Icons.chat, 'Soporte'),
         (Icons.emergency, 'Alertas S.O.S.'),
       ];
     }
     return [
       (Icons.dashboard, 'Panel'),
+      (Icons.people, 'Usuarios'),
       (Icons.verified_user, 'Conductores'),
+      (Icons.schedule, 'Reservas'),
       (Icons.attach_money, 'Tarifas'),
       (Icons.account_balance_wallet, 'Billetera'),
+      (Icons.chat, 'Soporte'),
       (Icons.emergency, 'Alertas S.O.S.'),
       (Icons.security, 'Seguridad'),
     ];
@@ -204,14 +218,19 @@ class _AdminShellState extends State<AdminShell> {
 
   Widget _body() {
     final title = _items[_tab].$2;
-    if (title == 'Panel') return _DashboardModule(role: widget.role, parentState: this);
-    if (title == 'Conductores') return _DriversModule(parentState: this);
-    if (title == 'Tarifas') return const _TariffsModule();
-    if (title == 'Billetera') return const _WalletModule();
-    if (title == 'Alertas S.O.S.') return const _AlertsModule();
-    if (title == 'Seguridad') return const _SecurityModule();
-    
-    return const Center(child: Text('Módulo no encontrado'));
+    switch (title) {
+      case 'Panel': return _DashboardModule(role: widget.role, parentState: this);
+      case 'Usuarios': return const UsersModule();
+      case 'Conductores': return _DriversModule(parentState: this);
+      case 'Reservas': return const ReservationsModule();
+      case 'Tarifas': return const TariffsModule();
+      case 'Billetera': return const WalletModule();
+      case 'Soporte': return const ReportsModule();
+      case 'Analítica': return const AnalyticsModule();
+      case 'Alertas S.O.S.': return const AlertsModule();
+      case 'Seguridad': return const SecurityModule();
+      default: return const Center(child: Text('Módulo no encontrado'));
+    }
   }
 }
 

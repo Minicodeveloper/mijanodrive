@@ -230,6 +230,23 @@ class FirestoreService {
       .snapshots()
       .map((q) => q.docs.map((d) => {'id': d.id, ...d.data()}).toList());
 
+  Stream<List<Map<String, dynamic>>> chatMessagesForTrip(String tripId) => _db
+      .collection('trips')
+      .doc(tripId)
+      .collection('messages')
+      .orderBy('createdAt', descending: false)
+      .snapshots()
+      .map((q) => q.docs.map((d) => {'id': d.id, ...d.data()}).toList());
+
+  Future<void> sendSupportMessage(String tripId, String text) async {
+    await _db.collection('trips').doc(tripId).collection('messages').add({
+      'senderId': 'support',
+      'senderName': 'Soporte Admin',
+      'text': text,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   Future<void> resolveReport(String id) => _db
       .collection('reports')
       .doc(id)
