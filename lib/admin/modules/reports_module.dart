@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/firestore_service.dart';
 import '../../models/trip_model.dart';
 import 'shared_admin_widgets.dart';
@@ -12,12 +13,12 @@ class ReportsModule extends StatefulWidget {
 }
 
 class _ReportsModuleState extends State<ReportsModule> {
-  int _currentTab = 0; // 0: Todos, 1: Usuarios, 2: Conductores, 3: Soporte
+  int _currentTab = 0; 
   final fs = FirestoreService.instance;
 
-  // Filtros visuales como pestañas (botones)
+  
   Widget _buildTabs() {
-    final tabs = ['Todos', 'Usuarios', 'Conductores', 'Soporte'];
+    final tabs = ['Viajes Activos', 'Usuarios', 'Conductores', 'Soporte '];
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
@@ -43,7 +44,7 @@ class _ReportsModuleState extends State<ReportsModule> {
     );
   }
 
-  // ==== VISTA 1: "TODOS" (Monitoreo de Chats Activos) ====
+  // ==== VISTA 0: "TODOS" (Monitoreo de Chats Activos en Viajes) ====
   Widget _buildAllTripsChats() {
     return adminCard(
       child: Column(
@@ -83,7 +84,7 @@ class _ReportsModuleState extends State<ReportsModule> {
                       children: [
                         Container(
                           height: 300,
-                          color: const Color(0xFF1E1E1E), // Fondo oscuro temático para el chat
+                          color: const Color(0xFF1E1E1E), 
                           child: _ChatMonitor(tripId: t.id),
                         )
                       ],
@@ -98,7 +99,7 @@ class _ReportsModuleState extends State<ReportsModule> {
     );
   }
 
-  // ==== VISTAS RESTANTES (Reportes clásicos de usuarios y conductores) ====
+  
   Widget _buildReportsList(String filter) {
     return adminCard(
       child: StreamBuilder<List<Map<String, dynamic>>>(
@@ -108,8 +109,6 @@ class _ReportsModuleState extends State<ReportsModule> {
             return const Center(child: CircularProgressIndicator());
           }
           final reports = snap.data ?? [];
-          // Aquí se aplicaría el filtro si en Firestore estuviera definido el "tipo" de reporte
-          // Por ahora mostramos todos en "Soporte" o según corresponda.
           final openReports = reports.where((r) => r['status'] == 'open').toList();
 
           if (openReports.isEmpty) {
@@ -143,6 +142,11 @@ class _ReportsModuleState extends State<ReportsModule> {
     );
   }
 
+  
+  Widget _buildDriverSupportSection() {
+    return const AdminDriverSupportView();
+  }
+
   @override
   Widget build(BuildContext context) {
     Widget activeView;
@@ -153,7 +157,7 @@ class _ReportsModuleState extends State<ReportsModule> {
     } else if (_currentTab == 2) {
       activeView = _buildReportsList('driver');
     } else {
-      activeView = _buildReportsList('all'); // Soporte (Cola general de reportes)
+      activeView = _buildDriverSupportSection(); 
     }
 
     return SingleChildScrollView(
@@ -161,7 +165,7 @@ class _ReportsModuleState extends State<ReportsModule> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const AdminHeader('Reportes y Soporte', 'Monitoreo de chats y cola de moderación'),
+          const AdminHeader('Reportes y Soporte', 'Monitoreo de chats y bandeja de soporte'),
           _buildTabs(),
           const SizedBox(height: 24),
           activeView,
@@ -171,7 +175,7 @@ class _ReportsModuleState extends State<ReportsModule> {
   }
 }
 
-/// Widget interno para visualizar y responder en el chat de un viaje específico
+
 class _ChatMonitor extends StatefulWidget {
   final String tripId;
   const _ChatMonitor({required this.tripId});
@@ -184,7 +188,6 @@ class _ChatMonitorState extends State<_ChatMonitor> {
   final _msgCtrl = TextEditingController();
   final fs = FirestoreService.instance;
 
-  // Botones de mensajes predeterminados del administrador
   final List<String> _quickReplies = [
     'Hola, ¿en qué podemos ayudarte con tu viaje?',
     'Por favor, mantén la calma, ya estamos revisando tu caso.',
@@ -194,8 +197,6 @@ class _ChatMonitorState extends State<_ChatMonitor> {
 
   void _send(String text) {
     if (text.trim().isEmpty) return;
-    // TODO(Equipo): Aquí el admin inyecta un mensaje a la subcolección 'messages' del viaje.
-    // Asegúrense de que las apps (Conductor/Pasajero) escuchen la misma subcolección.
     fs.sendSupportMessage(widget.tripId, text.trim());
     _msgCtrl.clear();
   }
@@ -204,11 +205,8 @@ class _ChatMonitorState extends State<_ChatMonitor> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // Zona de Mensajes
         Expanded(
           child: StreamBuilder<List<Map<String, dynamic>>>(
-            // TODO(Equipo): Este Stream lee de trips/{tripId}/messages. 
-            // Validar que coincida con la ruta donde el Conductor/Pasajero escriben.
             stream: fs.chatMessagesForTrip(widget.tripId),
             builder: (context, snap) {
               final msgs = snap.data ?? [];
@@ -235,7 +233,7 @@ class _ChatMonitorState extends State<_ChatMonitor> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('[${m['senderId'] == 'support' ? 'Soporte/Admin' : 'Usuario'}] ${m['senderName'] ?? ''}', 
+                          Text('[${m['senderId'] == 'support' ? 'Soporte/Admin' : 'Usuario'}]${m['senderName'] ?? ''}', 
                             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: isSupport ? Colors.white : Colors.white70)),
                           const SizedBox(height: 4),
                           Text(m['text'] ?? '', style: const TextStyle(color: Colors.white)),
@@ -248,8 +246,6 @@ class _ChatMonitorState extends State<_ChatMonitor> {
             },
           ),
         ),
-        
-        // Zona de Respuestas Rápidas
         Container(
           height: 40,
           margin: const EdgeInsets.only(bottom: 8),
@@ -271,8 +267,6 @@ class _ChatMonitorState extends State<_ChatMonitor> {
             ),
           ),
         ),
-
-        // Campo de texto
         Container(
           padding: const EdgeInsets.all(12),
           color: const Color(0xFF121212),
@@ -302,6 +296,252 @@ class _ChatMonitorState extends State<_ChatMonitor> {
           ),
         )
       ],
+    );
+  }
+}
+
+
+class AdminDriverSupportView extends StatefulWidget {
+  const AdminDriverSupportView({super.key});
+
+  @override
+  State<AdminDriverSupportView> createState() => _AdminDriverSupportViewState();
+}
+
+class _AdminDriverSupportViewState extends State<AdminDriverSupportView> {
+  String? selectedDriverUid;
+  String? selectedDriverName;
+  final TextEditingController _replyController = TextEditingController();
+  final fs = FirestoreService.instance;
+
+  @override
+  void dispose() {
+    _replyController.dispose();
+    super.dispose();
+  }
+
+  void _sendAdminReply(String driverUid, String driverName) async {
+    if (_replyController.text.trim().isEmpty) return;
+
+    final text = _replyController.text.trim();
+    _replyController.clear();
+
+    
+    await fs.sendAdminOrDriverSupportMessage(
+      driverUid: driverUid,
+      driverName: driverName,
+      text: text,
+      isAdmin: true,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return adminCard(
+      child: SizedBox(
+        height: 600,
+        child: Row(
+          children: [
+            // Columna izquierda: Lista de chats activos en 'support_chats'
+            SizedBox(
+              width: 320,
+              child: Container(
+                decoration: const BoxDecoration(
+                  border: Border(right: BorderSide(color: Colors.black12)),
+                ),
+                child: StreamBuilder<List<Map<String, dynamic>>>(
+                  stream: fs.allSupportChats(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+
+                    final chats = snapshot.data ?? [];
+                    if (chats.isEmpty) {
+                      return const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(16.0),
+                          child: Text(
+                            'No hay chats de soporte activos.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 13, color: Colors.black54),
+                          ),
+                        ),
+                      );
+                    }
+
+                    return ListView.builder(
+                      itemCount: chats.length,
+                      itemBuilder: (context, index) {
+                        final chat = chats[index];
+                        final driverUid = chat['id'];
+                        final name = chat['name'] ?? 'Conductor';
+                        final lastMessage = chat['lastMessage'] ?? 'Sin mensajes';
+                        final isSelected = selectedDriverUid == driverUid;
+
+                        return ListTile(
+                          selected: isSelected,
+                          selectedTileColor: MijanoTheme.sol.withOpacity(0.2),
+                          leading: const CircleAvatar(
+                            backgroundColor: MijanoTheme.sol,
+                            child: Icon(Icons.support_agent, color: MijanoTheme.ink),
+                          ),
+                          title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                          subtitle: Text(
+                            lastMessage,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          onTap: () {
+                            setState(() {
+                              selectedDriverUid = driverUid;
+                              selectedDriverName = name;
+                            });
+                          },
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ),
+
+            // Columna derecha: Historial de mensajes y campo de respuesta
+            Expanded(
+              child: selectedDriverUid == null
+                  ? const Center(
+                      child: Text(
+                        'Selecciona un chat de soporte de la lista.',
+                        style: TextStyle(color: Colors.black54, fontWeight: FontWeight.w600),
+                      ),
+                    )
+                  : Column(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: const BoxDecoration(
+                            color: MijanoTheme.cream,
+                            border: Border(bottom: BorderSide(color: Colors.black12)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.person, color: MijanoTheme.ink),
+                              const SizedBox(width: 12),
+                              Text(
+                                'Soporte con: $selectedDriverName',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w900,
+                                  color: MijanoTheme.ink,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: StreamBuilder<List<Map<String, dynamic>>>(
+                            stream: fs.supportMessagesForDriver(selectedDriverUid!),
+                            builder: (context, snapshot) {
+                              if (!snapshot.hasData) {
+                                return const Center(child: CircularProgressIndicator());
+                              }
+
+                              final messages = snapshot.data ?? [];
+                              if (messages.isEmpty) {
+                                return const Center(
+                                  child: Text('Aún no hay mensajes en este chat.'),
+                                );
+                              }
+
+                              return ListView.builder(
+                                padding: const EdgeInsets.all(16),
+                                itemCount: messages.length,
+                                itemBuilder: (context, index) {
+                                  final msg = messages[index];
+                                  final isAdmin = msg['isAdmin'] ?? false;
+                                  final text = msg['text'] ?? '';
+
+                                  return Align(
+                                    alignment: isAdmin ? Alignment.centerRight : Alignment.centerLeft,
+                                    child: Container(
+                                      margin: const EdgeInsets.symmetric(vertical: 6),
+                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                      constraints: const BoxConstraints(maxWidth: 400),
+                                      decoration: BoxDecoration(
+                                        color: isAdmin ? MijanoTheme.sol.withOpacity(0.3) : Colors.white,
+                                        border: Border.all(
+                                          color: isAdmin ? MijanoTheme.ink : Colors.black26,
+                                          width: 1.5,
+                                        ),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            isAdmin ? 'Soporte (Central)' : 'Conductor',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                              color: isAdmin ? MijanoTheme.ink : Colors.black54,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            text,
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              color: MijanoTheme.ink,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: const BoxDecoration(
+                            color: Colors.white,
+                            border: Border(top: BorderSide(color: Colors.black12)),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _replyController,
+                                  onSubmitted: (_) => _sendAdminReply(selectedDriverUid!, selectedDriverName!),
+                                  decoration: const InputDecoration(
+                                    hintText: 'Escribe una respuesta para el conductor...',
+                                    border: OutlineInputBorder(),
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: MijanoTheme.sol,
+                                  foregroundColor: MijanoTheme.ink,
+                                ),
+                                icon: const Icon(Icons.send),
+                                label: const Text('Enviar'),
+                                onPressed: () => _sendAdminReply(selectedDriverUid!, selectedDriverName!),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

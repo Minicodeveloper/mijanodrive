@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/auth_service.dart';
 import '../../theme.dart';
+import 'driver_support_chat_screen.dart'; 
 
 class DriverAccountScreen extends StatelessWidget {
   const DriverAccountScreen({super.key});
@@ -11,6 +13,7 @@ class DriverAccountScreen extends StatelessWidget {
     final user = auth.currentUser;
 
     return Scaffold(
+      backgroundColor: Colors.white,
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -95,14 +98,35 @@ class DriverAccountScreen extends StatelessWidget {
             },
           ),
           const SizedBox(height: 8),
+          
+          // --- SOPORTE CENTRALIZADO ---
           _buildOptionTile(
             icon: Icons.support_agent_outlined,
-            title: 'Soporte y Ayuda',
-            subtitle: 'Comunícate con administración o central',
+            title: 'Soporte',
+            subtitle: 'Chatea en tiempo real con la administración',
             onTap: () {
-              _showSupportDialog(context);
+              final currentUid = FirebaseAuth.instance.currentUser?.uid;
+              final currentName = user?.name ?? 'Conductor Mijano'; 
+              
+              if (currentUid != null) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => SupportChatScreen(
+                      driverUid: currentUid,
+                      driverName: currentName, 
+                    ),
+                  ),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Error: No se encontró la sesión del usuario')),
+                );
+              }
             },
           ),
+          
+
           const SizedBox(height: 8),
           _buildOptionTile(
             icon: Icons.privacy_tip_outlined,
@@ -164,26 +188,6 @@ class DriverAccountScreen extends StatelessWidget {
         subtitle: Text(subtitle, style: const TextStyle(fontSize: 12, color: Colors.black54)),
         trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.black45),
         onTap: onTap,
-      ),
-    );
-  }
-
-  void _showSupportDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Soporte Mijano Drive'),
-        content: const Text(
-          'Si tienes problemas con un viaje, pagos o alertas S.O.S., '
-          'contacta directamente a la central de administración de tu ciudad.\n\n'
-          'Correo: soporte@mijanodrive.com',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Entendido'),
-          ),
-        ],
       ),
     );
   }

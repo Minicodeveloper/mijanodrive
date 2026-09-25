@@ -4,7 +4,6 @@ import '../models/trip_model.dart';
 import '../models/driver_model.dart';
 import '../models/wallet_model.dart';
 
-
 class FirestoreService {
   static final FirestoreService instance = FirestoreService._();
   FirestoreService._();
@@ -154,7 +153,6 @@ class FirestoreService {
       .snapshots()
       .map((q) => q.docs.map((d) => Trip.fromFirestore(d)).toList());
 
-  
   /// Conductores pendientes de aprobación optimizados para la consola web.
   Stream<List<Driver>> pendingDrivers() => _db
       .collection('users')
@@ -162,7 +160,6 @@ class FirestoreService {
       .where('status', isEqualTo: 'pending')
       .snapshots()
       .map((q) {
-        
         return q.docs.map((d) {
           try {
             return Driver.fromFirestore(d);
@@ -246,6 +243,56 @@ class FirestoreService {
       'createdAt': FieldValue.serverTimestamp(),
     });
   }
+
+  // =====================================================
+  //  SOPORTE CENTRALIZADO DE CONDUCTORES (`support_chats`)
+  // =====================================================
+
+  /// Envía un mensaje de soporte (tanto para Admin como para el Conductor),
+  /// creando automáticamente la colección 'support_chats' si no existe.
+  Future<void> sendAdminOrDriverSupportMessage({
+    required String driverUid,
+    required String driverName,
+    required String text,
+    required bool isAdmin,
+  }) async {
+    final chatRef = _db.collection('support_chats').doc(driverUid);
+
+    
+    await chatRef.collection('messages').add({
+      'senderId': isAdmin ? 'admin' : driverUid,
+      'text': text,
+      'timestamp': FieldValue.serverTimestamp(),
+      'isAdmin': isAdmin,
+    });
+
+    
+    await chatRef.set({
+      'driverId': driverUid,
+      'name': driverName,
+      'lastMessage': text,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'unreadByAdmin': !isAdmin,
+    }, SetOptions(merge: true));
+  }
+
+  
+  Stream<List<Map<String, dynamic>>> allSupportChats() => _db
+      .collection('support_chats')
+      .orderBy('updatedAt', descending: true)
+      .snapshots()
+      .map((q) => q.docs.map((d) => {'id': d.id, ...d.data()}).toList());
+
+  
+  Stream<List<Map<String, dynamic>>> supportMessagesForDriver(String driverUid) => _db
+      .collection('support_chats')
+      .doc(driverUid)
+      .collection('messages')
+      .orderBy('timestamp', descending: false)
+      .snapshots()
+      .map((q) => q.docs.map((d) => {'id': d.id, ...d.data()}).toList());
+
+  // =====================================================
 
   Future<void> resolveReport(String id) => _db
       .collection('reports')
