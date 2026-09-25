@@ -208,9 +208,11 @@ class _SplashScreenState extends State<SplashScreen>
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
-          child: Column(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Spacer(flex: 2),
+              const SizedBox(height: 40),
 
               // 1. LOGO PRINCIPAL SUPERIOR (logo.png)
               FadeTransition(
@@ -233,7 +235,7 @@ class _SplashScreenState extends State<SplashScreen>
                 ),
               ),
 
-              const Spacer(flex: 2),
+              const SizedBox(height: 40),
 
               // 2. LOGO TÍTULO CON ANIMACIÓN (logo_title.png)
               SlideTransition(
@@ -260,7 +262,7 @@ class _SplashScreenState extends State<SplashScreen>
                 ),
               ),
 
-              const Spacer(flex: 3),
+              const SizedBox(height: 60),
 
               // 3. INDICADOR DE CARGA
               const SizedBox(

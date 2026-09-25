@@ -6,13 +6,10 @@ import '../theme.dart';
 import '../models/trip_model.dart';
 import '../models/driver_model.dart';
 import '../services/firestore_service.dart';
-import 'admin_login_screen.dart';
+import '../screens/auth/login_screen.dart';
 import 'modules/users_module.dart';
-import 'modules/reservations_module.dart';
 import 'modules/tariffs_module.dart';
-import 'modules/wallet_module.dart';
 import 'modules/reports_module.dart';
-import 'modules/analytics_module.dart';
 import 'modules/alerts_module.dart';
 import 'modules/security_module.dart';
 
@@ -47,31 +44,7 @@ class AdminShell extends StatefulWidget {
 }
 
 class _AdminShellState extends State<AdminShell> {
-  int _tab = 0;
-
-  List<(IconData, String)> get _items {
-    if (widget.role == AdminRole.operator) {
-      return [
-        (Icons.dashboard, 'Panel'),
-        (Icons.people, 'Usuarios'),
-        (Icons.verified_user, 'Conductores'),
-        (Icons.schedule, 'Reservas'),
-        (Icons.chat, 'Soporte'),
-        (Icons.emergency, 'Alertas S.O.S.'),
-      ];
-    }
-    return [
-      (Icons.dashboard, 'Panel'),
-      (Icons.people, 'Usuarios'),
-      (Icons.verified_user, 'Conductores'),
-      (Icons.schedule, 'Reservas'),
-      (Icons.attach_money, 'Tarifas'),
-      (Icons.account_balance_wallet, 'Billetera'),
-      (Icons.chat, 'Soporte'),
-      (Icons.emergency, 'Alertas S.O.S.'),
-      (Icons.security, 'Seguridad'),
-    ];
-  }
+  String _currentView = 'Panel';
 
   
   Future<void> _actualizarEstadoDocumento(BuildContext context, Driver driver, String campoEstado, String nuevoEstado, StateSetter setStateDialog) async {
@@ -125,6 +98,35 @@ class _AdminShellState extends State<AdminShell> {
     );
   }
 
+  Widget _buildNavItem(IconData icon, String title, {bool closeDrawer = false}) {
+    final isSelected = _currentView == title;
+    return Material(
+      color: Colors.transparent,
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 32),
+        leading: Icon(
+          icon,
+          color: isSelected ? MijanoTheme.sol : Colors.white70,
+        ),
+        title: Text(
+          title,
+          style: TextStyle(
+            color: isSelected ? MijanoTheme.sol : Colors.white70,
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
+        selected: isSelected,
+        selectedTileColor: Colors.white.withValues(alpha: 0.06),
+        onTap: () {
+          setState(() => _currentView = title);
+          if (closeDrawer) {
+            Navigator.pop(context);
+          }
+        },
+      ),
+    );
+  }
+
   Widget _sidebar({bool closeDrawer = false}) {
     return Container(
       color: MijanoTheme.ink,
@@ -144,40 +146,47 @@ class _AdminShellState extends State<AdminShell> {
                       letterSpacing: 0.5)),
             ]),
           ),
-      const SizedBox(height: 12),
-        for (int i = 0; i < _items.length; i++)
-            Material(
-              color: Colors.transparent,
-              child: ListTile(
-                leading: Icon(
-                  _items[i].$1,
-                  color: _tab == i ? MijanoTheme.sol : Colors.white70,
-                ),
-                title: Text(
-                  _items[i].$2,
-                  style: TextStyle(
-                    color: _tab == i ? MijanoTheme.sol : Colors.white70,
-                    fontWeight:
-                        _tab == i ? FontWeight.w700 : FontWeight.w500,
+          const SizedBox(height: 12),
+          Expanded(
+            child: ListView(
+              children: [
+                Theme(
+                  data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                  child: ExpansionTile(
+                    initiallyExpanded: true,
+                    iconColor: Colors.white70,
+                    collapsedIconColor: Colors.white70,
+                    title: const Text('GENERAL', style: TextStyle(color: Colors.white38, fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 1.2)),
+                    children: [
+                      _buildNavItem(Icons.dashboard, 'Panel', closeDrawer: closeDrawer),
+                      _buildNavItem(Icons.people, 'Usuarios', closeDrawer: closeDrawer),
+                      if (widget.role == AdminRole.superAdmin)
+                        _buildNavItem(Icons.attach_money, 'Tarifas', closeDrawer: closeDrawer),
+                    ],
                   ),
                 ),
-                selected: _tab == i,
-                selectedTileColor:
-                    Colors.white.withValues(alpha: 0.06),
-                onTap: () {
-                  setState(() => _tab = i);
-                  if (closeDrawer) {
-                    Navigator.pop(context);
-                  }
-                },
-              ),
+                Theme(
+                  data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                  child: ExpansionTile(
+                    initiallyExpanded: true,
+                    iconColor: Colors.white70,
+                    collapsedIconColor: Colors.white70,
+                    title: const Text('SEGURIDAD', style: TextStyle(color: Colors.white38, fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 1.2)),
+                    children: [
+                      _buildNavItem(Icons.chat, 'Soporte', closeDrawer: closeDrawer),
+                      _buildNavItem(Icons.emergency, 'Alertas S.O.S.', closeDrawer: closeDrawer),
+                      if (widget.role == AdminRole.superAdmin)
+                        _buildNavItem(Icons.security, 'Permisos', closeDrawer: closeDrawer),
+                    ],
+                  ),
+                ),
+              ],
             ),
-
-          const Spacer(),
+          ),
           Padding(
             padding: const EdgeInsets.all(16),
             child: Text(
-              'Rol: ${widget.role == AdminRole.superAdmin ? 'SuperAdmin' : 'Operador'}',
+              'Rol: ',
               style: const TextStyle(
                 color: Colors.white38,
                 fontSize: 12,
@@ -203,7 +212,7 @@ class _AdminShellState extends State<AdminShell> {
                   if (context.mounted) {
                     Navigator.of(context).pushAndRemoveUntil(
                       MaterialPageRoute(
-                          builder: (_) => const AdminLoginScreen()),
+                          builder: (_) => const LoginScreen()),
                       (_) => false,
                     );
                   }
@@ -217,18 +226,13 @@ class _AdminShellState extends State<AdminShell> {
   }
 
   Widget _body() {
-    final title = _items[_tab].$2;
-    switch (title) {
+    switch (_currentView) {
       case 'Panel': return _DashboardModule(role: widget.role, parentState: this);
       case 'Usuarios': return const UsersModule();
-      case 'Conductores': return _DriversModule(parentState: this);
-      case 'Reservas': return const ReservationsModule();
       case 'Tarifas': return const TariffsModule();
-      case 'Billetera': return const WalletModule();
       case 'Soporte': return const ReportsModule();
-      case 'Analítica': return const AnalyticsModule();
       case 'Alertas S.O.S.': return const AlertsModule();
-      case 'Seguridad': return const SecurityModule();
+      case 'Permisos': return const SecurityModule();
       default: return const Center(child: Text('Módulo no encontrado'));
     }
   }
@@ -1218,7 +1222,7 @@ class _SecurityModuleState extends State<_SecurityModule> {
         Future.delayed(const Duration(seconds: 2), () {
           if (mounted) {
             Navigator.of(context).pushAndRemoveUntil(
-              MaterialPageRoute(builder: (_) => const AdminLoginScreen()),
+              MaterialPageRoute(builder: (_) => const LoginScreen()),
               (_) => false,
             );
           }

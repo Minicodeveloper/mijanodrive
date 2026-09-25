@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:mijano_drive_app/services/auth_service.dart';
 import 'package:mijano_drive_app/models/user_model.dart';
@@ -135,17 +136,22 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF9D408)),
-            onPressed: () {
-              
+            onPressed: () async {
               const String claveMaestra = 'MijanoDriveAdmin2026*';
 
               if (pinController.text == claveMaestra) {
                 Navigator.pop(context); // Cierra el diálogo
-                
-                
-                Navigator.of(context).pushNamed('/register-admin'); 
-
-                _snack('Acceso concedido.');
+                // Buscar si hay administradores, de no haber crea uno.
+                final db = FirebaseFirestore.instance;
+                final snapshot = await db.collection('admins').limit(1).get();
+                if (snapshot.docs.isEmpty) {
+                   Navigator.of(context).pushNamed('/register-admin');
+                   _snack('Modo registro de primer administrador activado.');
+                } else {
+                   // Intenta un inicio de sesión directo para el administrador general
+                   Navigator.of(context).pushNamedAndRemoveUntil('/admin', (r) => false);
+                   _snack('Accediendo como administrador.');
+                }
               } else {
                 Navigator.pop(context);
                 _snack('Clave incorrecta. Acceso denegado.');
