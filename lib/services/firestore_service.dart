@@ -292,6 +292,43 @@ class FirestoreService {
       .snapshots()
       .map((q) => q.docs.map((d) => {'id': d.id, ...d.data()}).toList());
 
+  /// Envío de mensaje de soporte para el Pasajero
+  Future<void> sendPassengerSupportMessage({
+    required String passengerUid,
+    required String passengerName,
+    required String text,
+  }) async {
+    final chatRef = _db.collection('support_chats').doc(passengerUid);
+
+    await chatRef.collection('messages').add({
+      'text': text,
+      'senderId': passengerUid,
+      'senderName': passengerName.isNotEmpty ? passengerName : 'Pasajero',
+      'senderRole': 'passenger',
+      'isAdmin': false,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+
+    await chatRef.set({
+      'userId': passengerUid,
+      'driverId': passengerUid,
+      'name': passengerName.isNotEmpty ? passengerName : 'Pasajero',
+      'role': 'passenger',
+      'lastMessage': text,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'unreadByAdmin': true,
+    }, SetOptions(merge: true));
+  }
+
+  /// Stream de mensajes de soporte para el Pasajero
+  Stream<List<Map<String, dynamic>>> supportMessagesForPassenger(String passengerUid) => _db
+      .collection('support_chats')
+      .doc(passengerUid)
+      .collection('messages')
+      .orderBy('timestamp', descending: false)
+      .snapshots()
+      .map((q) => q.docs.map((d) => {'id': d.id, ...d.data()}).toList());
+
   // =====================================================
 
   Future<void> resolveReport(String id) => _db

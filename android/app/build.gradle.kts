@@ -18,7 +18,7 @@ plugins {
 
 android {
     namespace = "net.mijano_drive_app"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = runCatching { flutter.compileSdkVersion }.getOrNull() ?: 35
     ndkVersion = "30.0.16248370"
 
     compileOptions {
@@ -31,25 +31,32 @@ android {
         applicationId = "net.mijano_drive_app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        minSdk = runCatching { flutter.minSdkVersion }.getOrNull() ?: 21
+        targetSdk = runCatching { flutter.targetSdkVersion }.getOrNull() ?: 34
+        versionCode = runCatching { flutter.versionCode }.getOrNull() ?: 1
+        versionName = runCatching { flutter.versionName }.getOrNull() ?: "1.0"
     }
 
-    
     signingConfigs {
-        create("release") {
-            keyAlias = keystoreProperties.getProperty("keyAlias")!!
-            keyPassword = keystoreProperties.getProperty("keyPassword")!!
-            storeFile = file(keystoreProperties.getProperty("storeFile")!!)
-            storePassword = keystoreProperties.getProperty("storePassword")!! 
+        val hasKeyProperties = keystorePropertiesFile.exists() &&
+            !keystoreProperties.getProperty("keyAlias").isNullOrBlank() &&
+            !keystoreProperties.getProperty("keyPassword").isNullOrBlank() &&
+            !keystoreProperties.getProperty("storeFile").isNullOrBlank() &&
+            !keystoreProperties.getProperty("storePassword").isNullOrBlank()
+
+        if (hasKeyProperties) {
+            create("release") {
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+                storeFile = file(keystoreProperties.getProperty("storeFile") ?: "")
+                storePassword = keystoreProperties.getProperty("storePassword")
+            }
         }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 }
@@ -63,6 +70,3 @@ kotlin {
 flutter {
     source = "../.."
 }
-
-
-
