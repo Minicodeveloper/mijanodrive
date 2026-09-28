@@ -93,9 +93,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 user?.email ?? 'correo@ejemplo.com',
                 style: const TextStyle(color: Colors.black87),
               ),
-              currentAccountPicture: const CircleAvatar(
+              currentAccountPicture: CircleAvatar(
                 backgroundColor: Colors.white,
-                child: Icon(Icons.person, size: 40, color: Colors.black),
+                backgroundImage: user?.photoUrl != null && user!.photoUrl!.isNotEmpty
+                    ? NetworkImage(user.photoUrl!)
+                    : null,
+                child: (user?.photoUrl == null || user!.photoUrl!.isEmpty)
+                    ? const Icon(Icons.person, size: 40, color: Colors.black)
+                    : null,
               ),
             ),
             ListTile(
@@ -314,8 +319,8 @@ class _HomeScreenState extends State<HomeScreen> {
         selectedItemColor: const Color(0xFFF9D408),
         unselectedItemColor: Colors.grey,
         onTap: (index) {
-          if (index == 3) {
-            setState(() => _selectedIndex = 3);
+          if (index == 2) {
+            setState(() => _selectedIndex = 2);
             _navigateToAccount();
           } else {
             setState(() => _selectedIndex = index);
