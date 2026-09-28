@@ -3,7 +3,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../services/auth_service.dart';
 import '../../services/location_service.dart';
-import 'edit_profile_screen.dart';
+import 'passenger_account_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -56,13 +56,16 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
   }
 
-  void _navigateToEditProfile() {
-    Navigator.push(
+  Future<void> _navigateToAccount() async {
+    await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => const EditProfileScreen(),
+        builder: (context) => const PassengerAccountScreen(),
       ),
     );
+    if (mounted) {
+      setState(() => _selectedIndex = 0);
+    }
   }
 
   @override
@@ -115,7 +118,7 @@ class _HomeScreenState extends State<HomeScreen> {
               title: const Text('Configuración'),
               onTap: () {
                 Navigator.pop(context); // Cierra el menú lateral
-                _navigateToEditProfile();
+                _navigateToAccount();
               },
             ),
             const Divider(),
@@ -304,9 +307,11 @@ class _HomeScreenState extends State<HomeScreen> {
         selectedItemColor: const Color(0xFFF9D408),
         unselectedItemColor: Colors.grey,
         onTap: (index) {
-          setState(() => _selectedIndex = index);
           if (index == 3) {
-            _navigateToEditProfile();
+            setState(() => _selectedIndex = 3);
+            _navigateToAccount();
+          } else {
+            setState(() => _selectedIndex = index);
           }
         },
         items: const [
