@@ -4,6 +4,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../services/auth_service.dart';
 import '../../services/location_service.dart';
 import 'passenger_account_screen.dart';
+import 'passenger_history_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -102,7 +103,7 @@ class _HomeScreenState extends State<HomeScreen> {
               title: const Text('Historial de viajes'),
               onTap: () {
                 Navigator.pop(context);
-                // TODO: Navegar a historial
+                setState(() => _selectedIndex = 1);
               },
             ),
             ListTile(
@@ -139,8 +140,11 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-      body: Stack(
+      body: IndexedStack(
+        index: _selectedIndex == 1 ? 1 : 0,
         children: [
+          Stack(
+            children: [
           GoogleMap(
             initialCameraPosition: _initialCamera,
             onMapCreated: _onMapCreated,
@@ -300,6 +304,9 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
+            ],
+          ),
+          const PassengerHistoryScreen(),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
@@ -320,10 +327,10 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: Icon(Icons.history),
             label: 'Historial',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.account_balance_wallet),
-            label: 'Billetera',
-          ),
+          //BottomNavigationBarItem(
+            //icon: Icon(Icons.account_balance_wallet),
+            //label: 'Billetera',
+          //),
           BottomNavigationBarItem(
             icon: Icon(Icons.settings),
             label: 'Configuración',
