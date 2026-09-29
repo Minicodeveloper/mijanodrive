@@ -35,7 +35,7 @@ Future<void> main() async {
     await Hive.initFlutter();
   } catch (_) {}
   
-  runApp(kIsWeb ? const AdminApp() : const MijanoDriveApp());
+  runApp(const MijanoDriveApp());
 }
 
 class MijanoDriveApp extends StatelessWidget {
@@ -198,7 +198,7 @@ class _SplashScreenState extends State<SplashScreen>
 
   Future<void> _go() async {
     await Future.delayed(const Duration(milliseconds: 3000));
-    if (mounted) Navigator.of(context).pushReplacementNamed('/role-select');
+    if (mounted) Navigator.of(context).pushReplacementNamed(kIsWeb ? '/login' : '/role-select');
   }
 
   @override
