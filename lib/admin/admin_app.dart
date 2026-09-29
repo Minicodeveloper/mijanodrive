@@ -12,6 +12,8 @@ import 'modules/tariffs_module.dart';
 import 'modules/reports_module.dart';
 import 'modules/alerts_module.dart';
 import 'modules/security_module.dart';
+import '../admin/modules/drivers_module.dart';
+
 
 enum AdminRole {
   superAdmin,
