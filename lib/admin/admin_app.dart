@@ -6,14 +6,12 @@ import '../theme.dart';
 import '../models/trip_model.dart';
 import '../models/driver_model.dart';
 import '../services/firestore_service.dart';
-import '../screens/auth/login_screen.dart';
 import 'modules/users_module.dart';
 import 'modules/tariffs_module.dart';
 import 'modules/reports_module.dart';
 import 'modules/alerts_module.dart';
 import 'modules/security_module.dart';
 import '../admin/modules/drivers_module.dart';
-
 
 enum AdminRole {
   superAdmin,
@@ -48,15 +46,12 @@ class AdminShell extends StatefulWidget {
 class _AdminShellState extends State<AdminShell> {
   String _currentView = 'Panel';
 
-  
   Future<void> _actualizarEstadoDocumento(BuildContext context, Driver driver, String campoEstado, String nuevoEstado, StateSetter setStateDialog) async {
     try {
-      
       await FirebaseFirestore.instance.collection('drivers').doc(driver.uid).update({
         'documents.$campoEstado': nuevoEstado,
       });
 
-      
       setStateDialog(() {
         driver.documents[campoEstado] = nuevoEstado;
       });
@@ -82,9 +77,9 @@ class _AdminShellState extends State<AdminShell> {
       appBar: wide
           ? null
           : AppBar(
-              title: const Text('Mijano Drive · Panel'),
-              backgroundColor: MijanoTheme.sol,
-            ),
+        title: const Text('Mijano Drive · Panel'),
+        backgroundColor: MijanoTheme.sol,
+      ),
       drawer: wide ? null : Drawer(child: _sidebar(closeDrawer: true)),
       body: Row(
         children: [
@@ -189,7 +184,7 @@ class _AdminShellState extends State<AdminShell> {
           Padding(
             padding: const EdgeInsets.all(16),
             child: Text(
-              'Rol: ',
+              'Rol: ${widget.role == AdminRole.superAdmin ? 'SuperAdmin' : 'Operador'}',
               style: const TextStyle(
                 color: Colors.white38,
                 fontSize: 12,
@@ -211,14 +206,11 @@ class _AdminShellState extends State<AdminShell> {
                 icon: const Icon(Icons.logout, size: 18),
                 label: const Text('Cerrar sesión'),
                 onPressed: () async {
+                  // AdminApp tiene su propio MaterialApp: hay que usar el navigator
+                  // RAÍZ para volver al login de la app principal (ruta '/login').
+                  final navigator = Navigator.of(context, rootNavigator: true);
                   await fb.FirebaseAuth.instance.signOut();
-                  if (context.mounted) {
-                    Navigator.of(context).pushAndRemoveUntil(
-                      MaterialPageRoute(
-                          builder: (_) => const LoginScreen()),
-                      (_) => false,
-                    );
-                  }
+                  navigator.pushNamedAndRemoveUntil('/login', (_) => false);
                 },
               ),
             ),
@@ -264,21 +256,29 @@ class _Header extends StatelessWidget {
 }
 
 Widget _card({required Widget child}) => Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.black12),
-      ),
-      child: child,
-    );
+  padding: const EdgeInsets.all(20),
+  decoration: BoxDecoration(
+    color: Colors.white,
+    borderRadius: BorderRadius.circular(16),
+    border: Border.all(color: Colors.black12),
+  ),
+  child: child,
+);
+
+class _Kpi {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+  const _Kpi(this.label, this.value, this.icon, this.color);
+}
 
 // ============ MÓDULO 1: PANEL ============
 class _DashboardModule extends StatelessWidget {
   final AdminRole role;
   final _AdminShellState parentState;
   const _DashboardModule({required this.role, required this.parentState});
-  
+
   @override
   Widget build(BuildContext context) {
     final fs = FirestoreService.instance;
@@ -289,37 +289,60 @@ class _DashboardModule extends StatelessWidget {
         children: [
           const _Header('Panel de control', 'Visión general en tiempo real'),
           const SizedBox(height: 24),
-          
+
           StreamBuilder<List<Driver>>(
             stream: fs.allDrivers(),
             builder: (context, dsnap) {
               final drivers = dsnap.data ?? [];
               final online = drivers.where((d) => d.isAvailable).length;
-              
+
               return StreamBuilder<List<Trip>>(
                 stream: fs.allActiveTrips(),
                 builder: (context, tsnap) {
                   final trips = tsnap.data ?? [];
-                  
+
                   final dineroEnCurso = trips.fold<double>(
-                      0.0, (sum, t) => sum + t.fareAmount);
-                  
-                  return Wrap(
-                    spacing: 16,
-                    runSpacing: 16,
-                    children: [
-                      _stat('Viajes Activos', '${trips.length}', Icons.route, Colors.blue),
-                      _stat('Conductores Libres', '$online', Icons.two_wheeler, Colors.green),
-                      _stat('Total Conductores', '${drivers.length}', Icons.people, Colors.orange),
-                      if (role == AdminRole.superAdmin)
-                        _stat('S/ en Curso', 'S/ ${dineroEnCurso.toStringAsFixed(2)}', Icons.attach_money, Colors.purple),
-                    ],
+                      0.0, (total, t) => total + t.fareAmount);
+
+                  final stats = <_Kpi>[
+                    _Kpi('Viajes Activos', '${trips.length}', Icons.route, Colors.blue),
+                    _Kpi('Conductores Libres', '$online', Icons.two_wheeler, Colors.green),
+                    _Kpi('Total Conductores', '${drivers.length}', Icons.people, Colors.orange),
+                    if (role == AdminRole.superAdmin)
+                      _Kpi('S/ en Curso', 'S/ ${dineroEnCurso.toStringAsFixed(2)}', Icons.attach_money, Colors.purple),
+                  ];
+
+                  return LayoutBuilder(
+                    builder: (context, constraints) {
+                      const spacing = 16.0;
+                      final n = stats.length;
+                      final maxW = constraints.maxWidth;
+                      // Ancho: todas en una fila. Medio/móvil: 2 columnas. Muy angosto: 1.
+                      final cols = maxW >= 900 ? n : (maxW >= 380 ? 2 : 1);
+                      final cardW = ((maxW - spacing * (cols - 1)) / cols).floorToDouble();
+
+                      return Wrap(
+                        spacing: spacing,
+                        runSpacing: spacing,
+                        children: [
+                          for (var i = 0; i < n; i++)
+                            _stat(
+                              stats[i].label,
+                              stats[i].value,
+                              stats[i].icon,
+                              stats[i].color,
+                              // Si queda una sola en la última fila, ocupa todo el ancho
+                              width: (cols > 1 && i == n - 1 && n % cols == 1) ? maxW : cardW,
+                            ),
+                        ],
+                      );
+                    },
                   );
                 },
               );
             },
           ),
-          
+
           const SizedBox(height: 24),
           const Text(
             'Solicitudes Pendientes',
@@ -350,155 +373,67 @@ class _DashboardModule extends StatelessWidget {
                 }
                 return Column(
                   children: [
-                    for (final d in pendingDrivers)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            CircleAvatar(
-                              radius: 28,
-                              backgroundColor: MijanoTheme.sol,
-                              backgroundImage: (d.photoUrl != null && d.photoUrl!.isNotEmpty)
-                                  ? NetworkImage(d.photoUrl!)
-                                  : null,
-                              child: (d.photoUrl == null || d.photoUrl!.isEmpty)
-                                  ? const Icon(Icons.person, color: MijanoTheme.ink, size: 28)
-                                  : null,
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    d.name.isNotEmpty ? d.name : 'Conductor sin nombre',
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w800,
-                                      color: MijanoTheme.ink,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    d.email.isNotEmpty ? d.email : 'Licencia: ${d.licenseNumber}',
-                                    style: const TextStyle(color: Colors.black54, fontSize: 13),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Placa: ${d.plate} · Vehículo: ${d.vehicleModel}',
-                                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: MijanoTheme.ink),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Wrap(
-                              spacing: 8,
-                              children: [
-                                OutlinedButton.icon(
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                  ),
-                                  icon: const Icon(Icons.visibility_outlined, size: 16),
-                                  label: const Text('Ver Doc'),
-                                  onPressed: () => parentState._mostrarDialogoDocumentos(context, d),
-                                ),
-                                ElevatedButton.icon(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.red.shade50,
-                                    foregroundColor: Colors.red.shade700,
-                                    elevation: 0,
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                  ),
-                                  icon: const Icon(Icons.close, size: 16),
-                                  label: const Text('Rechazar'),
-                                  onPressed: () => fs.approveDriver(d.uid, false),
-                                ),
-                                ElevatedButton.icon(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.green.shade50,
-                                    foregroundColor: Colors.green.shade700,
-                                    elevation: 0,
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                  ),
-                                  icon: const Icon(Icons.check, size: 16),
-                                  label: const Text('Aprobar'),
-                                  onPressed: () => fs.approveDriver(d.uid, true),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
+                    for (final d in pendingDrivers) _pendingItem(context, fs, d),
                   ],
                 );
               },
             ),
           ),
-          
-          const SizedBox(height: 24),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final mapWidget = _card(
-                child: SizedBox(
-                  height: 400,
-                  width: double.infinity,
-                  child: ClipRRect(
-  borderRadius: BorderRadius.circular(12),
-  child: Stack(
-    children: [
-      
-      StreamBuilder<List<Driver>>(
-        stream: fs.allDrivers(),
-        builder: (context, snapshot) {
-          final drivers = snapshot.data ?? [];
-          
-          
-          final Set<Marker> markers = drivers.where((d) => d.currentLatitude != null && d.currentLongitude != null).map((d) {
-            return Marker(
-              markerId: MarkerId(d.uid),
-              position: LatLng(d.currentLatitude!, d.currentLongitude!),
-              infoWindow: InfoWindow(title: d.name, snippet: 'Placa: ${d.plate}'),
-            );
-          }).toSet();
 
-          return GoogleMap(
-            initialCameraPosition: const CameraPosition(
-              target: LatLng(-12.0464, -77.0428), // Coordenadas centrado por defecto (ej. Lima)
-              zoom: 13,
-            ),
-            markers: markers,
-            myLocationButtonEnabled: false,
-            zoomControlsEnabled: true,
-          );
-        },
-      ),
-      Positioned(
-        top: 10,
-        left: 10,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.9),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
-          ),
-          child: const Text('Conectado en vivo', style: TextStyle(fontWeight: FontWeight.bold)),
-        ),
-      ),
-    ],
-  ),
-),
+          const SizedBox(height: 24),
+          _card(
+            child: SizedBox(
+              height: 400,
+              width: double.infinity,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Stack(
+                  children: [
+                    StreamBuilder<List<Driver>>(
+                      stream: fs.allDrivers(),
+                      builder: (context, snapshot) {
+                        final drivers = snapshot.data ?? [];
+
+                        final Set<Marker> markers = drivers
+                            .where((d) => d.currentLatitude != null && d.currentLongitude != null)
+                            .map((d) {
+                          return Marker(
+                            markerId: MarkerId(d.uid),
+                            position: LatLng(d.currentLatitude!, d.currentLongitude!),
+                            infoWindow: InfoWindow(title: d.name, snippet: 'Placa: ${d.plate}'),
+                          );
+                        }).toSet();
+
+                        return GoogleMap(
+                          initialCameraPosition: const CameraPosition(
+                            target: LatLng(-12.0464, -77.0428), // Lima por defecto
+                            zoom: 13,
+                          ),
+                          markers: markers,
+                          myLocationButtonEnabled: false,
+                          zoomControlsEnabled: true,
+                        );
+                      },
+                    ),
+                    Positioned(
+                      top: 10,
+                      left: 10,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.9),
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
+                        ),
+                        child: const Text('Conectado en vivo', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  ],
                 ),
-              );
-              return mapWidget;
-            },
+              ),
+            ),
           ),
-          
+
           const SizedBox(height: 24),
           const Text('Viajes en curso',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: MijanoTheme.ink)),
@@ -568,9 +503,129 @@ class _DashboardModule extends StatelessWidget {
     );
   }
 
-  Widget _stat(String label, String value, IconData icon, Color color) {
+  /// Tarjeta de solicitud pendiente: en pantallas anchas datos + botones en fila,
+  /// en pantallas angostas datos arriba y botones abajo (sin overflow).
+  Widget _pendingItem(BuildContext context, FirestoreService fs, Driver d) {
+    final avatar = CircleAvatar(
+      radius: 28,
+      backgroundColor: MijanoTheme.sol,
+      backgroundImage: (d.photoUrl != null && d.photoUrl!.isNotEmpty)
+          ? NetworkImage(d.photoUrl!)
+          : null,
+      child: (d.photoUrl == null || d.photoUrl!.isEmpty)
+          ? const Icon(Icons.person, color: MijanoTheme.ink, size: 28)
+          : null,
+    );
+
+    final info = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          d.name.isNotEmpty ? d.name : 'Conductor sin nombre',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+            color: MijanoTheme.ink,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          d.email.isNotEmpty ? d.email : 'Licencia: ${d.licenseNumber}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: Colors.black54, fontSize: 13),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Placa: ${d.plate} · Vehículo: ${d.vehicleModel}',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: MijanoTheme.ink),
+        ),
+      ],
+    );
+
+    final actions = Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+          icon: const Icon(Icons.visibility_outlined, size: 16),
+          label: const Text('Ver Doc'),
+          onPressed: () => parentState._mostrarDialogoDocumentos(context, d),
+        ),
+        ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.red.shade50,
+            foregroundColor: Colors.red.shade700,
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+          icon: const Icon(Icons.close, size: 16),
+          label: const Text('Rechazar'),
+          onPressed: () => fs.approveDriver(d.uid, false),
+        ),
+        ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.green.shade50,
+            foregroundColor: Colors.green.shade700,
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+          icon: const Icon(Icons.check, size: 16),
+          label: const Text('Aprobar'),
+          onPressed: () => fs.approveDriver(d.uid, true),
+        ),
+      ],
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      child: LayoutBuilder(
+        builder: (context, c) {
+          if (c.maxWidth >= 700) {
+            return Row(
+              children: [
+                avatar,
+                const SizedBox(width: 16),
+                Expanded(child: info),
+                const SizedBox(width: 16),
+                actions,
+              ],
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  avatar,
+                  const SizedBox(width: 12),
+                  Expanded(child: info),
+                ],
+              ),
+              const SizedBox(height: 12),
+              actions,
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _stat(String label, String value, IconData icon, Color color, {required double width}) {
     return Container(
-      width: 240,
+      width: width,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -582,7 +637,7 @@ class _DashboardModule extends StatelessWidget {
             blurRadius: 10,
             offset: const Offset(0, 4),
           )
-        ]
+        ],
       ),
       child: Row(children: [
         Container(
@@ -596,9 +651,16 @@ class _DashboardModule extends StatelessWidget {
         const SizedBox(width: 16),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(value,
-                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: MijanoTheme.ink)),
-            Text(label, style: const TextStyle(color: Colors.black54, fontSize: 13, fontWeight: FontWeight.w500)),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(value,
+                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: MijanoTheme.ink)),
+            ),
+            Text(label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.black54, fontSize: 13, fontWeight: FontWeight.w500)),
           ]),
         ),
       ]),
@@ -740,7 +802,7 @@ extension _DocumentDialogExtension on _AdminShellState {
               TextButton(
                 onPressed: () => Navigator.pop(context),
                 style: TextButton.styleFrom(
-                  foregroundColor: Colors.black, 
+                  foregroundColor: Colors.black,
                 ),
                 child: const Text('Cerrar', style: TextStyle(fontWeight: FontWeight.bold)),
               ),
@@ -820,7 +882,7 @@ Widget _buildDocItem({
     decoration: BoxDecoration(
       color: const Color(0xFFFAF6EE),
       borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: Colors.brown.withOpacity(0.12)),
+      border: Border.all(color: Colors.brown.withValues(alpha: 0.12)),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -828,16 +890,19 @@ Widget _buildDocItem({
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              title,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+            Flexible(
+              child: Text(
+                title,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
             ),
+            const SizedBox(width: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                color: statusColor.withOpacity(0.12),
+                color: statusColor.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: statusColor.withOpacity(0.4)),
+                border: Border.all(color: statusColor.withValues(alpha: 0.4)),
               ),
               child: Text(
                 statusText,
@@ -859,29 +924,31 @@ Widget _buildDocItem({
                 borderRadius: BorderRadius.circular(8),
                 child: (url != null && url.isNotEmpty)
                     ? Image.network(
-                        url,
-                        width: 65,
-                        height: 65,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => Container(
-                          width: 65,
-                          height: 65,
-                          color: Colors.grey.shade200,
-                          child: const Icon(Icons.broken_image, size: 24, color: Colors.grey),
-                        ),
-                      )
+                  url,
+                  width: 65,
+                  height: 65,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    width: 65,
+                    height: 65,
+                    color: Colors.grey.shade200,
+                    child: const Icon(Icons.broken_image, size: 24, color: Colors.grey),
+                  ),
+                )
                     : Container(
-                        width: 65,
-                        height: 65,
-                        color: Colors.grey.shade200,
-                        child: const Icon(Icons.insert_drive_file_outlined, size: 24, color: Colors.grey),
-                      ),
+                  width: 65,
+                  height: 65,
+                  color: Colors.grey.shade200,
+                  child: const Icon(Icons.insert_drive_file_outlined, size: 24, color: Colors.grey),
+                ),
               ),
             ),
             const SizedBox(width: 16),
             Expanded(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 4,
                 children: [
                   TextButton.icon(
                     onPressed: onReject,
@@ -889,7 +956,6 @@ Widget _buildDocItem({
                     icon: const Icon(Icons.close, size: 16),
                     label: const Text('Rechazar', style: TextStyle(fontSize: 13)),
                   ),
-                  const SizedBox(width: 8),
                   ElevatedButton.icon(
                     onPressed: onApprove,
                     style: ElevatedButton.styleFrom(

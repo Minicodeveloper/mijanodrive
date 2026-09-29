@@ -37,7 +37,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _colorController = TextEditingController();
   final _yearController = TextEditingController();
   final _plateController = TextEditingController();
-  final String _selectedVehicleType = 'Mototaxi'; 
+ 
   bool _acceptedTerms = false;
   bool _acceptedPrivacy = false;
 

@@ -4,144 +4,252 @@ import '../../models/driver_model.dart';
 import '../../services/firestore_service.dart';
 import 'shared_admin_widgets.dart';
 
-class DriversModule extends StatelessWidget {
-  final Function? onUpdateStatus;
+class DriversModule extends StatefulWidget {
+  final Future<void> Function(BuildContext, Driver, String, String, StateSetter)? onUpdateStatus;
 
   const DriversModule({super.key, this.onUpdateStatus});
 
   @override
-  Widget build(BuildContext context) {
-    final fs = FirestoreService.instance;
+  State<DriversModule> createState() => _DriversModuleState();
+}
+
+class _DriversModuleState extends State<DriversModule> {
+  int _currentTab = 0; // 0: Todos, 1: Pendientes, 2: Activos, 3: Inactivos
+  final fs = FirestoreService.instance;
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+
+  Widget _buildTabs(int total, int pendientes, int activos, int inactivos) {
+    final tabs = ['Todos ($total)', 'Pendientes ($pendientes)', 'Activos ($activos)', 'Inactivos ($inactivos)'];
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(28),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const AdminHeader('Conductores', 'Aprobación y gestión de estado'),
-          adminCard(
-            child: StreamBuilder<List<Driver>>(
-              stream: fs.allDrivers(),
-              builder: (context, snap) {
-                if (snap.connectionState == ConnectionState.waiting) {
-                  return const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Center(child: CircularProgressIndicator()));
-                }
-                final drivers = snap.data ?? [];
-                if (drivers.isEmpty) {
-                  return const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text('No hay conductores registrados'));
-                }
-                return Column(
-                  children: [
-                    for (final d in drivers)
-                      ListTile(
-                        leading: CircleAvatar(
-                            backgroundColor: d.isApproved ? Colors.green.withValues(alpha: 0.2) : MijanoTheme.sol,
-                            child: Icon(Icons.person, color: d.isApproved ? Colors.green : MijanoTheme.ink)),
-                        title: Row(
-                          children: [
-                            Text('Placa ${d.plate}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                            if (!d.isApproved)
-                              Container(
-                                margin: const EdgeInsets.only(left: 8),
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(color: Colors.orange.shade100, borderRadius: BorderRadius.circular(4)),
-                                child: const Text('Pendiente', style: TextStyle(fontSize: 10, color: Colors.orange)),
-                              ),
-                          ],
-                        ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Licencia ${d.licenseNumber} · ${d.city}'),
-                            const SizedBox(height: 4),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 4,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                _PhotoBadge(label: 'SOAT', url: d.toMap()['soatPhotoUrl']),
-                                _PhotoBadge(label: 'Licencia', url: d.toMap()['licensePhotoUrl']),
-                                Text('Viajes: ${d.toMap()['completedTrips'] ?? 0}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                              ],
-                            ),
-                          ],
-                        ),
-                        trailing: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            if (!d.isApproved) ...[
-                              SizedBox(
-                                height: 30,
-                                child: TextButton(
-                                  style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8)),
-                                  onPressed: () => fs.updateDriverStatus(d.uid, isApproved: false),
-                                  child: const Text('Rechazar', style: TextStyle(color: MijanoTheme.signal, fontSize: 12)),
-                                ),
-                              ),
-                              SizedBox(
-                                height: 30,
-                                child: ElevatedButton(
-                                  style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8)),
-                                  onPressed: () => fs.updateDriverStatus(d.uid, isApproved: true),
-                                  child: const Text('Aprobar', style: TextStyle(fontSize: 12)),
-                                ),
-                              ),
-                            ] else ...[
-                              if (d.toMap()['isBlocked'] == true)
-                                SizedBox(
-                                  height: 30,
-                                  child: ElevatedButton(
-                                    style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 8)),
-                                    onPressed: () => fs.updateDriverStatus(d.uid, isBlocked: false),
-                                    child: const Text('Activar', style: TextStyle(fontSize: 12)),
-                                  ),
-                                )
-                              else
-                                SizedBox(
-                                  height: 30,
-                                  child: OutlinedButton(
-                                    style: OutlinedButton.styleFrom(foregroundColor: MijanoTheme.signal, padding: const EdgeInsets.symmetric(horizontal: 8)),
-                                    onPressed: () => fs.updateDriverStatus(d.uid, isBlocked: true),
-                                    child: const Text('Bloquear', style: TextStyle(fontSize: 12)),
-                                  ),
-                                ),
-                            ],
-                          ],
-                        ),
-                      ),
-                  ],
-                );
-              },
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: List.generate(tabs.length, (index) {
+          final isSelected = _currentTab == index;
+          return Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: FilterChip(
+              label: Text(tabs[index]),
+              selected: isSelected,
+              onSelected: (_) => setState(() => _currentTab = index),
+              selectedColor: MijanoTheme.sol,
+              checkmarkColor: MijanoTheme.ink,
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: BorderSide(color: isSelected ? MijanoTheme.ink : Colors.black12),
+              ),
             ),
-          ),
-        ],
+          );
+        }),
       ),
     );
   }
-}
-
-class _PhotoBadge extends StatelessWidget {
-  final String label;
-  final String? url;
-  const _PhotoBadge({required this.label, this.url});
 
   @override
   Widget build(BuildContext context) {
-    final hasPhoto = url != null && url!.isNotEmpty;
+    return SingleChildScrollView(
+        padding: const EdgeInsets.all(28),
+        child: StreamBuilder<List<Driver>>(
+            stream: fs.allDrivers(),
+            builder: (context, snap) {
+              if (snap.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final drivers = snap.data ?? [];
+              final pendientes = drivers.where((d) => d.status == 'pending').toList();
+              final activos = drivers.where((d) => d.status == 'approved').toList();
+              final inactivos = drivers.where((d) => d.status == 'rejected' || d.isBlocked).toList();
+
+              List<Driver> filtered = drivers;
+              if (_currentTab == 1) filtered = pendientes;
+              if (_currentTab == 2) filtered = activos;
+              if (_currentTab == 3) filtered = inactivos;
+
+              if (_query.isNotEmpty) {
+                filtered = filtered.where((d) =>
+                d.name.toLowerCase().contains(_query.toLowerCase()) ||
+                    (d.email).toLowerCase().contains(_query.toLowerCase()) ||
+                    (d.plate).toLowerCase().contains(_query.toLowerCase()) ||
+                    (d.licenseNumber).toLowerCase().contains(_query.toLowerCase())
+                ).toList();
+              }
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const AdminHeader('Gestión de Conductores', 'Supervisión y control de conductores registrados'),
+                  const SizedBox(height: 16),
+                  // Dashboard
+                  Wrap(
+                    spacing: 16,
+                    runSpacing: 16,
+                    children: [
+                      _stat('Total', '${drivers.length}', Icons.people, const Color(
+                          0xFFFFFFFF)),
+                      _stat('Pendientes', '${pendientes.length}', Icons.access_time, Colors.orange),
+                      _stat('Activos', '${activos.length}', Icons.check_circle, Colors.green),
+                      _stat('Inactivos', '${inactivos.length}', Icons.cancel, Colors.red),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(child: _buildTabs(drivers.length, pendientes.length, activos.length, inactivos.length)),
+                        const SizedBox(width: 16),
+                        SizedBox(
+                          width: 250,
+                          child: TextField(
+                            controller: _searchCtrl,
+                            decoration: const InputDecoration(
+                              hintText: 'Buscar conductor...',
+                              prefixIcon: Icon(Icons.search),
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            onChanged: (val) => setState(() => _query = val),
+                          ),
+                        )
+                      ]
+                  ),
+                  const SizedBox(height: 16),
+                  adminCard(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: DataTable(
+                        columns: const [
+                          DataColumn(label: Text('Conductor', style: TextStyle(fontWeight: FontWeight.bold))),
+                          DataColumn(label: Text('Vehículo', style: TextStyle(fontWeight: FontWeight.bold))),
+                          DataColumn(label: Text('Contacto', style: TextStyle(fontWeight: FontWeight.bold))),
+                          DataColumn(label: Text('Estado', style: TextStyle(fontWeight: FontWeight.bold))),
+                          DataColumn(label: Text('Acciones', style: TextStyle(fontWeight: FontWeight.bold))),
+                        ],
+                        rows: filtered.map((d) {
+                          return DataRow(cells: [
+                            DataCell(
+                                Row(
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 16,
+                                        backgroundColor: MijanoTheme.sol,
+                                        backgroundImage: (d.photoUrl != null && d.photoUrl!.isNotEmpty)
+                                            ? NetworkImage(d.photoUrl!)
+                                            : null,
+                                        child: (d.photoUrl == null || d.photoUrl!.isEmpty)
+                                            ? Text(d.name.isNotEmpty ? d.name[0].toUpperCase() : '?', style: const TextStyle(color: MijanoTheme.ink))
+                                            : null,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Text(d.name.isNotEmpty ? d.name : 'Sin nombre', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                          Text(d.createdAt.toLocal().toString().split(' ')[0], style: const TextStyle(fontSize: 10, color: Colors.black54)),
+                                        ],
+                                      )
+                                    ]
+                                )
+                            ),
+                            DataCell(
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(d.vehicleModel),
+                                    Text('Placa: ${d.plate}', style: const TextStyle(fontSize: 10, color: Colors.black54)),
+                                  ],
+                                )
+                            ),
+                            DataCell(Text(d.email)),
+                            DataCell(_buildStatusBadge(d.status)),
+                            DataCell(
+                                PopupMenuButton<String>(
+                                  onSelected: (value) async {
+                                    if (value == 'approve') {
+                                      await fs.approveDriver(d.uid, true);
+                                    } else if (value == 'reject') {
+                                      await fs.approveDriver(d.uid, false);
+                                    }
+                                  },
+                                  itemBuilder: (context) => [
+                                    const PopupMenuItem(value: 'approve', child: Text('Aprobar')),
+                                    const PopupMenuItem(value: 'reject', child: Text('Rechazar / Desactivar')),
+                                  ],
+                                )
+                            ),
+                          ]);
+                        }).toList(),
+                      ),
+                    ),
+                  )
+                ],
+              );
+            }
+        )
+    );
+  }
+
+  Widget _buildStatusBadge(String status) {
+    Color color;
+    String text;
+    switch (status.toLowerCase()) {
+      case 'approved':
+        color = Colors.green;
+        text = 'Activo';
+        break;
+      case 'rejected':
+        color = Colors.red;
+        text = 'Rechazado';
+        break;
+      default:
+        color = Colors.orange;
+        text = 'Pendiente';
+    }
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: hasPhoto ? Colors.blue.shade50 : Colors.grey.shade200,
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: hasPhoto ? Colors.blue.shade200 : Colors.grey.shade300)
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color),
       ),
-      child: Text(
-        '$label: ${hasPhoto ? 'Ver' : 'Sin subir'}',
-        style: TextStyle(fontSize: 10, color: hasPhoto ? Colors.blue.shade700 : Colors.grey.shade600),
+      child: Text(text, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  Widget _stat(String label, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.black12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          )
+        ]
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(label, style: const TextStyle(color: Colors.black54, fontSize: 13, fontWeight: FontWeight.w500)),
+            const SizedBox(height: 8),
+            Text(value, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: MijanoTheme.ink)),
+          ]),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color, size: 28),
+          ),
+        ],
       ),
     );
   }

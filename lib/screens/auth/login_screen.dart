@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:mijano_drive_app/services/auth_service.dart';
 import 'package:mijano_drive_app/models/user_model.dart';
-import 'package:mijano_drive_app/screens/driver/pending_account_screen.dart'; 
+import 'package:mijano_drive_app/screens/driver/pending_account_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -15,18 +15,8 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
-  UserRole? _selectedRole;
 
   final _auth = AuthService.instance;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final args = ModalRoute.of(context)?.settings.arguments;
-    if (args is Map && args['role'] != null) {
-      _selectedRole = (args['role'] as String) == 'driver' ? UserRole.driver : UserRole.passenger;
-    }
-  }
 
   @override
   void dispose() {
@@ -45,24 +35,24 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     setState(() => _isLoading = true);
-    
+
     final (ok, msg, role, status) = await _auth.login(email, password);
-    
+
     if (!mounted) return;
     setState(() => _isLoading = false);
 
     _snack(msg);
 
     if (ok) {
-      if (role == UserRole.admin) { 
-        Navigator.of(context).pushNamedAndRemoveUntil('/admin', (r) => false); 
+      if (role == UserRole.admin) {
+        Navigator.of(context).pushNamedAndRemoveUntil('/admin', (r) => false);
       } else if (role == UserRole.driver) {
         if (status == 'approved') {
           Navigator.of(context).pushNamedAndRemoveUntil('/driver', (r) => false);
         } else {
           Navigator.of(context).pushAndRemoveUntil(
             MaterialPageRoute(builder: (context) => const PendingAccountScreen()),
-            (r) => false,
+                (r) => false,
           );
         }
       } else {
@@ -90,7 +80,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final user = _auth.currentUser;
     if (user == null || user.name == null || user.name!.isEmpty) {
       Navigator.of(context).pushReplacementNamed('/profile-setup');
-    } else if (user.role == UserRole.admin) { 
+    } else if (user.role == UserRole.admin) {
       Navigator.of(context).pushNamedAndRemoveUntil('/admin', (r) => false);
     } else if (user.role == UserRole.driver) {
       if (user.status == 'approved') {
@@ -98,7 +88,7 @@ class _LoginScreenState extends State<LoginScreen> {
       } else {
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (context) => const PendingAccountScreen()),
-          (r) => false,
+              (r) => false,
         );
       }
     } else {
@@ -106,7 +96,6 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  
   void _mostrarModalClaveAdmin(BuildContext context) {
     final TextEditingController pinController = TextEditingController();
 
@@ -138,19 +127,22 @@ class _LoginScreenState extends State<LoginScreen> {
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF9D408)),
             onPressed: () async {
               const String claveMaestra = 'MijanoDriveAdmin2026*';
+              // Navigator de la pantalla (no del diálogo, que se cierra antes del await)
+              final navigator = Navigator.of(this.context);
 
               if (pinController.text == claveMaestra) {
                 Navigator.pop(context); // Cierra el diálogo
                 // Buscar si hay administradores, de no haber crea uno.
                 final db = FirebaseFirestore.instance;
                 final snapshot = await db.collection('admins').limit(1).get();
+                if (!mounted) return;
                 if (snapshot.docs.isEmpty) {
-                   Navigator.of(context).pushNamed('/register-admin');
-                   _snack('Modo registro de primer administrador activado.');
+                  navigator.pushNamed('/register-admin');
+                  _snack('Modo registro de primer administrador activado.');
                 } else {
-                   // Intenta un inicio de sesión directo para el administrador general
-                   Navigator.of(context).pushNamedAndRemoveUntil('/admin', (r) => false);
-                   _snack('Accediendo como administrador.');
+                  // Intenta un inicio de sesión directo para el administrador general
+                  navigator.pushNamedAndRemoveUntil('/admin', (r) => false);
+                  _snack('Accediendo como administrador.');
                 }
               } else {
                 Navigator.pop(context);
@@ -170,7 +162,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final args = ModalRoute.of(context)?.settings.arguments as Map?;
-    final currentRole = args?['role'] ?? 'passenger'; 
+    final currentRole = args?['role'] ?? 'passenger';
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -182,8 +174,7 @@ class _LoginScreenState extends State<LoginScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               SizedBox(height: MediaQuery.of(context).size.height * 0.1),
-              
-              
+
               Center(
                 child: GestureDetector(
                   onLongPress: () => _mostrarModalClaveAdmin(context),
@@ -194,7 +185,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ),
-              
+
               const SizedBox(height: 20),
               const Text(
                 'Mijano Drive',
@@ -206,7 +197,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
               const SizedBox(height: 40),
-              
+
               // Email input
               TextField(
                 controller: _emailController,
@@ -222,7 +213,6 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 20),
 
-              
               TextField(
                 controller: _passwordController,
                 obscureText: true,
@@ -249,25 +239,24 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 child: _isLoading
                     ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation(Colors.black),
-                        ),
-                      )
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation(Colors.black),
+                  ),
+                )
                     : const Text(
-                        'Iniciar Sesión',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black,
-                        ),
-                      ),
+                  'Iniciar Sesión',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
+                ),
               ),
               const SizedBox(height: 30),
 
-              
               const Row(
                 children: [
                   Expanded(child: Divider()),
@@ -279,7 +268,6 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 20),
 
-              
               OutlinedButton.icon(
                 onPressed: _biometricLogin,
                 icon: const Icon(Icons.fingerprint),

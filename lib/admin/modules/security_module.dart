@@ -21,7 +21,7 @@ class _SecurityModuleState extends State<SecurityModule> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   String _role = 'operator';
-  bool _saving = false;
+  
   String? _message;
   bool _error = false;
 
@@ -47,10 +47,11 @@ class _SecurityModuleState extends State<SecurityModule> {
     return fb.FirebaseAuth.instanceFor(app: app);
   }
 
+  // ignore: unused_element
   Future<void> _createAdmin() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() {
-      _saving = true;
+      
       _message = null;
     });
     final email = _email.text.trim();
@@ -94,8 +95,6 @@ class _SecurityModuleState extends State<SecurityModule> {
         _message = 'Error al guardar el administrador: $e';
         _error = true;
       });
-    } finally {
-      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -114,6 +113,7 @@ class _SecurityModuleState extends State<SecurityModule> {
     );
   }
 
+  // ignore: unused_element
   Widget _noticePlaceholder() => _notice(_message!, _error);
 
   Widget _notice(String text, bool isError) => Container(

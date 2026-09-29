@@ -19,8 +19,6 @@ import 'screens/passenger/active_trip_screen.dart';
 import 'screens/passenger/rating_screen.dart';
 import 'screens/passenger/wallet_screen.dart';
 import 'screens/shared/profile_screen.dart';
-import 'screens/driver/driver_dashboard_screen.dart';
-import 'screens/driver/driver_active_trip_screen.dart';
 import 'screens/auth/role-select.dart';
 import 'screens/driver/driver_main_layout.dart';
 
@@ -57,7 +55,7 @@ class MijanoDriveApp extends StatelessWidget {
     Widget page;
     switch (settings.name) {
       case '/login':
-        page = const LoginScreen();
+        page = LoginScreen() as Widget;
         break;
       case '/register':
         final initialRole = args['initialRole'] ?? 'passenger';
@@ -116,7 +114,7 @@ class MijanoDriveApp extends StatelessWidget {
         page = AdminApp(role: adminRole);
         break;
       default:
-        page = const LoginScreen();
+        page = LoginScreen() as Widget;
     }
     return MaterialPageRoute(builder: (_) => page, settings: settings);
   }
