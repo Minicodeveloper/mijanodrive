@@ -245,52 +245,59 @@ class FirestoreService {
   }
 
   // =====================================================
-  //  SOPORTE CENTRALIZADO DE CONDUCTORES (`support_chats`)
+  //  SOPORTE CENTRALIZADO (`support_chats`)
   // =====================================================
 
-  /// Envía un mensaje de soporte (tanto para Admin como para el Conductor),
-  /// creando automáticamente la colección 'support_chats' si no existe.
-  Future<void> sendAdminOrDriverSupportMessage({
-    required String driverUid,
-    required String driverName,
+  /// Envío de mensaje de soporte para el Administrador hacia cualquier usuario
+  Future<void> sendAdminSupportMessage({
+    required String userId,
+    required String userName,
     required String text,
-    required bool isAdmin,
   }) async {
-    final chatRef = _db.collection('support_chats').doc(driverUid);
+    final chatRef = _db.collection('support_chats').doc(userId);
 
-    
     await chatRef.collection('messages').add({
-      'senderId': isAdmin ? 'admin' : driverUid,
+      'senderId': 'admin',
+      'senderName': 'Soporte Admin',
       'text': text,
+      'isAdmin': true,
       'timestamp': FieldValue.serverTimestamp(),
-      'isAdmin': isAdmin,
     });
 
-    
     await chatRef.set({
-      'driverId': driverUid,
-      'name': driverName,
       'lastMessage': text,
       'updatedAt': FieldValue.serverTimestamp(),
-      'unreadByAdmin': !isAdmin,
+      'unreadByAdmin': false,
     }, SetOptions(merge: true));
   }
 
-  
-  Stream<List<Map<String, dynamic>>> allSupportChats() => _db
-      .collection('support_chats')
-      .orderBy('updatedAt', descending: true)
-      .snapshots()
-      .map((q) => q.docs.map((d) => {'id': d.id, ...d.data()}).toList());
+  /// Envío de mensaje de soporte desde la app del Conductor
+  Future<void> sendDriverSupportMessage({
+    required String driverUid,
+    required String driverName,
+    required String text,
+  }) async {
+    final chatRef = _db.collection('support_chats').doc(driverUid);
 
-  
-  Stream<List<Map<String, dynamic>>> supportMessagesForDriver(String driverUid) => _db
-      .collection('support_chats')
-      .doc(driverUid)
-      .collection('messages')
-      .orderBy('timestamp', descending: false)
-      .snapshots()
-      .map((q) => q.docs.map((d) => {'id': d.id, ...d.data()}).toList());
+    await chatRef.collection('messages').add({
+      'text': text,
+      'senderId': driverUid,
+      'senderName': driverName.isNotEmpty ? driverName : 'Conductor',
+      'senderRole': 'driver',
+      'isAdmin': false, // 👈 Esto hace que aparezca a la derecha como "Tú"
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+
+    await chatRef.set({
+      'userId': driverUid,
+      'driverId': driverUid,
+      'name': driverName.isNotEmpty ? driverName : 'Conductor',
+      'role': 'driver',
+      'lastMessage': text,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'unreadByAdmin': true, // 👈 Alerta al panel admin
+    }, SetOptions(merge: true));
+  }
 
   /// Envío de mensaje de soporte para el Pasajero
   Future<void> sendPassengerSupportMessage({
@@ -320,14 +327,33 @@ class FirestoreService {
     }, SetOptions(merge: true));
   }
 
-  /// Stream de mensajes de soporte para el Pasajero
-  Stream<List<Map<String, dynamic>>> supportMessagesForPassenger(String passengerUid) => _db
+  /// Stream para listar todos los chats de soporte activos en la consola web
+  Stream<List<Map<String, dynamic>>> allSupportChats() => _db
       .collection('support_chats')
-      .doc(passengerUid)
+      
+      .snapshots()
+      
+      .map((q) {
+        print('🔥 Documentos encontrados en support_chats: ${q.docs.length}');
+        return q.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+      });
+
+  /// 🌟 STREAM UNIVERSAL: Lee los mensajes de soporte de cualquier usuario (Conductor o Pasajero)
+  Stream<List<Map<String, dynamic>>> supportMessagesForUser(String userId) => _db
+      .collection('support_chats')
+      .doc(userId)
       .collection('messages')
       .orderBy('timestamp', descending: false)
       .snapshots()
       .map((q) => q.docs.map((d) => {'id': d.id, ...d.data()}).toList());
+
+  /// Stream específico para conductor
+  Stream<List<Map<String, dynamic>>> supportMessagesForDriver(String driverUid) => 
+      supportMessagesForUser(driverUid);
+
+  /// Stream específico para pasajero
+  Stream<List<Map<String, dynamic>>> supportMessagesForPassenger(String passengerUid) => 
+      supportMessagesForUser(passengerUid);
 
   // =====================================================
 

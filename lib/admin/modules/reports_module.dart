@@ -325,13 +325,11 @@ class _AdminDriverSupportViewState extends State<AdminDriverSupportView> {
 
     final text = _replyController.text.trim();
     _replyController.clear();
-
     
-    await fs.sendAdminOrDriverSupportMessage(
-      driverUid: driverUid,
-      driverName: driverName,
+    await fs.sendAdminSupportMessage(
+      userId: driverUid,
+      userName: driverName,
       text: text,
-      isAdmin: true,
     );
   }
 
@@ -342,7 +340,7 @@ class _AdminDriverSupportViewState extends State<AdminDriverSupportView> {
         height: 600,
         child: Row(
           children: [
-            // Columna izquierda: Lista de chats activos en 'support_chats'
+            // Columna izquierda con depuradores visuales y de consola
             SizedBox(
               width: 320,
               child: Container(
@@ -352,19 +350,38 @@ class _AdminDriverSupportViewState extends State<AdminDriverSupportView> {
                 child: StreamBuilder<List<Map<String, dynamic>>>(
                   stream: fs.allSupportChats(),
                   builder: (context, snapshot) {
+                    // Depurador 1: Errores de Firebase o Reglas
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(12.0),
+                          child: Text(
+                            'Error de permisos o conexión:\n${snapshot.error}',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Colors.red, fontSize: 11),
+                          ),
+                        ),
+                      );
+                    }
+
+                    // Depurador 2: Estado de Carga
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Center(child: CircularProgressIndicator());
                     }
 
                     final chats = snapshot.data ?? [];
+                    
+                    // Depurador 3: Impresión en la consola de Flutter/VS Code
+                    debugPrint('📦 [DEBUG SOPORTE] Chats recibidos de Firestore: ${chats.length}');
+
                     if (chats.isEmpty) {
                       return const Center(
                         child: Padding(
                           padding: EdgeInsets.all(16.0),
                           child: Text(
-                            'No hay chats de soporte activos.',
+                            'Colección "support_chats" vacía o sin documentos válidos.',
                             textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 13, color: Colors.black54),
+                            style: TextStyle(fontSize: 12, color: Colors.redAccent),
                           ),
                         ),
                       );
@@ -375,30 +392,31 @@ class _AdminDriverSupportViewState extends State<AdminDriverSupportView> {
                       itemBuilder: (context, index) {
                         final chat = chats[index];
                         final driverUid = chat['id'];
-                        final name = chat['name'] ?? 'Conductor';
+                        final name = chat['name'] ?? 'Sin nombre';
                         final lastMessage = chat['lastMessage'] ?? 'Sin mensajes';
                         final isSelected = selectedDriverUid == driverUid;
 
-                        return ListTile(
-                          selected: isSelected,
-                          selectedTileColor: MijanoTheme.sol.withOpacity(0.2),
-                          leading: const CircleAvatar(
-                            backgroundColor: MijanoTheme.sol,
-                            child: Icon(Icons.support_agent, color: MijanoTheme.ink),
+                        return Material(
+                          color: isSelected ? MijanoTheme.sol.withOpacity(0.25) : Colors.transparent,
+                          child: ListTile(
+                            leading: const CircleAvatar(
+                              backgroundColor: MijanoTheme.sol,
+                              child: Icon(Icons.support_agent, color: MijanoTheme.ink),
+                            ),
+                            title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                            subtitle: Text(
+                              lastMessage,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            onTap: () {
+                              setState(() {
+                                selectedDriverUid = driverUid;
+                                selectedDriverName = name;
+                              });
+                            },
                           ),
-                          title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text(
-                            lastMessage,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                          onTap: () {
-                            setState(() {
-                              selectedDriverUid = driverUid;
-                              selectedDriverName = name;
-                            });
-                          },
                         );
                       },
                     );
@@ -480,7 +498,7 @@ class _AdminDriverSupportViewState extends State<AdminDriverSupportView> {
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            isAdmin ? 'Soporte (Central)' : 'Conductor',
+                                            isAdmin ? 'Soporte (Central)' : 'Usuario',
                                             style: TextStyle(
                                               fontSize: 11,
                                               fontWeight: FontWeight.bold,
@@ -517,7 +535,7 @@ class _AdminDriverSupportViewState extends State<AdminDriverSupportView> {
                                   controller: _replyController,
                                   onSubmitted: (_) => _sendAdminReply(selectedDriverUid!, selectedDriverName!),
                                   decoration: const InputDecoration(
-                                    hintText: 'Escribe una respuesta para el conductor...',
+                                    hintText: 'Escribe una respuesta...',
                                     border: OutlineInputBorder(),
                                     contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                   ),

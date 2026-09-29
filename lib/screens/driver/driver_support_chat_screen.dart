@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../theme.dart';
 import '../../services/firestore_service.dart'; 
 
@@ -25,13 +26,12 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
 
     final text = _controller.text.trim();
     _controller.clear();
-
     
-    await _fs.sendAdminOrDriverSupportMessage(
+    // Método correcto para enviar mensajes desde la app del conductor
+    await _fs.sendDriverSupportMessage(
       driverUid: widget.driverUid,
       driverName: widget.driverName,
       text: text,
-      isAdmin: false, 
     );
   }
 
@@ -43,6 +43,8 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -56,7 +58,6 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
       ),
       body: Column(
         children: [
-          // Listado de mensajes en tiempo real desde support_chats
           Expanded(
             child: StreamBuilder<List<Map<String, dynamic>>>(
               stream: _fs.supportMessagesForDriver(widget.driverUid),
@@ -85,22 +86,25 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
                   padding: const EdgeInsets.all(16),
                   itemCount: messages.length,
                   itemBuilder: (context, index) {
-                    
                     final reversedIndex = messages.length - 1 - index;
                     final data = messages[reversedIndex];
+                    
+                    final senderId = data['senderId'] ?? data['userId'] ?? '';
                     final isAdmin = data['isAdmin'] ?? false;
-                    final text = data['text'] ?? '';
+
+                    // El mensaje es tuyo si proviene de tu ID o rol conductor y NO es del admin
+                    final bool isMyMessage = (senderId == currentUserId || data['senderRole'] == 'driver') && !isAdmin;
 
                     return Align(
-                      alignment: isAdmin ? Alignment.centerLeft : Alignment.centerRight,
+                      alignment: isMyMessage ? Alignment.centerRight : Alignment.centerLeft,
                       child: Container(
                         margin: const EdgeInsets.symmetric(vertical: 6),
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                         constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
                         decoration: BoxDecoration(
-                          color: isAdmin ? MijanoTheme.cream : MijanoTheme.sol.withOpacity(0.4),
+                          color: isMyMessage ? MijanoTheme.sol.withOpacity(0.4) : MijanoTheme.cream,
                           border: Border.all(
-                            color: isAdmin ? MijanoTheme.ink.withOpacity(0.2) : MijanoTheme.ink,
+                            color: MijanoTheme.ink,
                             width: 1.5,
                           ),
                           borderRadius: BorderRadius.circular(12),
@@ -109,16 +113,16 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              isAdmin ? 'Soporte (Central)' : 'Tú',
+                              isMyMessage ? 'Tú' : 'Soporte (Central)',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
-                                color: isAdmin ? MijanoTheme.ink : Colors.black54,
+                                color: isMyMessage ? Colors.black54 : MijanoTheme.ink,
                               ),
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              text,
+                              data['text'] ?? '',
                               style: const TextStyle(
                                 fontSize: 15,
                                 color: MijanoTheme.ink,
@@ -134,7 +138,6 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
               },
             ),
           ),
-          
           
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
