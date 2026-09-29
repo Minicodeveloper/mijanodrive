@@ -172,10 +172,7 @@ class AuthService {
         return (false, 'No hay una solicitud de código activa. Solicita un nuevo SMS.');
       }
 
-      fb.PhoneAuthCredential phoneCredential = fb.PhoneAuthProvider.credential(
-        verificationId: _verificationId!,
-        smsCode: smsCode,
-      );
+
 
       return await _createAccountInFirebase(
         name: name,

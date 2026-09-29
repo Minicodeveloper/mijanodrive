@@ -11,7 +11,7 @@ import '../admin_app.dart' show AdminRole;
 class DashboardModule extends StatelessWidget {
   final AdminRole role;
   const DashboardModule({super.key, required this.role});
-  
+
   @override
   Widget build(BuildContext context) {
     final fs = FirestoreService.instance;
@@ -21,47 +21,63 @@ class DashboardModule extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const AdminHeader('Panel de control', 'Visión general en tiempo real'),
-          
+
           StreamBuilder<List<Driver>>(
             stream: fs.allDrivers(),
             builder: (context, dsnap) {
               final drivers = dsnap.data ?? [];
               final online = drivers.where((d) => d.isAvailable).length;
-              
+
               return StreamBuilder<List<Trip>>(
                 stream: fs.allActiveTrips(),
                 builder: (context, tsnap) {
                   final trips = tsnap.data ?? [];
-                  
+
                   final dineroEnCurso = trips.fold<double>(
-                      0.0, (sum, t) => sum + t.fareAmount);
-                  
+                      0.0, (total, t) => total + t.fareAmount);
+
                   return LayoutBuilder(
                     builder: (context, constraints) {
                       final isMobile = constraints.maxWidth < 600;
-                      final cardWidth = isMobile ? (constraints.maxWidth / 2) - 8 : 240.0;
-                      
-                      return Wrap(
-                        spacing: 16,
-                        runSpacing: 16,
-                        alignment: WrapAlignment.center,
+
+                      if (isMobile) {
+                        final w = (constraints.maxWidth / 2) - 8;
+                        return Wrap(
+                          spacing: 16,
+                          runSpacing: 16,
+                          alignment: WrapAlignment.center,
+                          children: [
+                            _stat('Viajes Activos', '${trips.length}', Icons.route, Colors.blue, width: w),
+                            _stat('Libres', '$online', Icons.two_wheeler, Colors.green, width: w),
+                            _stat('Total', '${drivers.length}', Icons.people, Colors.orange, width: w),
+                            if (role == AdminRole.superAdmin)
+                              _stat('S/ en Curso', 'S/ ${dineroEnCurso.toStringAsFixed(2)}', Icons.attach_money, Colors.purple, width: w),
+                          ],
+                        );
+                      }
+
+                      return Row(
                         children: [
-                          _stat('Viajes Activos', '${trips.length}', Icons.route, Colors.blue, width: cardWidth),
-                          _stat('Libres', '$online', Icons.two_wheeler, Colors.green, width: cardWidth),
-                          _stat('Total', '${drivers.length}', Icons.people, Colors.orange, width: cardWidth),
-                          if (role == AdminRole.superAdmin)
-                            _stat('S/ en Curso', 'S/ ${dineroEnCurso.toStringAsFixed(2)}', Icons.attach_money, Colors.purple, width: cardWidth),
+                          Expanded(child: _stat('Viajes Activos', '${trips.length}', Icons.route, Colors.blue)),
+                          const SizedBox(width: 16),
+                          Expanded(child: _stat('Libres', '$online', Icons.two_wheeler, Colors.green)),
+                          const SizedBox(width: 16),
+                          Expanded(child: _stat('Total Conductores', '${drivers.length}', Icons.people, Colors.orange)),
+                          if (role == AdminRole.superAdmin) ...[
+                            const SizedBox(width: 16),
+                            Expanded(child: _stat('S/ en Curso', 'S/ ${dineroEnCurso.toStringAsFixed(2)}', Icons.attach_money, Colors.purple)),
+                          ]
                         ],
                       );
-                    }
+                    },
                   );
                 },
               );
             },
           ),
-          
+
           const SizedBox(height: 24),
-          
+
           const AdminHeader('Solicitudes Pendientes', 'Revisión de documentos de nuevos conductores'),
           adminCard(
             child: StreamBuilder<List<Driver>>(
@@ -80,7 +96,7 @@ class DashboardModule extends StatelessWidget {
                 if (snap.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                
+
                 final List<Driver> pending = snap.data ?? [];
                 if (pending.isEmpty) {
                   return const Padding(
@@ -96,16 +112,16 @@ class DashboardModule extends StatelessWidget {
                   itemBuilder: (ctx, i) {
                     final d = pending[i];
                     final rawMap = d.toMap();
-                    
+
                     final name = rawMap['name'] ?? rawMap['fullName'] ?? rawMap['nombres'] ?? 'Sin nombre';
                     final email = rawMap['email'] ?? rawMap['correo'] ?? rawMap['mail'] ?? 'Sin correo';
                     final photoUrl = rawMap['photoUrl'];
-                    
+
                     final plate = d.plate.isNotEmpty ? d.plate : (rawMap['vehiclePlate'] ?? rawMap['plate'] ?? 'N/A');
                     final brand = rawMap['vehicleBrand'] ?? '';
                     final model = rawMap['vehicleModel'] ?? rawMap['vehicle'] ?? 'N/A';
                     final vehicle = brand.isNotEmpty ? '$brand $model' : model;
-                    
+
                     final Map<String, dynamic> documents = rawMap['documents'] ?? {};
 
                     return ListTile(
@@ -147,8 +163,8 @@ class DashboardModule extends StatelessWidget {
                                 icon: const Icon(Icons.close, size: 18),
                                 label: const Text('Rechazar'),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.red.shade50, 
-                                  foregroundColor: Colors.red.shade700, 
+                                  backgroundColor: Colors.red.shade50,
+                                  foregroundColor: Colors.red.shade700,
                                   elevation: 0,
                                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                                 ),
@@ -161,8 +177,8 @@ class DashboardModule extends StatelessWidget {
                                 icon: const Icon(Icons.check, size: 18),
                                 label: const Text('Aprobar'),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green.shade50, 
-                                  foregroundColor: Colors.green.shade700, 
+                                  backgroundColor: Colors.green.shade50,
+                                  foregroundColor: Colors.green.shade700,
                                   elevation: 0,
                                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                                 ),
@@ -184,7 +200,7 @@ class DashboardModule extends StatelessWidget {
 
           const SizedBox(height: 24),
           const AdminHeader('Mapa en vivo', 'Ubicación actual de conductores libres y ocupados'),
-          
+
           adminCard(
             child: SizedBox(
               height: 350,
@@ -198,13 +214,13 @@ class DashboardModule extends StatelessWidget {
                       builder: (context, dsnap) {
                         final drivers = dsnap.data ?? [];
                         final activeDrivers = drivers.where((d) => d.currentLatitude != null && d.currentLongitude != null).toList();
-                        
+
                         final markers = activeDrivers.map((d) => Marker(
-                            markerId: MarkerId(d.uid),
-                            position: LatLng(d.currentLatitude!, d.currentLongitude!),
-                            infoWindow: InfoWindow(title: 'Cond. ${d.plate}', snippet: d.isAvailable ? 'Libre' : 'Ocupado'),
-                            icon: BitmapDescriptor.defaultMarkerWithHue(d.isAvailable ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueRed),
-                          )).toSet();
+                          markerId: MarkerId(d.uid),
+                          position: LatLng(d.currentLatitude!, d.currentLongitude!),
+                          infoWindow: InfoWindow(title: 'Cond. ${d.plate}', snippet: d.isAvailable ? 'Libre' : 'Ocupado'),
+                          icon: BitmapDescriptor.defaultMarkerWithHue(d.isAvailable ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueRed),
+                        )).toSet();
 
                         final initialLat = activeDrivers.isNotEmpty ? activeDrivers.first.currentLatitude! : -12.046374;
                         final initialLng = activeDrivers.isNotEmpty ? activeDrivers.first.currentLongitude! : -77.042793;
@@ -238,7 +254,7 @@ class DashboardModule extends StatelessWidget {
               ),
             ),
           ),
-          
+
           const SizedBox(height: 24),
           const Text('Viajes en curso',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: MijanoTheme.ink)),
@@ -392,16 +408,15 @@ class DashboardModule extends StatelessWidget {
                                         'url': '',
                                         'status': 'rejected',
                                       };
-                                      
-                                      
+
                                       await FirebaseFirestore.instance.collection('users').doc(driverUid).set({
                                         'documents': documents,
                                       }, SetOptions(merge: true));
 
                                       await FirestoreService.instance.notifyDriver(
-                                        driverUid, 
-                                        'Documento Rechazado', 
-                                        'Tu documento "$label" fue rechazado. Por favor, vuelva a subirlo o tomar foto otra vez.'
+                                          driverUid,
+                                          'Documento Rechazado',
+                                          'Tu documento "$label" fue rechazado. Por favor, vuelva a subirlo o tomar foto otra vez.'
                                       );
 
                                       setStateDialog(() {});
@@ -423,7 +438,6 @@ class DashboardModule extends StatelessWidget {
                                         'status': 'approved',
                                       };
 
-                                      
                                       await FirebaseFirestore.instance.collection('users').doc(driverUid).set({
                                         'documents': documents,
                                       }, SetOptions(merge: true));
@@ -473,7 +487,7 @@ class DashboardModule extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: color),
       ),
@@ -522,42 +536,40 @@ class DashboardModule extends StatelessWidget {
     );
   }
 
-  Widget _stat(String label, String value, IconData icon, Color color, {double width = 240}) {
+  Widget _stat(String label, String value, IconData icon, Color color, {double? width}) {
     return Container(
       width: width,
-      padding: EdgeInsets.all(width < 150 ? 12 : 20),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.black12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
+            color: Colors.black.withValues(alpha: 0.02),
             blurRadius: 10,
             offset: const Offset(0, 4),
           )
-        ]
+        ],
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-        Container(
-          padding: EdgeInsets.all(width < 150 ? 8 : 12),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(icon, color: color, size: width < 150 ? 20 : 28),
-        ),
-        SizedBox(width: width < 150 ? 8 : 16),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(value,
-                style: TextStyle(fontSize: width < 150 ? 18 : 24, fontWeight: FontWeight.w900, color: MijanoTheme.ink)),
-            Text(label, style: TextStyle(color: Colors.black54, fontSize: width < 150 ? 11 : 13, fontWeight: FontWeight.w500, overflow: TextOverflow.ellipsis)),
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(label, style: const TextStyle(color: Colors.black54, fontSize: 13, fontWeight: FontWeight.w500)),
+            const SizedBox(height: 8),
+            Text(value, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.black87)),
           ]),
-        ),
-      ]),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color, size: 28),
+          ),
+        ],
+      ),
     );
   }
 }

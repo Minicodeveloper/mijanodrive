@@ -30,7 +30,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
       final docSnapshot = await userRef.get();
 
       if (docSnapshot.exists) {
-        final data = docSnapshot.data() as Map<String, dynamic>?;
+        final data = docSnapshot.data();
         
         if (data == null || !data.containsKey('documents') || data['documents'] is! Map) {
           final defaultDocumentsMap = {

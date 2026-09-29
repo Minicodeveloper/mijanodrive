@@ -13,7 +13,8 @@ class Driver {
   final String? licensePhotoUrl;
   final Map<String, dynamic> documents; 
   bool isApproved;
-  bool isBlocked; 
+  bool isBlocked;
+  final String status; 
   final String city;
   final DateTime createdAt;
   bool isAvailable;
@@ -34,6 +35,7 @@ class Driver {
     this.documents = const {}, 
     this.isApproved = false,
     this.isBlocked = false,
+    this.status = 'pending',
     required this.city,
     required this.createdAt,
     this.isAvailable = true,
@@ -56,6 +58,7 @@ class Driver {
       'documents': documents, 
       'isApproved': isApproved,
       'isBlocked': isBlocked,
+      'status': status,
       'city': city,
       'createdAt': createdAt,
       'isAvailable': isAvailable,
@@ -79,6 +82,7 @@ class Driver {
       documents: Map<String, dynamic>.from(map['documents'] ?? {}), 
       isApproved: map['isApproved'] ?? false,
       isBlocked: map['isBlocked'] ?? false,
+      status: map['status'] ?? 'pending',
       city: map['city'] ?? '',
       createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       isAvailable: map['isAvailable'] ?? true,
@@ -105,6 +109,7 @@ class Driver {
     Map<String, dynamic>? documents, 
     bool? isApproved,
     bool? isBlocked,
+    String? status,
     String? city,
     DateTime? createdAt,
     bool? isAvailable,
@@ -125,6 +130,7 @@ class Driver {
       documents: documents ?? this.documents, 
       isApproved: isApproved ?? this.isApproved,
       isBlocked: isBlocked ?? this.isBlocked,
+      status: status ?? this.status,
       city: city ?? this.city,
       createdAt: createdAt ?? this.createdAt,
       isAvailable: isAvailable ?? this.isAvailable,
