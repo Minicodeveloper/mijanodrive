@@ -7,7 +7,6 @@ import '../../services/firestore_service.dart';
 import '../../services/location_service.dart';
 import '../../theme.dart';
 
-
 class DriverDashboardScreen extends StatefulWidget {
   const DriverDashboardScreen({super.key});
 
@@ -20,7 +19,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   final _auth = AuthService.instance;
   bool _available = true;
 
-  
   final Completer<GoogleMapController> _mapController = Completer();
   
   static const CameraPosition _initialPosition = CameraPosition(
@@ -110,16 +108,9 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Ya NO devolvemos un Scaffold aquí, sino un Column para acoplarnos al layout principal
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Panel del conductor'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.person),
-            onPressed: () => Navigator.pushNamed(context, '/profile'),
-          ),
-        ],
-      ),
+      // Mantenemos el botón flotante S.O.S. en esta pantalla
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: MijanoTheme.signal,
         foregroundColor: Colors.white,
@@ -129,14 +120,14 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
       ),
       body: Column(
         children: [
-          // Estado de disponibilidad
+          // Estado de disponibilidad compacto
           Container(
             color: MijanoTheme.sol,
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               children: [
                 Icon(_available ? Icons.check_circle : Icons.pause_circle,
-                    color: MijanoTheme.ink),
+                    color: MijanoTheme.ink, size: 20),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
@@ -156,7 +147,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
           
           // Encabezado de ciudad
           Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(
               children: [
                 const Icon(Icons.location_on, size: 18),
@@ -166,8 +157,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
               ],
             ),
           ),
-
           
+          // Mapa
           Expanded(
             flex: 2, 
             child: GoogleMap(

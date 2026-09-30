@@ -14,7 +14,6 @@ class DriverMainLayout extends StatefulWidget {
 class _DriverMainLayoutState extends State<DriverMainLayout> {
   int _currentIndex = 0;
 
-  
   final List<Widget> _screens = [
     const DriverDashboardScreen(),
     const DriverHistoryScreen(),
@@ -24,18 +23,51 @@ class _DriverMainLayoutState extends State<DriverMainLayout> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_currentIndex == 0
-            ? 'Panel del conductor'
-            : _currentIndex == 1
-                ? 'Historial de viajes'
-                : 'Mi Cuenta'),
-        backgroundColor: MijanoTheme.sol,
-        automaticallyImplyLeading: false, 
-      ),
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
+      body: Column(
+        children: [
+          // Barra superior personalizada, elegante y delgada
+          Container(
+            color: MijanoTheme.sol,
+            padding: EdgeInsets.only(
+              top: MediaQuery.of(context).padding.top + 6,
+              bottom: 8,
+              left: 16,
+              right: 16,
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  _currentIndex == 0
+                      ? 'Panel del conductor'
+                      : _currentIndex == 1
+                          ? 'Historial de viajes'
+                          : 'Mi Cuenta',
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                    color: MijanoTheme.ink,
+                  ),
+                ),
+                if (_currentIndex == 0)
+                  IconButton(
+                    icon: const Icon(Icons.person, color: MijanoTheme.ink, size: 22),
+                    constraints: const BoxConstraints(),
+                    padding: EdgeInsets.zero,
+                    // Acción que te lleva al perfil al presionar la personita
+                    onPressed: () => Navigator.pushNamed(context, '/profile'),
+                  ),
+              ],
+            ),
+          ),
+          // Contenido de las pestañas
+          Expanded(
+            child: IndexedStack(
+              index: _currentIndex,
+              children: _screens,
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
