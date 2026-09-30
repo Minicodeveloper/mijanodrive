@@ -3,6 +3,7 @@ import '../models/user_model.dart';
 import '../models/trip_model.dart';
 import '../models/driver_model.dart';
 import '../models/wallet_model.dart';
+import '../models/tariff_model.dart';
 
 class FirestoreService {
   static final FirestoreService instance = FirestoreService._();
@@ -63,7 +64,7 @@ class FirestoreService {
       .collection('drivers')
       .doc(uid)
       .set({'currentLatitude': lat, 'currentLongitude': lng},
-          SetOptions(merge: true));
+      SetOptions(merge: true));
 
   // ---- Viajes ----
   Future<String> createTrip(Trip trip) async {
@@ -160,14 +161,14 @@ class FirestoreService {
       .where('status', isEqualTo: 'pending')
       .snapshots()
       .map((q) {
-        return q.docs.map((d) {
-          try {
-            return Driver.fromFirestore(d);
-          } catch (e) {
-            return null;
-          }
-        }).whereType<Driver>().toList();
-      });
+    return q.docs.map((d) {
+      try {
+        return Driver.fromFirestore(d);
+      } catch (e) {
+        return null;
+      }
+    }).whereType<Driver>().toList();
+  });
 
   /// Todos los conductores (aprobados + pendientes) para el mapa en vivo.
   Stream<List<Driver>> allDrivers() => _db
@@ -330,13 +331,13 @@ class FirestoreService {
   /// Stream para listar todos los chats de soporte activos en la consola web
   Stream<List<Map<String, dynamic>>> allSupportChats() => _db
       .collection('support_chats')
-      
+
       .snapshots()
-      
+
       .map((q) {
-        print('🔥 Documentos encontrados en support_chats: ${q.docs.length}');
-        return q.docs.map((d) => {'id': d.id, ...d.data()}).toList();
-      });
+    print('🔥 Documentos encontrados en support_chats: ${q.docs.length}');
+    return q.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+  });
 
   /// 🌟 STREAM UNIVERSAL: Lee los mensajes de soporte de cualquier usuario (Conductor o Pasajero)
   Stream<List<Map<String, dynamic>>> supportMessagesForUser(String userId) => _db
@@ -348,11 +349,11 @@ class FirestoreService {
       .map((q) => q.docs.map((d) => {'id': d.id, ...d.data()}).toList());
 
   /// Stream específico para conductor
-  Stream<List<Map<String, dynamic>>> supportMessagesForDriver(String driverUid) => 
+  Stream<List<Map<String, dynamic>>> supportMessagesForDriver(String driverUid) =>
       supportMessagesForUser(driverUid);
 
   /// Stream específico para pasajero
-  Stream<List<Map<String, dynamic>>> supportMessagesForPassenger(String passengerUid) => 
+  Stream<List<Map<String, dynamic>>> supportMessagesForPassenger(String passengerUid) =>
       supportMessagesForUser(passengerUid);
 
   // =====================================================
@@ -381,16 +382,29 @@ class FirestoreService {
       .snapshots()
       .map((q) => q.docs.map((d) => {'id': d.id, ...d.data()}).toList());
 
-  /// Todas las ciudades para el módulo de tarifas.
-  Stream<List<Map<String, dynamic>>> allCities() => _db
-      .collection('cities')
-      .snapshots()
-      .map((q) => q.docs
-          .map((d) => {'id': d.id, ...d.data()})
-          .toList());
+  /// Lee `settings/pricing`; si no existe lo crea con los valores por defecto.
+  Future<({PricingSettings settings, bool created})>
+  ensurePricingSettings() {
+    final ref = _db.collection('settings').doc('pricing');
+    return _db.runTransaction((tx) async {
+      final snap = await tx.get(ref);
+      if (snap.exists) {
+        return (settings: PricingSettings.fromMap(snap.data()), created: false);
+      }
+      final defaults = PricingSettings.fromMap(null);
+      tx.set(ref, {
+        ...defaults.toMap(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return (settings: defaults, created: true);
+    });
+  }
 
-  Future<void> updateCity(String id, Map<String, dynamic> data) =>
-      _db.collection('cities').doc(id).set(data, SetOptions(merge: true));
+  Future<void> savePricingSettings(PricingSettings settings) =>
+      _db.collection('settings').doc('pricing').set(
+        {...settings.toMap(), 'updatedAt': FieldValue.serverTimestamp()},
+        SetOptions(merge: true),
+      );
 
   /// Alertas S.O.S. abiertas.
   Stream<List<Map<String, dynamic>>> openAlerts() => _db
@@ -398,8 +412,8 @@ class FirestoreService {
       .where('status', isEqualTo: 'open')
       .snapshots()
       .map((q) => q.docs
-          .map((d) => {'id': d.id, ...d.data()})
-          .toList());
+      .map((d) => {'id': d.id, ...d.data()})
+      .toList());
 
   Future<void> resolveAlert(String id) => _db
       .collection('alerts')
