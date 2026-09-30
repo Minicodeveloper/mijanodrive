@@ -2,10 +2,16 @@ import 'package:flutter/material.dart';
 import '../../models/user_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
+import '../passenger/passenger_edit_profile_screen.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final authService = AuthService.instance;
@@ -140,8 +146,16 @@ class ProfileScreen extends StatelessWidget {
                         leading: const Icon(Icons.edit),
                         title: const Text('Editar perfil'),
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: () {
-                          // TODO: Navigate to edit profile
+                        onTap: () async {
+                          final result = await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const PassengerEditProfileScreen(),
+                            ),
+                          );
+                          if (result == true && mounted) {
+                            setState(() {});
+                          }
                         },
                       ),
                       const Divider(),
