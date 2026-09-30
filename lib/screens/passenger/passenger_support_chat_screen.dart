@@ -3,8 +3,7 @@ import '../../services/firestore_service.dart';
 import '../../theme.dart';
 
 /// Pantalla de soporte y atención al cliente en tiempo real para Pasajeros.
-/// Mantiene la identidad visual de MijanoDrive y sigue con fidelidad
-/// la estructura de chat con la central administrativa.
+/// Mantiene la identidad visual de MijanoDrive y corrige el overflow y estilo de input.
 class PassengerSupportChatScreen extends StatefulWidget {
   final String passengerUid;
   final String passengerName;
@@ -141,12 +140,18 @@ class _PassengerSupportChatScreenState extends State<PassengerSupportChatScreen>
             ),
           ),
 
-          // Barra inferior fija con TextField redondeado y botón de envío
+          // Barra inferior fija mejorada (Estilo WhatsApp moderno con colores Mijano)
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: const BoxDecoration(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
               color: Colors.white,
-              border: Border(top: BorderSide(color: Colors.black12, width: 1)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  offset: const Offset(0, -2),
+                  blurRadius: 6,
+                ),
+              ],
             ),
             child: SafeArea(
               child: Row(
@@ -156,15 +161,16 @@ class _PassengerSupportChatScreenState extends State<PassengerSupportChatScreen>
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       decoration: BoxDecoration(
                         color: MijanoTheme.cream,
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(24),
                         border: Border.all(
-                          color: MijanoTheme.ink.withValues(alpha: 0.25),
-                          width: 1.5,
+                          color: MijanoTheme.ink.withValues(alpha: 0.2),
+                          width: 1.2,
                         ),
                       ),
                       child: TextField(
                         controller: _controller,
                         onSubmitted: (_) => _sendMessage(),
+                        textCapitalization: TextCapitalization.sentences,
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w500,
@@ -174,19 +180,28 @@ class _PassengerSupportChatScreenState extends State<PassengerSupportChatScreen>
                           hintText: 'Escribe tu consulta a soporte...',
                           hintStyle: TextStyle(
                             fontSize: 15,
-                            color: Colors.black45,
+                            //color: Colors.black45,
                             fontWeight: FontWeight.normal,
                           ),
+                          filled: false,
                           border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(vertical: 12),
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          contentPadding: EdgeInsets.symmetric(vertical: 10),
                         ),
                       ),
                     ),
                   ),
                   const SizedBox(width: 8),
-                  IconButton(
-                    icon: const Icon(Icons.send, color: MijanoTheme.ink, size: 26),
-                    onPressed: _sendMessage,
+                  Container(
+                    decoration: const BoxDecoration(
+                      color: MijanoTheme.sol,
+                      shape: BoxShape.circle,
+                    ),
+                    child: IconButton(
+                      icon: const Icon(Icons.send_rounded, color: MijanoTheme.ink, size: 22),
+                      onPressed: _sendMessage,
+                    ),
                   ),
                 ],
               ),
@@ -197,8 +212,7 @@ class _PassengerSupportChatScreenState extends State<PassengerSupportChatScreen>
     );
   }
 
-  /// Encabezado deslizable con la información del Centro de Ayuda.
-  /// Se ubica al tope de la lista y se puede minimizar para no tapar los mensajes.
+  /// Encabezado deslizable con la información del Centro de Ayuda (Corregido el overflow)
   Widget _buildHelpHeader({required bool hasMessages}) {
     if (hasMessages && _isHeaderMinimized) {
       return Padding(
@@ -239,7 +253,7 @@ class _PassengerSupportChatScreenState extends State<PassengerSupportChatScreen>
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: MijanoTheme.cream,
         border: Border.all(color: MijanoTheme.ink, width: 1.5),
@@ -251,19 +265,24 @@ class _PassengerSupportChatScreenState extends State<PassengerSupportChatScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Row(
-                children: [
-                  Icon(Icons.support_agent, size: 22, color: MijanoTheme.ink),
-                  SizedBox(width: 8),
-                  Text(
-                    'Centro de Ayuda al Pasajero',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                      color: MijanoTheme.ink,
+              const Expanded(
+                child: Row(
+                  children: [
+                    Icon(Icons.support_agent, size: 22, color: MijanoTheme.ink),
+                    SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        'Centro de Ayuda al Pasajero',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                          color: MijanoTheme.ink,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
               if (hasMessages)
                 IconButton(
@@ -288,7 +307,7 @@ class _PassengerSupportChatScreenState extends State<PassengerSupportChatScreen>
     );
   }
 
-  /// Burbuja de conversación fiel a la captura de referencia
+  /// Burbuja de conversación fiel al diseño original
   Widget _buildMessageBubble({
     required String text,
     required bool isAdmin,
@@ -302,7 +321,6 @@ class _PassengerSupportChatScreenState extends State<PassengerSupportChatScreen>
           maxWidth: MediaQuery.of(context).size.width * 0.72,
         ),
         decoration: BoxDecoration(
-          // Pasajero en amarillo suave (#f9d408 suave), Soporte en crema/blanco
           color: isAdmin ? MijanoTheme.cream : const Color(0xFFFFF0A6),
           border: Border.all(
             color: isAdmin
