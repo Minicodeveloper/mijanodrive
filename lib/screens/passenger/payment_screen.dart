@@ -62,7 +62,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       if (!mounted) return;
 
       Navigator.of(context).pushNamed(
-        '/active-trip',
+        '/searching-trip',
         arguments: {
           'destination': widget.destination,
           'fare': widget.fare,
