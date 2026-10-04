@@ -431,6 +431,18 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                         return const Center(child: CircularProgressIndicator());
                       }
 
+                      if (snap.hasError) {
+                        return Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Text(
+                              'No se pudieron cargar los viajes: ${snap.error}',
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        );
+                      }
+
                       if (_driverPosition == null) {
                         return const Center(
                           child: Column(
@@ -455,22 +467,25 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                       _checkForNewNearbyTripAlerts(trips);
 
                       if (nearbyTrips.isEmpty) {
-                        return const Center(
+                        return Center(
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
+                              const Icon(
                                 Icons.two_wheeler,
                                 size: 48,
                                 color: Colors.black26,
                               ),
-                              SizedBox(height: 12),
+                              const SizedBox(height: 12),
                               Text(
-                                'No hay viajes cercanos por ahora',
-                                style: TextStyle(color: Colors.black54),
+                                trips.isEmpty
+                                    ? 'No hay solicitudes pendientes en $_city'
+                                    : 'Hay ${trips.length} solicitud(es), pero ninguna está dentro de 3 km',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(color: Colors.black54),
                               ),
-                              SizedBox(height: 4),
-                              Text(
+                              const SizedBox(height: 4),
+                              const Text(
                                 'Se muestran viajes dentro de 3 km',
                                 style: TextStyle(
                                   color: Colors.black38,
