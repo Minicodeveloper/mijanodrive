@@ -47,10 +47,24 @@ class FirestoreService {
 
   Future<Driver?> getDriver(String uid) async {
     try {
-      final doc = await _db.collection('drivers').doc(uid).get();
-      if (!doc.exists) return null;
-      return Driver.fromFirestore(doc);
-    } catch (_) {
+      // 1. Obtener datos personales desde 'users'
+      final userDoc = await _db.collection('users').doc(uid).get();
+      
+      // 2. Obtener datos de ubicación desde 'drivers'
+      final driverDoc = await _db.collection('drivers').doc(uid).get();
+
+      if (!userDoc.exists && !driverDoc.exists) return null;
+
+      // Combinar los mapas de ambas colecciones
+      final Map<String, dynamic> combinedData = {
+        if (userDoc.exists && userDoc.data() != null) ...userDoc.data()!,
+        if (driverDoc.exists && driverDoc.data() != null) ...driverDoc.data()!,
+      };
+
+      // Llamamos correctamente a tu factory pasando el mapa y el uid
+      return Driver.fromMap(combinedData, uid);
+    } catch (e) {
+      print('Error al obtener conductor combinado: $e');
       return null;
     }
   }
@@ -82,12 +96,22 @@ class FirestoreService {
       .map((doc) => doc.exists ? Trip.fromFirestore(doc) : null);
 
   /// Viajes pendientes en una ciudad (para el conductor).
-  Stream<List<Trip>> pendingTripsForCity(String city) => _db
+  Stream<List<Trip>> pendingTrips() {
+  return FirebaseFirestore.instance
       .collection('trips')
-      .where('city', isEqualTo: city)
       .where('status', isEqualTo: 'pending')
       .snapshots()
-      .map((q) => q.docs.map((d) => Trip.fromFirestore(d)).toList());
+      .map((snapshot) {
+        // 👇 ESTE PRINT TE MOSTRARÁ SI LLEGAN DATOS Y CUÁNTOS VIAJES HAY
+        print('🔍 Total de viajes pendientes encontrados en Firestore: ${snapshot.docs.length}');
+        
+        for (var doc in snapshot.docs) {
+          print('📄 Viaje ID: ${doc.id} \vert{} Datos:${doc.data()}');
+        }
+
+        return snapshot.docs.map((doc) => Trip.fromFirestore(doc)).toList();
+      });
+}
 
   Stream<List<Trip>> tripsForPassenger(String uid) => _db
       .collection('trips')

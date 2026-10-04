@@ -38,7 +38,11 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   final Set<String> _rejectedTripIds = {};
 
   static const CameraPosition _initialPosition = CameraPosition(
+<<<<<<< Updated upstream
     target: LatLng(-6.48694, -76.36472),
+=======
+    target: LatLng(-12.0464, -77.0428), // Ajusta según tu zona predeterminada (ej. Lima)
+>>>>>>> Stashed changes
     zoom: 14.0,
   );
 
@@ -116,6 +120,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
+<<<<<<< Updated upstream
         SnackBar(
           content: Text(
             'Aceptaste el viaje a ${trip.destinationAddress ?? 'Destino'}',
@@ -129,6 +134,9 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         const SnackBar(
           content: Text('No se pudo aceptar el viaje'),
         ),
+=======
+        SnackBar(content: Text('Aceptaste el viaje a ${trip.destination}')),
+>>>>>>> Stashed changes
       );
     }
   }
@@ -403,6 +411,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
               ],
             ),
           ),
+<<<<<<< Updated upstream
 
           // Ciudad.
           Padding(
@@ -438,6 +447,18 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                       ),
                     ],
                   ),
+=======
+          
+          // Encabezado informativo general
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                Icon(Icons.radar, size: 18),
+                SizedBox(width: 6),
+                Text('Solicitudes de viajes pendientes',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
+>>>>>>> Stashed changes
               ],
             ),
           ),
@@ -471,7 +492,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                     ),
                   )
                 : StreamBuilder<List<Trip>>(
-                    stream: _fs.pendingTripsForCity(_city),
+                    stream: _fs.pendingTrips(),
                     builder: (context, snap) {
                       if (snap.connectionState ==
                           ConnectionState.waiting) {
@@ -568,6 +589,11 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Text(
+            'Pasajero: ${trip.passengerName ?? "Cliente"}',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          ),
+          const SizedBox(height: 8),
           Row(
             children: [
               const Icon(
@@ -575,11 +601,15 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                 size: 16,
               ),
               const SizedBox(width: 8),
+<<<<<<< Updated upstream
               Expanded(
                 child: Text(
                   trip.originAddress ?? 'Origen',
                 ),
               ),
+=======
+              Expanded(child: Text(trip.originAddress?? 'Origen')),
+>>>>>>> Stashed changes
             ],
           ),
           const Padding(

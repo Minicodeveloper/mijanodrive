@@ -19,6 +19,7 @@ import 'screens/passenger/active_trip_screen.dart';
 import 'screens/passenger/searching_trip_screen.dart';
 import 'screens/passenger/rating_screen.dart';
 import 'screens/passenger/wallet_screen.dart';
+import 'screens/passenger/chat_screen.dart'; // 👈 Importación del chat añadida
 import 'screens/shared/profile_screen.dart';
 import 'screens/auth/role-select.dart';
 import 'screens/driver/driver_main_layout.dart';
@@ -97,9 +98,15 @@ class MijanoDriveApp extends StatelessWidget {
         break;
       case '/active-trip':
         page = ActiveTripScreen(
-          destination: args['destination'] ?? '',
-          fare: (args['fare'] ?? 0).toDouble(),
           tripId: args['tripId'] ?? '',
+          tripData: args as Map<String, dynamic>, // Le pasamos todo el mapa de argumentos como tripData
+        );
+        break;
+      case '/chat': // 👈 Ruta del chat configurada correctamente
+        page = ChatScreen(
+          tripId: args['tripId'] ?? '',
+          driverId: args['driverId'] ?? '',
+          driverName: args['driverName'] ?? 'Conductor',
         );
         break;
       case '/rating':

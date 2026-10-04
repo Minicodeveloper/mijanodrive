@@ -7,6 +7,7 @@ enum PaymentMethod { cash, wallet, card }
 class Trip {
   final String id;
   final String passengerId;
+  final String? passengerName; // Declarado aquí
   final String? driverId;
   final GeoPoint origin;
   final GeoPoint destination;
@@ -19,12 +20,12 @@ class Trip {
   DateTime? completedAt;
   double? rating;
   String? feedback;
-  final String city;
   final double distanceKm;
 
   Trip({
     required this.id,
     required this.passengerId,
+    this.passengerName, // 👈 1. Añadido al constructor
     this.driverId,
     required this.origin,
     required this.destination,
@@ -37,13 +38,13 @@ class Trip {
     this.completedAt,
     this.rating,
     this.feedback,
-    required this.city,
     required this.distanceKm,
   });
 
   Map<String, dynamic> toMap() {
     return {
       'passengerId': passengerId,
+      'passengerName': passengerName, // 👈 2. Añadido para que se guarde en Firestore
       'driverId': driverId,
       'origin': origin,
       'destination': destination,
@@ -56,7 +57,6 @@ class Trip {
       'completedAt': completedAt,
       'rating': rating,
       'feedback': feedback,
-      'city': city,
       'distanceKm': distanceKm,
     };
   }
@@ -65,6 +65,7 @@ class Trip {
     return Trip(
       id: id,
       passengerId: map['passengerId'] ?? '',
+      passengerName: map['passengerName'], // 👈 3. Añadido para que se lea de Firestore
       driverId: map['driverId'],
       origin: map['origin'] ?? GeoPoint(0, 0),
       destination: map['destination'] ?? GeoPoint(0, 0),
@@ -77,7 +78,6 @@ class Trip {
       completedAt: (map['completedAt'] as Timestamp?)?.toDate(),
       rating: (map['rating'] ?? 0).toDouble(),
       feedback: map['feedback'],
-      city: map['city'] ?? '',
       distanceKm: (map['distanceKm'] ?? 0).toDouble(),
     );
   }
@@ -115,6 +115,7 @@ class Trip {
   Trip copyWith({
     String? id,
     String? passengerId,
+    String? passengerName, // 👈 4. Añadido en copyWith
     String? driverId,
     GeoPoint? origin,
     GeoPoint? destination,
@@ -127,12 +128,12 @@ class Trip {
     DateTime? completedAt,
     double? rating,
     String? feedback,
-    String? city,
     double? distanceKm,
   }) {
     return Trip(
       id: id ?? this.id,
       passengerId: passengerId ?? this.passengerId,
+      passengerName: passengerName ?? this.passengerName, // 👈 4. Añadido aquí también
       driverId: driverId ?? this.driverId,
       origin: origin ?? this.origin,
       destination: destination ?? this.destination,
@@ -145,7 +146,6 @@ class Trip {
       completedAt: completedAt ?? this.completedAt,
       rating: rating ?? this.rating,
       feedback: feedback ?? this.feedback,
-      city: city ?? this.city,
       distanceKm: distanceKm ?? this.distanceKm,
     );
   }
