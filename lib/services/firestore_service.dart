@@ -12,8 +12,10 @@ class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   // ---- Usuarios ----
-  Future<void> saveUser(User user) =>
-      _db.collection('users').doc(user.uid).set(user.toMap(), SetOptions(merge: true));
+  Future<void> saveUser(User user) => _db
+      .collection('users')
+      .doc(user.uid)
+      .set(user.toMap(), SetOptions(merge: true));
 
   Future<User?> getUser(String uid) async {
     try {
@@ -60,11 +62,11 @@ class FirestoreService {
       .doc(uid)
       .set({'isAvailable': available}, SetOptions(merge: true));
 
-  Future<void> updateDriverLocation(String uid, double lat, double lng) => _db
-      .collection('drivers')
-      .doc(uid)
-      .set({'currentLatitude': lat, 'currentLongitude': lng},
-      SetOptions(merge: true));
+  Future<void> updateDriverLocation(String uid, double lat, double lng) =>
+      _db.collection('drivers').doc(uid).set({
+        'currentLatitude': lat,
+        'currentLongitude': lng,
+      }, SetOptions(merge: true));
 
   // ---- Viajes ----
   Future<String> createTrip(Trip trip) async {
@@ -161,14 +163,17 @@ class FirestoreService {
       .where('status', isEqualTo: 'pending')
       .snapshots()
       .map((q) {
-    return q.docs.map((d) {
-      try {
-        return Driver.fromFirestore(d);
-      } catch (e) {
-        return null;
-      }
-    }).whereType<Driver>().toList();
-  });
+        return q.docs
+            .map((d) {
+              try {
+                return Driver.fromFirestore(d);
+              } catch (e) {
+                return null;
+              }
+            })
+            .whereType<Driver>()
+            .toList();
+      });
 
   /// Todos los conductores (aprobados + pendientes) para el mapa en vivo.
   Stream<List<Driver>> allDrivers() => _db
@@ -176,12 +181,18 @@ class FirestoreService {
       .snapshots()
       .map((q) => q.docs.map((d) => Driver.fromFirestore(d)).toList());
 
-  Future<void> approveDriver(String uid, bool approved) => _db
-      .collection('users')
-      .doc(uid)
-      .set({'isApproved': approved, 'status': approved ? 'approved' : 'rejected'}, SetOptions(merge: true));
+  Future<void> approveDriver(String uid, bool approved) =>
+      _db.collection('users').doc(uid).set({
+        'isApproved': approved,
+        'status': approved ? 'approved' : 'rejected',
+      }, SetOptions(merge: true));
 
-  Future<void> updateDriverStatus(String uid, {bool? isApproved, bool? isBlocked, bool? isRejected}) {
+  Future<void> updateDriverStatus(
+    String uid, {
+    bool? isApproved,
+    bool? isBlocked,
+    bool? isRejected,
+  }) {
     final Map<String, dynamic> data = {};
     if (isApproved != null) {
       data['isApproved'] = isApproved;
@@ -207,7 +218,11 @@ class FirestoreService {
   }
 
   /// Añadir transacción manual y actualizar billetera
-  Future<void> addManualTransaction(String walletId, double amount, String reason) async {
+  Future<void> addManualTransaction(
+    String walletId,
+    double amount,
+    String reason,
+  ) async {
     await _db.collection('transactions').add({
       'walletId': walletId,
       'amount': amount,
@@ -240,6 +255,20 @@ class FirestoreService {
     await _db.collection('trips').doc(tripId).collection('messages').add({
       'senderId': 'support',
       'senderName': 'Soporte Admin',
+      'text': text,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> sendTripMessage({
+    required String tripId,
+    required String senderId,
+    required String senderName,
+    required String text,
+  }) async {
+    await _db.collection('trips').doc(tripId).collection('messages').add({
+      'senderId': senderId,
+      'senderName': senderName,
       'text': text,
       'createdAt': FieldValue.serverTimestamp(),
     });
@@ -329,32 +358,31 @@ class FirestoreService {
   }
 
   /// Stream para listar todos los chats de soporte activos en la consola web
-  Stream<List<Map<String, dynamic>>> allSupportChats() => _db
-      .collection('support_chats')
-
-      .snapshots()
-
-      .map((q) {
-    print('🔥 Documentos encontrados en support_chats: ${q.docs.length}');
-    return q.docs.map((d) => {'id': d.id, ...d.data()}).toList();
-  });
+  Stream<List<Map<String, dynamic>>> allSupportChats() =>
+      _db.collection('support_chats').snapshots().map((q) {
+        print('🔥 Documentos encontrados en support_chats: ${q.docs.length}');
+        return q.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+      });
 
   /// 🌟 STREAM UNIVERSAL: Lee los mensajes de soporte de cualquier usuario (Conductor o Pasajero)
-  Stream<List<Map<String, dynamic>>> supportMessagesForUser(String userId) => _db
-      .collection('support_chats')
-      .doc(userId)
-      .collection('messages')
-      .orderBy('timestamp', descending: false)
-      .snapshots()
-      .map((q) => q.docs.map((d) => {'id': d.id, ...d.data()}).toList());
+  Stream<List<Map<String, dynamic>>> supportMessagesForUser(String userId) =>
+      _db
+          .collection('support_chats')
+          .doc(userId)
+          .collection('messages')
+          .orderBy('timestamp', descending: false)
+          .snapshots()
+          .map((q) => q.docs.map((d) => {'id': d.id, ...d.data()}).toList());
 
   /// Stream específico para conductor
-  Stream<List<Map<String, dynamic>>> supportMessagesForDriver(String driverUid) =>
-      supportMessagesForUser(driverUid);
+  Stream<List<Map<String, dynamic>>> supportMessagesForDriver(
+    String driverUid,
+  ) => supportMessagesForUser(driverUid);
 
   /// Stream específico para pasajero
-  Stream<List<Map<String, dynamic>>> supportMessagesForPassenger(String passengerUid) =>
-      supportMessagesForUser(passengerUid);
+  Stream<List<Map<String, dynamic>>> supportMessagesForPassenger(
+    String passengerUid,
+  ) => supportMessagesForUser(passengerUid);
 
   // =====================================================
 
@@ -383,8 +411,7 @@ class FirestoreService {
       .map((q) => q.docs.map((d) => {'id': d.id, ...d.data()}).toList());
 
   /// Lee `settings/pricing`; si no existe lo crea con los valores por defecto.
-  Future<({PricingSettings settings, bool created})>
-  ensurePricingSettings() {
+  Future<({PricingSettings settings, bool created})> ensurePricingSettings() {
     final ref = _db.collection('settings').doc('pricing');
     return _db.runTransaction((tx) async {
       final snap = await tx.get(ref);
@@ -401,38 +428,34 @@ class FirestoreService {
   }
 
   Future<void> savePricingSettings(PricingSettings settings) =>
-      _db.collection('settings').doc('pricing').set(
-        {...settings.toMap(), 'updatedAt': FieldValue.serverTimestamp()},
-        SetOptions(merge: true),
-      );
+      _db.collection('settings').doc('pricing').set({
+        ...settings.toMap(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
 
   /// Alertas S.O.S. abiertas.
   Stream<List<Map<String, dynamic>>> openAlerts() => _db
       .collection('alerts')
       .where('status', isEqualTo: 'open')
       .snapshots()
-      .map((q) => q.docs
-      .map((d) => {'id': d.id, ...d.data()})
-      .toList());
+      .map((q) => q.docs.map((d) => {'id': d.id, ...d.data()}).toList());
 
-  Future<void> resolveAlert(String id) => _db
-      .collection('alerts')
-      .doc(id)
-      .set({'status': 'resolved'}, SetOptions(merge: true));
+  Future<void> resolveAlert(String id) => _db.collection('alerts').doc(id).set({
+    'status': 'resolved',
+  }, SetOptions(merge: true));
 
   Future<void> createSosAlert({
     required String driverId,
     required double latitude,
     required double longitude,
     required String city,
-  }) =>
-      _db.collection('alerts').add({
-        'type': 'sos',
-        'driverId': driverId,
-        'latitude': latitude,
-        'longitude': longitude,
-        'city': city,
-        'status': 'open',
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+  }) => _db.collection('alerts').add({
+    'type': 'sos',
+    'driverId': driverId,
+    'latitude': latitude,
+    'longitude': longitude,
+    'city': city,
+    'status': 'open',
+    'createdAt': FieldValue.serverTimestamp(),
+  });
 }

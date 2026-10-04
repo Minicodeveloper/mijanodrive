@@ -5,6 +5,7 @@ import '../../services/auth_service.dart';
 import '../../models/trip_model.dart';
 import '../../models/driver_model.dart';
 import '../../theme.dart';
+import '../driver/driver_trip_chat_screen.dart';
 
 class ActiveTripScreen extends StatefulWidget {
   final String destination;
@@ -282,9 +283,25 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                         children: [
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: () {
-                                // TODO: Open WhatsApp or phone call
-                              },
+                              onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => DriverTripChatScreen(
+                                    tripId: widget.tripId,
+                                    senderId:
+                                        AuthService.instance.currentUser?.uid ??
+                                        '',
+                                    senderName:
+                                        AuthService
+                                            .instance
+                                            .currentUser
+                                            ?.name ??
+                                        'Pasajero',
+                                    conversationTitle: _driver != null
+                                        ? 'Conductor'
+                                        : 'Chat del viaje',
+                                  ),
+                                ),
+                              ),
                               icon: const Icon(Icons.chat),
                               label: const Text('Chat'),
                             ),
