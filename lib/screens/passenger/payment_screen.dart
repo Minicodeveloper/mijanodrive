@@ -44,7 +44,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
       print('👤 Usuario ID: ${user.uid}');
 
-      // Obtenemos el nombre real del pasajero directamente desde la colección 'users'
+      
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
@@ -58,11 +58,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
       final trip = Trip(
         id: '',
         passengerId: user.uid,
-        passengerName: passengerName, // 👈 Nombre real obtenido de la base de datos
+        passengerName: passengerName, 
         origin: widget.origin,
         destination: widget.destinationGeoPoint,
-        originAddress: 'Punto de partida', // Puedes ajustarlo si manejas la dirección exacta de origen
-        destinationAddress: widget.destination, // 👈 Dirección de destino en texto
+        originAddress: 'Punto de partida', 
+        destinationAddress: widget.destination, 
         status: TripStatus.pending,
         fareAmount: widget.fare,
         paymentMethod: widget.paymentMethod == 'cash'

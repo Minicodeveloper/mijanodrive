@@ -28,13 +28,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   Position? _driverPosition;
   StreamSubscription<Position>? _locationSubscription;
 
-  // Distancia máxima para recibir/mostrar un viaje.
+  
   static const double _maxTripDistanceKm = 3.0;
 
-  // Viajes que ya fueron mostrados como alerta a este conductor.
+  
   final Set<String> _shownAlertTripIds = {};
 
-  // Viajes que este conductor decidió rechazar.
+  
   final Set<String> _rejectedTripIds = {};
 
   static const CameraPosition _initialPosition = CameraPosition(
@@ -58,7 +58,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     super.dispose();
   }
 
-  /// Obtiene la ubicación inicial y luego mantiene actualizada
+  
   /// la ubicación del conductor.
   Future<void> _startLocationTracking() async {
     try {
@@ -93,8 +93,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         } catch (_) {}
       });
     } catch (_) {
-      // Si no hay permisos o GPS, LocationService manejará
-      // el fallback de demostración cuando esté habilitado.
+      
+      
     }
   }
 
@@ -139,7 +139,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     });
   }
 
-  /// Calcula la distancia entre el conductor y el origen del viaje.
+  
   double? _tripDistanceKm(Trip trip) {
     final position = _driverPosition;
 
@@ -155,7 +155,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     );
   }
 
-  /// Filtra únicamente los viajes cercanos al conductor.
+  
   List<Trip> _nearbyTrips(List<Trip> trips) {
     if (_driverPosition == null) {
       return [];
@@ -172,7 +172,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     }).toList();
   }
 
-  /// Muestra una alerta cuando aparece un nuevo viaje cercano.
+  
   void _checkForNewNearbyTripAlerts(List<Trip> trips) {
     if (!_available || _driverPosition == null || trips.isEmpty) {
       return;
@@ -193,8 +193,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         _showTripAlert(trip);
       });
 
-      // Solo mostramos una alerta por actualización para
-      // evitar que aparezcan varios modales juntos.
+      
+      
       break;
     }
   }
@@ -502,7 +502,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
                       final nearbyTrips = _nearbyTrips(trips);
 
-                      // Revisa si llegó un nuevo viaje cercano.
+                      
                       _checkForNewNearbyTripAlerts(trips);
 
                       if (nearbyTrips.isEmpty) {

@@ -47,21 +47,21 @@ class FirestoreService {
 
   Future<Driver?> getDriver(String uid) async {
     try {
-      // 1. Obtener datos personales desde 'users'
+      
       final userDoc = await _db.collection('users').doc(uid).get();
       
-      // 2. Obtener datos de ubicación desde 'drivers'
+      
       final driverDoc = await _db.collection('drivers').doc(uid).get();
 
       if (!userDoc.exists && !driverDoc.exists) return null;
 
-      // Combinar los mapas de ambas colecciones
+      
       final Map<String, dynamic> combinedData = {
         if (userDoc.exists && userDoc.data() != null) ...userDoc.data()!,
         if (driverDoc.exists && driverDoc.data() != null) ...driverDoc.data()!,
       };
 
-      // Llamamos correctamente a tu factory pasando el mapa y el uid
+      
       return Driver.fromMap(combinedData, uid);
     } catch (e) {
       print('Error al obtener conductor combinado: $e');
@@ -102,7 +102,7 @@ class FirestoreService {
       .where('status', isEqualTo: 'pending')
       .snapshots()
       .map((snapshot) {
-        // 👇 ESTE PRINT TE MOSTRARÁ SI LLEGAN DATOS Y CUÁNTOS VIAJES HAY
+        
         print('🔍 Total de viajes pendientes encontrados en Firestore: ${snapshot.docs.length}');
         
         for (var doc in snapshot.docs) {
@@ -309,7 +309,7 @@ class FirestoreService {
       'senderId': driverUid,
       'senderName': driverName.isNotEmpty ? driverName : 'Conductor',
       'senderRole': 'driver',
-      'isAdmin': false, // 👈 Esto hace que aparezca a la derecha como "Tú"
+      'isAdmin': false, 
       'timestamp': FieldValue.serverTimestamp(),
     });
 
@@ -320,7 +320,7 @@ class FirestoreService {
       'role': 'driver',
       'lastMessage': text,
       'updatedAt': FieldValue.serverTimestamp(),
-      'unreadByAdmin': true, // 👈 Alerta al panel admin
+      'unreadByAdmin': true, 
     }, SetOptions(merge: true));
   }
 
@@ -352,7 +352,7 @@ class FirestoreService {
     }, SetOptions(merge: true));
   }
 
-  /// Stream para listar todos los chats de soporte activos en la consola web
+  
   Stream<List<Map<String, dynamic>>> allSupportChats() => _db
       .collection('support_chats')
 
@@ -363,7 +363,7 @@ class FirestoreService {
     return q.docs.map((d) => {'id': d.id, ...d.data()}).toList();
   });
 
-  /// 🌟 STREAM UNIVERSAL: Lee los mensajes de soporte de cualquier usuario (Conductor o Pasajero)
+  
   Stream<List<Map<String, dynamic>>> supportMessagesForUser(String userId) => _db
       .collection('support_chats')
       .doc(userId)
@@ -406,7 +406,7 @@ class FirestoreService {
       .snapshots()
       .map((q) => q.docs.map((d) => {'id': d.id, ...d.data()}).toList());
 
-  /// Lee `settings/pricing`; si no existe lo crea con los valores por defecto.
+  
   Future<({PricingSettings settings, bool created})>
   ensurePricingSettings() {
     final ref = _db.collection('settings').doc('pricing');

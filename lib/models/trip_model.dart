@@ -7,7 +7,7 @@ enum PaymentMethod { cash, wallet, card }
 class Trip {
   final String id;
   final String passengerId;
-  final String? passengerName; // Declarado aquí
+  final String? passengerName; 
   final String? driverId;
   final GeoPoint origin;
   final GeoPoint destination;
@@ -25,7 +25,7 @@ class Trip {
   Trip({
     required this.id,
     required this.passengerId,
-    this.passengerName, // 👈 1. Añadido al constructor
+    this.passengerName, 
     this.driverId,
     required this.origin,
     required this.destination,
@@ -44,7 +44,7 @@ class Trip {
   Map<String, dynamic> toMap() {
     return {
       'passengerId': passengerId,
-      'passengerName': passengerName, // 👈 2. Añadido para que se guarde en Firestore
+      'passengerName': passengerName, 
       'driverId': driverId,
       'origin': origin,
       'destination': destination,
@@ -65,7 +65,7 @@ class Trip {
     return Trip(
       id: id,
       passengerId: map['passengerId'] ?? '',
-      passengerName: map['passengerName'], // 👈 3. Añadido para que se lea de Firestore
+      passengerName: map['passengerName'], 
       driverId: map['driverId'],
       origin: map['origin'] ?? GeoPoint(0, 0),
       destination: map['destination'] ?? GeoPoint(0, 0),
@@ -115,7 +115,7 @@ class Trip {
   Trip copyWith({
     String? id,
     String? passengerId,
-    String? passengerName, // 👈 4. Añadido en copyWith
+    String? passengerName, 
     String? driverId,
     GeoPoint? origin,
     GeoPoint? destination,
@@ -133,7 +133,7 @@ class Trip {
     return Trip(
       id: id ?? this.id,
       passengerId: passengerId ?? this.passengerId,
-      passengerName: passengerName ?? this.passengerName, // 👈 4. Añadido aquí también
+      passengerName: passengerName ?? this.passengerName, 
       driverId: driverId ?? this.driverId,
       origin: origin ?? this.origin,
       destination: destination ?? this.destination,

@@ -17,7 +17,7 @@ class SearchTripScreen extends StatefulWidget {
 }
 
 class _SearchTripScreenState extends State<SearchTripScreen> {
-  // Controladores para origen y destino
+  
   final _originController = TextEditingController(text: 'Mi ubicación actual');
   final _destinationController = TextEditingController();
 
@@ -25,7 +25,7 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
   double _estimatedFare = 15.00;
   bool _isSearching = false;
 
-  // Variables para almacenar coordenadas precisas
+  
   double? _destinationLat;
   double? _destinationLng;
   double? _originLat;
@@ -51,16 +51,16 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
     setState(() => _isSearching = true);
 
     try {
-      // 1. Obtener ubicación actual del pasajero o usar la guardada
+      
       final originPosition = await LocationService.instance.current();
       final realOriginLat = _originLat ?? originPosition.latitude;
       final realOriginLng = _originLng ?? originPosition.longitude;
 
-      // 2. Asegurarnos de tener las coordenadas del destino
+      
       double destLat = _destinationLat ?? 0.0;
       double destLng = _destinationLng ?? 0.0;
 
-      // Si no se capturaron coordenadas desde el autocompletado, intentamos geocodificar el texto
+      
       if (destLat == 0.0 || destLng == 0.0) {
         final locations = await geo.locationFromAddress(destinationText);
         if (locations.isEmpty) {
@@ -70,7 +70,7 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
         destLng = locations.first.longitude;
       }
 
-      // 3. Calcular distancia real
+      
       final distanceKm = LocationService.instance.distanceKm(
         realOriginLat,
         realOriginLng,
@@ -78,11 +78,11 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
         destLng,
       );
 
-      // 4. Obtener ciudad del usuario
+      
       final user = AuthService.instance.currentUser;
       final city = user?.city ?? 'Tarapoto';
 
-      // 5. Obtener tarifa de Firestore
+      
       final firestoreTariff = await FirestoreService.instance.getCityTariff(
         city,
       );
@@ -197,7 +197,7 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                           _originController.selection = TextSelection.fromPosition(
                             TextPosition(offset: _originController.text.length),
                           );
-                          // Si el plugin trae lat/lng podemos asignarlo aquí si está disponible
+                          
                           if (prediction.lat != null && prediction.lng != null) {
                             _originLat = double.tryParse(prediction.lat!);
                             _originLng = double.tryParse(prediction.lng!);
@@ -427,7 +427,7 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
     return InkWell(
       onTap: () async {
         _destinationController.text = label;
-        // Limpiamos coordenadas previas para forzar la geocodificación del lugar frecuente
+        
         _destinationLat = null;
         _destinationLng = null;
       },

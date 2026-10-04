@@ -317,7 +317,7 @@ class _DashboardModule extends StatelessWidget {
                       const spacing = 16.0;
                       final n = stats.length;
                       final maxW = constraints.maxWidth;
-                      // Ancho: todas en una fila. Medio/móvil: 2 columnas. Muy angosto: 1.
+                      
                       final cols = maxW >= 900 ? n : (maxW >= 380 ? 2 : 1);
                       final cardW = ((maxW - spacing * (cols - 1)) / cols).floorToDouble();
 
@@ -331,7 +331,7 @@ class _DashboardModule extends StatelessWidget {
                               stats[i].value,
                               stats[i].icon,
                               stats[i].color,
-                              // Si queda una sola en la última fila, ocupa todo el ancho
+                              
                               width: (cols > 1 && i == n - 1 && n % cols == 1) ? maxW : cardW,
                             ),
                         ],
