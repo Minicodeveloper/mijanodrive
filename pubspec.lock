@@ -145,6 +145,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.9"
+  dio:
+    dependency: transitive
+    description:
+      name: dio
+      sha256: "852ec3b48cc431ac04fff978413c541502b67ffc3e26921e74e3d994694192c1"
+      url: "https://pub.dev"
+    source: hosted
+    version: "5.11.1"
+  dio_web_adapter:
+    dependency: transitive
+    description:
+      name: dio_web_adapter
+      sha256: "3a1b2cd7be71086f38504956e3ebcd2837288d231ff454bafa78021244102bfc"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.2.2"
   dotenv:
     dependency: "direct main"
     description:
@@ -464,6 +480,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.5.14+3"
+  google_places_flutter:
+    dependency: "direct main"
+    description:
+      name: google_places_flutter
+      sha256: "37bd64221cf4a5aa97eb3a33dc2d40f6326aa5ae4e2f2a9a7116bdc1a14f5194"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.1.1"
   hive:
     dependency: "direct main"
     description:

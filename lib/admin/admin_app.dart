@@ -481,7 +481,7 @@ class _DashboardModule extends StatelessWidget {
                             style: const TextStyle(fontWeight: FontWeight.bold)),
                         subtitle: Padding(
                           padding: const EdgeInsets.only(top: 4),
-                          child: Text('${t.city} · ${_statusEs(t.status)}'),
+                          child: Text('${t.passengerName ?? "Pasajero"} · ${_statusEs(t.status)}'),
                         ),
                         trailing: Column(
                           mainAxisAlignment: MainAxisAlignment.center,

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:google_places_flutter/google_places_flutter.dart';
+import 'package:google_places_flutter/model/prediction.dart';
 
 import '../../config/app_config.dart';
 import '../../services/auth_service.dart';
@@ -15,22 +17,31 @@ class SearchTripScreen extends StatefulWidget {
 }
 
 class _SearchTripScreenState extends State<SearchTripScreen> {
+  // Controladores para origen y destino
+  final _originController = TextEditingController(text: 'Mi ubicación actual');
   final _destinationController = TextEditingController();
 
   String _selectedPaymentMethod = 'cash';
   double _estimatedFare = 15.00;
   bool _isSearching = false;
 
+  // Variables para almacenar coordenadas precisas
+  double? _destinationLat;
+  double? _destinationLng;
+  double? _originLat;
+  double? _originLng;
+
   @override
   void dispose() {
+    _originController.dispose();
     _destinationController.dispose();
     super.dispose();
   }
 
   Future<void> _searchAndBook() async {
-    final destination = _destinationController.text.trim();
+    final destinationText = _destinationController.text.trim();
 
-    if (destination.isEmpty) {
+    if (destinationText.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Por favor ingresa un destino')),
       );
@@ -40,30 +51,38 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
     setState(() => _isSearching = true);
 
     try {
-      // 1. Obtener ubicación actual del pasajero.
+      // 1. Obtener ubicación actual del pasajero o usar la guardada
       final originPosition = await LocationService.instance.current();
+      final realOriginLat = _originLat ?? originPosition.latitude;
+      final realOriginLng = _originLng ?? originPosition.longitude;
 
-      // 2. Geocodificar destino.
-      final locations = await geo.locationFromAddress(destination);
-      if (locations.isEmpty) {
-        throw Exception('Dirección no encontrada');
+      // 2. Asegurarnos de tener las coordenadas del destino
+      double destLat = _destinationLat ?? 0.0;
+      double destLng = _destinationLng ?? 0.0;
+
+      // Si no se capturaron coordenadas desde el autocompletado, intentamos geocodificar el texto
+      if (destLat == 0.0 || destLng == 0.0) {
+        final locations = await geo.locationFromAddress(destinationText);
+        if (locations.isEmpty) {
+          throw Exception('Dirección no encontrada');
+        }
+        destLat = locations.first.latitude;
+        destLng = locations.first.longitude;
       }
-      final destinationLatitude = locations.first.latitude;
-      final destinationLongitude = locations.first.longitude;
 
-      // 3. Calcular distancia real.
+      // 3. Calcular distancia real
       final distanceKm = LocationService.instance.distanceKm(
-        originPosition.latitude,
-        originPosition.longitude,
-        destinationLatitude,
-        destinationLongitude,
+        realOriginLat,
+        realOriginLng,
+        destLat,
+        destLng,
       );
 
-      // 4. Obtener ciudad del usuario.
+      // 4. Obtener ciudad del usuario
       final user = AuthService.instance.currentUser;
       final city = user?.city ?? 'Tarapoto';
 
-      // 5. Obtener tarifa de Firestore.
+      // 5. Obtener tarifa de Firestore
       final firestoreTariff = await FirestoreService.instance.getCityTariff(
         city,
       );
@@ -74,7 +93,6 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
           AppConfig.cityTariffs['Tarapoto']!;
 
       final baseFare = (tariffData['base'] as num?)?.toDouble() ?? 3.0;
-
       final perKm = (tariffData['perKm'] as num?)?.toDouble() ?? 1.8;
 
       // 6. Calcular tarifa.
@@ -87,19 +105,19 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
         _isSearching = false;
       });
 
-      // 7. Pasar todos los datos reales a la pantalla de pago.
+      // 7. Pasar todos los datos reales a la pantalla de pago con GeoPoints garantizados.
       Navigator.of(context).pushNamed(
         '/payment',
         arguments: {
-          'destination': destination,
+          'destination': destinationText,
           'fare': fare,
           'paymentMethod': _selectedPaymentMethod,
           'distanceKm': distanceKm,
           'city': city,
-          'origin': GeoPoint(originPosition.latitude, originPosition.longitude),
+          'origin': GeoPoint(realOriginLat, realOriginLng),
           'destinationGeoPoint': GeoPoint(
-            destinationLatitude,
-            destinationLongitude,
+            destLat,
+            destLng,
           ),
         },
       );
@@ -109,7 +127,7 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
       setState(() => _isSearching = false);
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text(
             'No se pudo localizar el destino. '
             'Intenta escribir una dirección más específica.',
@@ -138,18 +156,145 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: 20),
+              const SizedBox(height: 10),
 
-              // Destino.
-              TextField(
-                controller: _destinationController,
-                decoration: InputDecoration(
-                  hintText: 'Ej. Plaza de Armas de Tarapoto',
-                  labelText: '¿A dónde vas?',
-                  prefixIcon: const Icon(Icons.location_on),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
+              // Contenedor unificado para Origen y Destino (De y A)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF9D408).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFF9D408), width: 1.5),
+                ),
+                child: Column(
+                  children: [
+                    // Campo de Origen (De:) con Autocompletado de Google Places
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: GooglePlaceAutoCompleteTextField(
+                        textEditingController: _originController,
+                        googleAPIKey: "AIzaSyD6cjdfoAhxKfZr--aCqvshyiS8jB7V_Sw",
+                        debounceTime: 600,
+                        isLatLngRequired: true,
+                        countries: const ["pe"], // Restricción solo a Perú
+                        inputDecoration: InputDecoration(
+                          labelText: 'De:',
+                          hintText: 'Mi ubicación actual',
+                          prefixIcon: const Icon(Icons.trip_origin, color: Colors.black87),
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        ),
+                        itemClick: (Prediction prediction) {
+                          _originController.text = prediction.description ?? "";
+                          _originController.selection = TextSelection.fromPosition(
+                            TextPosition(offset: _originController.text.length),
+                          );
+                          // Si el plugin trae lat/lng podemos asignarlo aquí si está disponible
+                          if (prediction.lat != null && prediction.lng != null) {
+                            _originLat = double.tryParse(prediction.lat!);
+                            _originLng = double.tryParse(prediction.lng!);
+                          }
+                        },
+                        itemBuilder: (context, index, Prediction prediction) {
+                          return Container(
+                            padding: const EdgeInsets.all(12),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.location_on, color: Colors.blueAccent, size: 20),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    prediction.description ?? "",
+                                    style: const TextStyle(fontSize: 14, color: Colors.black87),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                        boxDecoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    
+                    // Campo de Destino (A:) con Autocompletado de Google Places
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: GooglePlaceAutoCompleteTextField(
+                        textEditingController: _destinationController,
+                        googleAPIKey: "AIzaSyD6cjdfoAhxKfZr--aCqvshyiS8jB7V_Sw",
+                        debounceTime: 600,
+                        isLatLngRequired: true,
+                        countries: const ["pe"], // Restricción solo a Perú
+                        inputDecoration: InputDecoration(
+                          hintText: 'A: ¿A dónde vas?',
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        ),
+                        itemClick: (Prediction prediction) async {
+                          _destinationController.text = prediction.description ?? "";
+                          _destinationController.selection = TextSelection.fromPosition(
+                            TextPosition(offset: _destinationController.text.length),
+                          );
+
+                          // Capturar lat y lng si el componente las provee directamente
+                          if (prediction.lat != null && prediction.lng != null) {
+                            _destinationLat = double.tryParse(prediction.lat!);
+                            _destinationLng = double.tryParse(prediction.lng!);
+                          } else if (prediction.description != null) {
+                            // Respaldo por geocodificación rápida si no vienen explícitas
+                            try {
+                              final locs = await geo.locationFromAddress(prediction.description!);
+                              if (locs.isNotEmpty) {
+                                _destinationLat = locs.first.latitude;
+                                _destinationLng = locs.first.longitude;
+                              }
+                            } catch (_) {}
+                          }
+                        },
+                        itemBuilder: (context, index, Prediction prediction) {
+                          return Container(
+                            padding: const EdgeInsets.all(12),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.location_on, color: Colors.redAccent, size: 20),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    prediction.description ?? "",
+                                    style: const TextStyle(fontSize: 14, color: Colors.black87),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                        boxDecoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
 
@@ -176,7 +321,7 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                 ],
               ),
 
-              const SizedBox(height: 30),
+              const SizedBox(height: 25),
 
               // Tarifa estimada.
               Container(
@@ -197,7 +342,7 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFFF9D408),
+                        color: Color(0xFFE5B800),
                       ),
                     ),
                   ],
@@ -212,7 +357,7 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                 style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
               ),
 
-              const SizedBox(height: 10),
+              const SizedBox(height: 5),
 
               RadioListTile<String>(
                 title: const Text('Efectivo'),
@@ -220,7 +365,6 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                 groupValue: _selectedPaymentMethod,
                 onChanged: (value) {
                   if (value == null) return;
-
                   setState(() {
                     _selectedPaymentMethod = value;
                   });
@@ -234,7 +378,6 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                 groupValue: _selectedPaymentMethod,
                 onChanged: (value) {
                   if (value == null) return;
-
                   setState(() {
                     _selectedPaymentMethod = value;
                   });
@@ -242,7 +385,7 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                 activeColor: const Color(0xFFF9D408),
               ),
 
-              const SizedBox(height: 30),
+              const SizedBox(height: 20),
 
               // Buscar conductor.
               ElevatedButton(
@@ -282,8 +425,11 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
 
   Widget _buildQuickButton(String label, IconData icon) {
     return InkWell(
-      onTap: () {
+      onTap: () async {
         _destinationController.text = label;
+        // Limpiamos coordenadas previas para forzar la geocodificación del lugar frecuente
+        _destinationLat = null;
+        _destinationLng = null;
       },
       child: Container(
         margin: const EdgeInsets.all(5),
@@ -294,7 +440,7 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: const Color(0xFFF9D408)),
+            Icon(icon, color: const Color(0xFFE5B800)),
             const SizedBox(height: 5),
             Text(
               label,

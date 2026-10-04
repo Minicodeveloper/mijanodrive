@@ -39,25 +39,44 @@ class _PaymentScreenState extends State<PaymentScreen> {
       final user = AuthService.instance.currentUser;
 
       if (user == null) {
-        throw Exception('No hay un usuario autenticado');
+        throw Exception('No hay un usuario autenticado en AuthService');
       }
 
+      print('👤 Usuario ID: ${user.uid}');
+
+      // Obtenemos el nombre real del pasajero directamente desde la colección 'users'
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+
+      final passengerName = userDoc.data()?['name'] ?? 
+                            userDoc.data()?['fullName'] ?? 
+                            userDoc.data()?['nombre'] ?? 
+                            'Usuario';
+
       final trip = Trip(
-  id: '',
-  passengerId: user.uid,
-  origin: widget.origin,
-  destination: widget.destinationGeoPoint,
-  status: TripStatus.pending,
-  fareAmount: widget.fare,
-  paymentMethod: widget.paymentMethod == 'cash'
-      ? PaymentMethod.cash
-      : PaymentMethod.wallet,
-  createdAt: DateTime.now(),
-  city: widget.city,
-  distanceKm: widget.distanceKm,
-);
+        id: '',
+        passengerId: user.uid,
+        passengerName: passengerName, // 👈 Nombre real obtenido de la base de datos
+        origin: widget.origin,
+        destination: widget.destinationGeoPoint,
+        originAddress: 'Punto de partida', // Puedes ajustarlo si manejas la dirección exacta de origen
+        destinationAddress: widget.destination, // 👈 Dirección de destino en texto
+        status: TripStatus.pending,
+        fareAmount: widget.fare,
+        paymentMethod: widget.paymentMethod == 'cash'
+            ? PaymentMethod.cash
+            : PaymentMethod.wallet,
+        createdAt: DateTime.now(),
+        distanceKm: widget.distanceKm,
+      );
+
+      print('📦 Objeto Trip creado, convirtiendo a Map...');
+      print(trip.toMap());
 
       final tripId = await FirestoreService.instance.createTrip(trip);
+      print('✅ ¡Viaje creado con éxito en Firestore con ID: $tripId');
 
       if (!mounted) return;
 
@@ -69,14 +88,18 @@ class _PaymentScreenState extends State<PaymentScreen> {
           'tripId': tripId,
         },
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('❌ ERROR DETALLADO AL CREAR VIAJE: $e');
+      print(stackTrace);
+
       if (!mounted) return;
 
       setState(() => _isProcessing = false);
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('No se pudo crear el viaje: $e'),
+          content: Text('Error: $e'),
+          backgroundColor: Colors.red,
         ),
       );
     }

@@ -90,7 +90,7 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
         driverId: _driverId,
         latitude: position.latitude,
         longitude: position.longitude,
-        city: AuthService.instance.currentUser?.city ?? widget.trip.city,
+        city: AuthService.instance.currentUser?.city ?? 'Tarapoto',
       );
       if (mounted) setState(() => _sosSent = true);
     } catch (_) {

@@ -425,7 +425,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                     ),
                   )
                 : StreamBuilder<List<Trip>>(
-                    stream: _fs.pendingTripsForCity(_city),
+                    stream: _fs.pendingTrips(),
                     builder: (context, snap) {
                       if (snap.connectionState == ConnectionState.waiting) {
                         return const Center(child: CircularProgressIndicator());
@@ -526,6 +526,11 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Text(
+            'Pasajero: ${trip.passengerName ?? "Cliente"}',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          ),
+          const SizedBox(height: 8),
           Row(
             children: [
               const Icon(Icons.trip_origin, size: 16),
