@@ -16,6 +16,7 @@ import 'screens/passenger/home_screen.dart';
 import 'screens/passenger/search_trip_screen.dart';
 import 'screens/passenger/payment_screen.dart';
 import 'screens/passenger/active_trip_screen.dart';
+import 'screens/passenger/searching_trip_screen.dart';
 import 'screens/passenger/rating_screen.dart';
 import 'screens/passenger/wallet_screen.dart';
 import 'screens/shared/profile_screen.dart';
@@ -85,6 +86,13 @@ class MijanoDriveApp extends StatelessWidget {
           city: args['city'] ?? 'Tarapoto',
           origin: args['origin'] ?? const GeoPoint(-6.4869, -76.3654),
           destinationGeoPoint: args['destinationGeoPoint'] ?? const GeoPoint(-6.4869, -76.3654),
+        );
+        break;
+      case '/searching-trip':
+        page = SearchingTripScreen(
+          destination: args['destination'] ?? '',
+          fare: (args['fare'] ?? 0).toDouble(),
+          tripId: args['tripId'] ?? '',
         );
         break;
       case '/active-trip':

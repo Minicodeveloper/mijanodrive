@@ -12,34 +12,30 @@ class ReportsModule extends StatefulWidget {
 }
 
 class _ReportsModuleState extends State<ReportsModule> {
-  int _currentTab = 0; 
+  int _currentTab = 0;
   final fs = FirestoreService.instance;
 
-  
+
   Widget _buildTabs() {
-    final tabs = ['Viajes Activos', 'Usuarios', 'Conductores', 'Soporte '];
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: List.generate(tabs.length, (index) {
-          final isSelected = _currentTab == index;
-          return Padding(
-            padding: const EdgeInsets.only(right: 8.0),
-            child: FilterChip(
-              label: Text(tabs[index]),
-              selected: isSelected,
-              onSelected: (_) => setState(() => _currentTab = index),
-              selectedColor: MijanoTheme.sol,
-              checkmarkColor: MijanoTheme.ink,
-              backgroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-                side: BorderSide(color: isSelected ? MijanoTheme.ink : Colors.black12),
-              ),
-            ),
-          );
-        }),
-      ),
+    final tabs = ['Viajes Activos', 'Usuarios', 'Conductores', 'Soporte'];
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: List.generate(tabs.length, (index) {
+        final isSelected = _currentTab == index;
+        return FilterChip(
+          label: Text(tabs[index]),
+          selected: isSelected,
+          onSelected: (_) => setState(() => _currentTab = index),
+          selectedColor: MijanoTheme.sol,
+          checkmarkColor: MijanoTheme.ink,
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+            side: BorderSide(color: isSelected ? MijanoTheme.ink : Colors.black12),
+          ),
+        );
+      }),
     );
   }
 
@@ -78,12 +74,12 @@ class _ReportsModuleState extends State<ReportsModule> {
                         backgroundColor: MijanoTheme.cream,
                         child: const Icon(Icons.chat_bubble_outline, color: MijanoTheme.ink),
                       ),
-                      title: Text('Viaje: ${t.originAddress} → ${t.destinationAddress}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                      title: Text('Viaje: ${t.originAddress} → ${t.destinationAddress}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
                       subtitle: Text('Pasajero: ${t.passengerId} · Cond: ${t.driverId ?? "Sin asignar"} · Estado: ${t.status.name}', style: const TextStyle(fontSize: 12)),
                       children: [
                         Container(
                           height: 300,
-                          color: const Color(0xFF1E1E1E), 
+                          color: const Color(0xFF1E1E1E),
                           child: _ChatMonitor(tripId: t.id),
                         )
                       ],
@@ -98,7 +94,7 @@ class _ReportsModuleState extends State<ReportsModule> {
     );
   }
 
-  
+
   Widget _buildReportsList(String filter) {
     return adminCard(
       child: StreamBuilder<List<Map<String, dynamic>>>(
@@ -114,7 +110,7 @@ class _ReportsModuleState extends State<ReportsModule> {
             return const Row(children: [
               Icon(Icons.thumb_up, color: Colors.green),
               SizedBox(width: 10),
-              Text('No hay reportes pendientes de revisión en esta categoría'),
+              Expanded(child: Text('No hay reportes pendientes de revisión en esta categoría')),
             ]);
           }
 
@@ -124,15 +120,25 @@ class _ReportsModuleState extends State<ReportsModule> {
             itemCount: openReports.length,
             itemBuilder: (ctx, i) {
               final r = openReports[i];
-              return ListTile(
-                leading: const CircleAvatar(backgroundColor: Colors.red, child: Icon(Icons.warning, color: Colors.white)),
-                title: Text('Reportado: ${r['reportedUserId']}'),
-                subtitle: Text('Razón: ${r['reason']} · Por: ${r['reportedByDriverId']}'),
-                trailing: ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: MijanoTheme.sol, foregroundColor: MijanoTheme.ink),
-                  onPressed: () => fs.resolveReport(r['id']),
-                  child: const Text('Marcar Resuelto'),
-                ),
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const CircleAvatar(backgroundColor: Colors.red, child: Icon(Icons.warning, color: Colors.white)),
+                    title: Text('Reportado: ${r['reportedUserId']}', maxLines: 1, overflow: TextOverflow.ellipsis),
+                    subtitle: Text('Razón: ${r['reason']} · Por: ${r['reportedByDriverId']}', maxLines: 2, overflow: TextOverflow.ellipsis),
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(backgroundColor: MijanoTheme.sol, foregroundColor: MijanoTheme.ink),
+                      onPressed: () => fs.resolveReport(r['id']),
+                      child: const Text('Marcar Resuelto'),
+                    ),
+                  ),
+                  const Divider(height: 24),
+                ],
               );
             },
           );
@@ -141,7 +147,7 @@ class _ReportsModuleState extends State<ReportsModule> {
     );
   }
 
-  
+
   Widget _buildDriverSupportSection() {
     return const AdminDriverSupportView();
   }
@@ -156,21 +162,24 @@ class _ReportsModuleState extends State<ReportsModule> {
     } else if (_currentTab == 2) {
       activeView = _buildReportsList('driver');
     } else {
-      activeView = _buildDriverSupportSection(); 
+      activeView = _buildDriverSupportSection();
     }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(28),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const AdminHeader('Reportes y Soporte', 'Monitoreo de chats y bandeja de soporte'),
-          _buildTabs(),
-          const SizedBox(height: 24),
-          activeView,
-        ],
-      ),
-    );
+    return LayoutBuilder(builder: (context, c) {
+      final compact = c.maxWidth < 720;
+      return SingleChildScrollView(
+        padding: EdgeInsets.all(compact ? 14 : 28),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const AdminHeader('Reportes y Soporte', 'Monitoreo de chats y bandeja de soporte'),
+            _buildTabs(),
+            const SizedBox(height: 24),
+            activeView,
+          ],
+        ),
+      );
+    });
   }
 }
 
@@ -218,7 +227,7 @@ class _ChatMonitorState extends State<_ChatMonitor> {
                 itemBuilder: (ctx, i) {
                   final m = msgs[i];
                   final isSupport = m['senderId'] == 'support';
-                  
+
                   return Align(
                     alignment: isSupport ? Alignment.centerRight : Alignment.centerLeft,
                     child: Container(
@@ -232,8 +241,8 @@ class _ChatMonitorState extends State<_ChatMonitor> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('[${m['senderId'] == 'support' ? 'Soporte/Admin' : 'Usuario'}]${m['senderName'] ?? ''}', 
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: isSupport ? Colors.white : Colors.white70)),
+                          Text('[${m['senderId'] == 'support' ? 'Soporte/Admin' : 'Usuario'}]${m['senderName'] ?? ''}',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: isSupport ? Colors.white : Colors.white70)),
                           const SizedBox(height: 4),
                           Text(m['text'] ?? '', style: const TextStyle(color: Colors.white)),
                         ],
@@ -256,9 +265,9 @@ class _ChatMonitorState extends State<_ChatMonitor> {
               padding: const EdgeInsets.only(right: 8),
               child: OutlinedButton(
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.white70,
-                  side: const BorderSide(color: Colors.white24),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))
+                    foregroundColor: Colors.white70,
+                    side: const BorderSide(color: Colors.white24),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))
                 ),
                 onPressed: () => _send(_quickReplies[i]),
                 child: Text(_quickReplies[i], style: const TextStyle(fontSize: 12)),
@@ -276,12 +285,12 @@ class _ChatMonitorState extends State<_ChatMonitor> {
                   controller: _msgCtrl,
                   style: const TextStyle(color: Colors.white),
                   decoration: InputDecoration(
-                    hintText: 'Escribe una respuesta como admin...',
-                    hintStyle: const TextStyle(color: Colors.white38),
-                    filled: true,
-                    fillColor: const Color(0xFF2C2C2C),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8)
+                      hintText: 'Escribe una respuesta como admin...',
+                      hintStyle: const TextStyle(color: Colors.white38),
+                      filled: true,
+                      fillColor: const Color(0xFF2C2C2C),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8)
                   ),
                   onSubmitted: _send,
                 ),
@@ -319,246 +328,286 @@ class _AdminDriverSupportViewState extends State<AdminDriverSupportView> {
     super.dispose();
   }
 
-  void _sendAdminReply(String driverUid, String driverName) async {
-    if (_replyController.text.trim().isEmpty) return;
+  Future<void> _sendAdminReply() async {
+    final uid = selectedDriverUid;
+    if (uid == null || _replyController.text.trim().isEmpty) return;
 
     final text = _replyController.text.trim();
     _replyController.clear();
-    
+
     await fs.sendAdminSupportMessage(
-      userId: driverUid,
-      userName: driverName,
+      userId: uid,
+      userName: selectedDriverName ?? '',
       text: text,
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return adminCard(
-      child: SizedBox(
-        height: 600,
-        child: Row(
+    return LayoutBuilder(builder: (context, c) {
+      final compact = c.maxWidth < 720;
+      final screenH = MediaQuery.of(context).size.height;
+      final height = compact ? (screenH - 300).clamp(420.0, 720.0) : 600.0;
+
+      Widget body;
+      if (compact) {
+        // Móvil / vertical: lista o conversación, nunca ambas.
+        body = selectedDriverUid == null ? _buildChatList(compact) : _buildConversation(compact);
+      } else {
+        body = Row(
           children: [
-            // Columna izquierda con depuradores visuales y de consola
             SizedBox(
-              width: 320,
+              width: 300,
               child: Container(
                 decoration: const BoxDecoration(
                   border: Border(right: BorderSide(color: Colors.black12)),
                 ),
-                child: StreamBuilder<List<Map<String, dynamic>>>(
-                  stream: fs.allSupportChats(),
-                  builder: (context, snapshot) {
-                    // Depurador 1: Errores de Firebase o Reglas
-                    if (snapshot.hasError) {
-                      return Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(12.0),
-                          child: Text(
-                            'Error de permisos o conexión:\n${snapshot.error}',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(color: Colors.red, fontSize: 11),
-                          ),
-                        ),
-                      );
-                    }
-
-                    // Depurador 2: Estado de Carga
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-
-                    final chats = snapshot.data ?? [];
-                    
-                    // Depurador 3: Impresión en la consola de Flutter/VS Code
-                    debugPrint('📦 [DEBUG SOPORTE] Chats recibidos de Firestore: ${chats.length}');
-
-                    if (chats.isEmpty) {
-                      return const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(16.0),
-                          child: Text(
-                            'Colección "support_chats" vacía o sin documentos válidos.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 12, color: Colors.redAccent),
-                          ),
-                        ),
-                      );
-                    }
-
-                    return ListView.builder(
-                      itemCount: chats.length,
-                      itemBuilder: (context, index) {
-                        final chat = chats[index];
-                        final driverUid = chat['id'];
-                        final name = chat['name'] ?? 'Sin nombre';
-                        final lastMessage = chat['lastMessage'] ?? 'Sin mensajes';
-                        final isSelected = selectedDriverUid == driverUid;
-
-                        return Material(
-                          color: isSelected ? MijanoTheme.sol.withOpacity(0.25) : Colors.transparent,
-                          child: ListTile(
-                            leading: const CircleAvatar(
-                              backgroundColor: MijanoTheme.sol,
-                              child: Icon(Icons.support_agent, color: MijanoTheme.ink),
-                            ),
-                            title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                            subtitle: Text(
-                              lastMessage,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                            onTap: () {
-                              setState(() {
-                                selectedDriverUid = driverUid;
-                                selectedDriverName = name;
-                              });
-                            },
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
+                child: _buildChatList(compact),
               ),
             ),
-
-            // Columna derecha: Historial de mensajes y campo de respuesta
             Expanded(
               child: selectedDriverUid == null
                   ? const Center(
-                      child: Text(
-                        'Selecciona un chat de soporte de la lista.',
-                        style: TextStyle(color: Colors.black54, fontWeight: FontWeight.w600),
-                      ),
-                    )
-                  : Column(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: const BoxDecoration(
-                            color: MijanoTheme.cream,
-                            border: Border(bottom: BorderSide(color: Colors.black12)),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.person, color: MijanoTheme.ink),
-                              const SizedBox(width: 12),
-                              Text(
-                                'Soporte con: $selectedDriverName',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w900,
-                                  color: MijanoTheme.ink,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Expanded(
-                          child: StreamBuilder<List<Map<String, dynamic>>>(
-                            stream: fs.supportMessagesForDriver(selectedDriverUid!),
-                            builder: (context, snapshot) {
-                              if (!snapshot.hasData) {
-                                return const Center(child: CircularProgressIndicator());
-                              }
-
-                              final messages = snapshot.data ?? [];
-                              if (messages.isEmpty) {
-                                return const Center(
-                                  child: Text('Aún no hay mensajes en este chat.'),
-                                );
-                              }
-
-                              return ListView.builder(
-                                padding: const EdgeInsets.all(16),
-                                itemCount: messages.length,
-                                itemBuilder: (context, index) {
-                                  final msg = messages[index];
-                                  final isAdmin = msg['isAdmin'] ?? false;
-                                  final text = msg['text'] ?? '';
-
-                                  return Align(
-                                    alignment: isAdmin ? Alignment.centerRight : Alignment.centerLeft,
-                                    child: Container(
-                                      margin: const EdgeInsets.symmetric(vertical: 6),
-                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                                      constraints: const BoxConstraints(maxWidth: 400),
-                                      decoration: BoxDecoration(
-                                        color: isAdmin ? MijanoTheme.sol.withOpacity(0.3) : Colors.white,
-                                        border: Border.all(
-                                          color: isAdmin ? MijanoTheme.ink : Colors.black26,
-                                          width: 1.5,
-                                        ),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            isAdmin ? 'Soporte (Central)' : 'Usuario',
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.bold,
-                                              color: isAdmin ? MijanoTheme.ink : Colors.black54,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            text,
-                                            style: const TextStyle(
-                                              fontSize: 14,
-                                              color: MijanoTheme.ink,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                },
-                              );
-                            },
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: const BoxDecoration(
-                            color: Colors.white,
-                            border: Border(top: BorderSide(color: Colors.black12)),
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _replyController,
-                                  onSubmitted: (_) => _sendAdminReply(selectedDriverUid!, selectedDriverName!),
-                                  decoration: const InputDecoration(
-                                    hintText: 'Escribe una respuesta...',
-                                    border: OutlineInputBorder(),
-                                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: MijanoTheme.sol,
-                                  foregroundColor: MijanoTheme.ink,
-                                ),
-                                icon: const Icon(Icons.send),
-                                label: const Text('Enviar'),
-                                onPressed: () => _sendAdminReply(selectedDriverUid!, selectedDriverName!),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+                child: Text(
+                  'Selecciona un chat de soporte de la lista.',
+                  style: TextStyle(color: Colors.black54, fontWeight: FontWeight.w600),
+                ),
+              )
+                  : _buildConversation(compact),
             ),
           ],
+        );
+      }
+
+      return adminCard(
+        padding: compact ? const EdgeInsets.all(8) : const EdgeInsets.all(20),
+        child: SizedBox(height: height, child: body),
+      );
+    });
+  }
+
+  // ---------- Lista de chats ----------
+  Widget _buildChatList(bool compact) {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: fs.allSupportChats(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Text(
+                'Error de permisos o conexión:\n${snapshot.error}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.red, fontSize: 11),
+              ),
+            ),
+          );
+        }
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final chats = snapshot.data ?? [];
+        if (chats.isEmpty) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Text(
+                'Aún no hay chats de soporte.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, color: Colors.black54),
+              ),
+            ),
+          );
+        }
+
+        return ListView.builder(
+          itemCount: chats.length,
+          itemBuilder: (context, index) {
+            final chat = chats[index];
+            final driverUid = chat['id'] as String?;
+            final name = (chat['name'] ?? 'Sin nombre').toString();
+            final lastMessage = (chat['lastMessage'] ?? 'Sin mensajes').toString();
+            final isSelected = !compact && selectedDriverUid == driverUid;
+
+            return Material(
+              color: isSelected ? MijanoTheme.sol.withValues(alpha: 0.25) : Colors.transparent,
+              child: ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: MijanoTheme.sol,
+                  child: Icon(Icons.support_agent, color: MijanoTheme.ink),
+                ),
+                title: Text(name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text(
+                  lastMessage,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12),
+                ),
+                trailing: compact ? const Icon(Icons.chevron_right, color: Colors.black38) : null,
+                onTap: () => setState(() {
+                  selectedDriverUid = driverUid;
+                  selectedDriverName = name;
+                }),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ---------- Conversación ----------
+  Widget _buildConversation(bool compact) {
+    return Column(
+      children: [
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: compact ? 4 : 16, vertical: compact ? 8 : 16),
+          decoration: const BoxDecoration(
+            color: MijanoTheme.cream,
+            border: Border(bottom: BorderSide(color: Colors.black12)),
+          ),
+          child: Row(
+            children: [
+              if (compact)
+                IconButton(
+                  icon: const Icon(Icons.arrow_back, color: MijanoTheme.ink),
+                  onPressed: () => setState(() {
+                    selectedDriverUid = null;
+                    selectedDriverName = null;
+                  }),
+                )
+              else
+                const Padding(
+                  padding: EdgeInsets.only(right: 12),
+                  child: Icon(Icons.person, color: MijanoTheme.ink),
+                ),
+              Expanded(
+                child: Text(
+                  'Soporte con: ${selectedDriverName ?? ''}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    color: MijanoTheme.ink,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
+        Expanded(
+          child: StreamBuilder<List<Map<String, dynamic>>>(
+            stream: fs.supportMessagesForDriver(selectedDriverUid!),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              final messages = snapshot.data ?? [];
+              if (messages.isEmpty) {
+                return const Center(child: Text('Aún no hay mensajes en este chat.'));
+              }
+
+              return LayoutBuilder(builder: (context, box) {
+                final bubbleMax = (box.maxWidth * 0.8).clamp(0.0, 400.0);
+                return ListView.builder(
+                  padding: EdgeInsets.all(compact ? 10 : 16),
+                  itemCount: messages.length,
+                  itemBuilder: (context, index) {
+                    final msg = messages[index];
+                    final isAdmin = msg['isAdmin'] ?? false;
+                    final text = (msg['text'] ?? '').toString();
+
+                    return Align(
+                      alignment: isAdmin ? Alignment.centerRight : Alignment.centerLeft,
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(vertical: 5),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        constraints: BoxConstraints(maxWidth: bubbleMax),
+                        decoration: BoxDecoration(
+                          color: isAdmin ? MijanoTheme.sol.withValues(alpha: 0.3) : Colors.white,
+                          border: Border.all(
+                            color: isAdmin ? MijanoTheme.ink : Colors.black26,
+                            width: 1.5,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              isAdmin ? 'Soporte (Central)' : 'Usuario',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: isAdmin ? MijanoTheme.ink : Colors.black54,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              text,
+                              style: const TextStyle(fontSize: 14, color: MijanoTheme.ink),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                );
+              });
+            },
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(top: BorderSide(color: Colors.black12)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _replyController,
+                  onSubmitted: (_) => _sendAdminReply(),
+                  decoration: const InputDecoration(
+                    hintText: 'Escribe una respuesta...',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (compact)
+                IconButton.filled(
+                  style: IconButton.styleFrom(
+                    backgroundColor: MijanoTheme.sol,
+                    foregroundColor: MijanoTheme.ink,
+                  ),
+                  icon: const Icon(Icons.send),
+                  onPressed: _sendAdminReply,
+                )
+              else
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: MijanoTheme.sol,
+                    foregroundColor: MijanoTheme.ink,
+                  ),
+                  icon: const Icon(Icons.send),
+                  label: const Text('Enviar'),
+                  onPressed: _sendAdminReply,
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
