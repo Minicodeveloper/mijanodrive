@@ -66,7 +66,9 @@ class _SearchingTripScreenState extends State<SearchingTripScreen>
     if (!mounted || _hasNavigated || trip == null) return;
 
     if (trip.status == TripStatus.accepted ||
-        trip.status == TripStatus.active) {
+        trip.status == TripStatus.arrived ||
+        trip.status == TripStatus.active ||
+        trip.status == TripStatus.completed) {
       _hasNavigated = true;
       _tripSub?.cancel();
 

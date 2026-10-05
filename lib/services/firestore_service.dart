@@ -155,7 +155,7 @@ class FirestoreService {
   /// Todos los viajes activos (pending/accepted/active) para la consola.
   Stream<List<Trip>> allActiveTrips() => _db
       .collection('trips')
-      .where('status', whereIn: ['pending', 'accepted', 'active'])
+      .where('status', whereIn: ['pending', 'accepted', 'arrived', 'active'])
       .snapshots()
       .map((q) => q.docs.map((d) => Trip.fromFirestore(d)).toList());
 

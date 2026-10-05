@@ -10,6 +10,7 @@ import '../../services/location_service.dart';
 import 'passenger_account_screen.dart';
 import 'passenger_history_screen.dart';
 import 'active_trip_screen.dart';
+
 // Asegúrate de importar tu pantalla de viaje activo si está en otra ruta, por ejemplo:
 // import 'active_trip_screen.dart';
 
@@ -33,20 +34,20 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final TextEditingController _originController = TextEditingController();
   final TextEditingController _destinationController = TextEditingController();
-  
+
   final FocusNode _originFocus = FocusNode();
   final FocusNode _destinationFocus = FocusNode();
-  
+
   bool _isSearchingOrigin = false;
   bool _isSearchingDestination = false;
-  
+
   List<String> _originSuggestions = [];
   List<String> _destinationSuggestions = [];
-  
+
   bool _tripSelected = false;
-  bool _isSearchingDriver = false; 
+  bool _isSearchingDriver = false;
   String _selectedPaymentMethod = 'Efectivo';
-  String _selectedServiceType = 'Viaje'; 
+  String _selectedServiceType = 'Viaje';
   double _estimatedFare = 15.00;
   double _distanceKm = 0.0;
   String _durationText = '';
@@ -105,7 +106,16 @@ class _HomeScreenState extends State<HomeScreen> {
       final querySnapshot = await FirebaseFirestore.instance
           .collection('trips')
           .where('passengerId', isEqualTo: user.uid)
-          .where('status', whereIn: ['pending', 'accepted', 'in_progress'])
+          .where(
+            'status',
+            whereIn: [
+              'pending',
+              'accepted',
+              'arrived',
+              'active',
+              'in_progress',
+            ],
+          )
           .limit(1)
           .get();
 
@@ -114,7 +124,7 @@ class _HomeScreenState extends State<HomeScreen> {
         final data = doc.data();
 
         setState(() {
-          _activeTripId = doc.id; 
+          _activeTripId = doc.id;
           _originController.text = data['originAddress'] ?? '';
           _destinationController.text = data['destinationAddress'] ?? '';
           _estimatedFare = (data['fareAmount'] ?? 15.0).toDouble();
@@ -122,7 +132,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _durationText = data['durationText'] ?? '';
           _selectedPaymentMethod = data['paymentMethod'] ?? 'Efectivo';
           _selectedServiceType = data['serviceType'] ?? 'Viaje';
-          
+
           if (data['status'] == 'pending') {
             _isSearchingDriver = true;
             _startSearchTimer();
@@ -143,7 +153,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _startSearchTimer() {
     _searchTimer?.cancel();
     setState(() {
-      _remainingSeconds = 549; 
+      _remainingSeconds = 549;
     });
 
     _searchTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -153,7 +163,7 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       } else {
         timer.cancel();
-        _cancelSearch(); 
+        _cancelSearch();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -199,9 +209,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _navigateToAccount() async {
     await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => const PassengerAccountScreen(),
-      ),
+      MaterialPageRoute(builder: (context) => const PassengerAccountScreen()),
     );
     if (mounted) {
       setState(() => _selectedIndex = 0);
@@ -358,8 +366,8 @@ class _HomeScreenState extends State<HomeScreen> {
       _destinationFocus.unfocus();
     });
 
-    final originText = _originController.text.isNotEmpty 
-        ? _originController.text 
+    final originText = _originController.text.isNotEmpty
+        ? _originController.text
         : 'Mi ubicación actual';
 
     LatLng? originLatLng = await _getLatLngFromAddress(originText);
@@ -399,7 +407,7 @@ class _HomeScreenState extends State<HomeScreen> {
               final distanceMeters = leg['distance']['value'] as int;
               _distanceKm = distanceMeters / 1000.0;
               _durationText = leg['duration']['text'] ?? '';
-              
+
               _estimatedFare = 5.0 + (_distanceKm * 2.0);
               if (_estimatedFare < 10.0) _estimatedFare = 10.0;
             }
@@ -422,7 +430,9 @@ class _HomeScreenState extends State<HomeScreen> {
               markerId: const MarkerId('origin'),
               position: originLatLng!,
               infoWindow: const InfoWindow(title: 'Origen'),
-              icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+              icon: BitmapDescriptor.defaultMarkerWithHue(
+                BitmapDescriptor.hueGreen,
+              ),
             ),
           );
           _markers.add(
@@ -430,7 +440,9 @@ class _HomeScreenState extends State<HomeScreen> {
               markerId: const MarkerId('destination'),
               position: destLatLng,
               infoWindow: const InfoWindow(title: 'Destino'),
-              icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+              icon: BitmapDescriptor.defaultMarkerWithHue(
+                BitmapDescriptor.hueRed,
+              ),
             ),
           );
 
@@ -449,12 +461,20 @@ class _HomeScreenState extends State<HomeScreen> {
           CameraUpdate.newLatLngBounds(
             LatLngBounds(
               southwest: LatLng(
-                originLatLng.latitude < destLatLng.latitude ? originLatLng.latitude : destLatLng.latitude,
-                originLatLng.longitude < destLatLng.longitude ? originLatLng.longitude : destLatLng.longitude,
+                originLatLng.latitude < destLatLng.latitude
+                    ? originLatLng.latitude
+                    : destLatLng.latitude,
+                originLatLng.longitude < destLatLng.longitude
+                    ? originLatLng.longitude
+                    : destLatLng.longitude,
               ),
               northeast: LatLng(
-                originLatLng.latitude > destLatLng.latitude ? originLatLng.latitude : destLatLng.latitude,
-                originLatLng.longitude > destLatLng.longitude ? originLatLng.longitude : destLatLng.longitude,
+                originLatLng.latitude > destLatLng.latitude
+                    ? originLatLng.latitude
+                    : destLatLng.latitude,
+                originLatLng.longitude > destLatLng.longitude
+                    ? originLatLng.longitude
+                    : destLatLng.longitude,
               ),
             ),
             80,
@@ -494,7 +514,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         SizedBox(width: 10),
                         Text(
                           'Solicitar motoTaxi',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
                         ),
                       ],
                     ),
@@ -505,7 +529,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       decoration: BoxDecoration(
                         color: const Color(0xFF2A2A2A),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: const Color(0xFFF9D408), width: 1),
+                        border: Border.all(
+                          color: const Color(0xFFF9D408),
+                          width: 1,
+                        ),
                       ),
                       child: Column(
                         children: [
@@ -516,18 +543,28 @@ class _HomeScreenState extends State<HomeScreen> {
                           const SizedBox(height: 5),
                           Text(
                             'S/ ${_estimatedFare.toStringAsFixed(2)}',
-                            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFFF9D408)),
+                            style: const TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFF9D408),
+                            ),
                           ),
                           const SizedBox(height: 5),
                           Text(
                             '${_distanceKm.toStringAsFixed(1)} km  •  $_durationText',
-                            style: const TextStyle(color: Colors.white70, fontSize: 12),
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
                           ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 20),
-                    const Text('Tipo de servicio:', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                    const Text(
+                      'Tipo de servicio:',
+                      style: TextStyle(color: Colors.white70, fontSize: 14),
+                    ),
                     const SizedBox(height: 10),
                     Row(
                       children: [
@@ -538,7 +575,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             selectedColor: const Color(0xFFF9D408),
                             backgroundColor: const Color(0xFF2A2A2A),
                             labelStyle: TextStyle(
-                              color: _selectedServiceType == 'Viaje' ? Colors.black : Colors.white,
+                              color: _selectedServiceType == 'Viaje'
+                                  ? Colors.black
+                                  : Colors.white,
                               fontWeight: FontWeight.bold,
                             ),
                             onSelected: (bool selected) {
@@ -556,7 +595,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             selectedColor: const Color(0xFFF9D408),
                             backgroundColor: const Color(0xFF2A2A2A),
                             labelStyle: TextStyle(
-                              color: _selectedServiceType == 'Encomienda' ? Colors.black : Colors.white,
+                              color: _selectedServiceType == 'Encomienda'
+                                  ? Colors.black
+                                  : Colors.white,
                               fontWeight: FontWeight.bold,
                             ),
                             onSelected: (bool selected) {
@@ -569,7 +610,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       ],
                     ),
                     const SizedBox(height: 20),
-                    const Text('Método de pago:', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                    const Text(
+                      'Método de pago:',
+                      style: TextStyle(color: Colors.white70, fontSize: 14),
+                    ),
                     const SizedBox(height: 10),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -588,21 +632,29 @@ class _HomeScreenState extends State<HomeScreen> {
                               color: const Color(0xFF2A2A2A),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: isSelected ? const Color(0xFFF9D408) : Colors.transparent,
+                                color: isSelected
+                                    ? const Color(0xFFF9D408)
+                                    : Colors.transparent,
                                 width: 2,
                               ),
                             ),
                             child: Column(
                               children: [
                                 Icon(
-                                  method == 'Efectivo' ? Icons.money : Icons.phone_android,
-                                  color: isSelected ? const Color(0xFFF9D408) : Colors.grey,
+                                  method == 'Efectivo'
+                                      ? Icons.money
+                                      : Icons.phone_android,
+                                  color: isSelected
+                                      ? const Color(0xFFF9D408)
+                                      : Colors.grey,
                                 ),
                                 const SizedBox(height: 5),
                                 Text(
                                   method,
                                   style: TextStyle(
-                                    color: isSelected ? const Color(0xFFF9D408) : Colors.white,
+                                    color: isSelected
+                                        ? const Color(0xFFF9D408)
+                                        : Colors.white,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
@@ -617,7 +669,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       children: [
                         TextButton(
                           onPressed: () => Navigator.pop(context),
-                          child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+                          child: const Text(
+                            'Cancelar',
+                            style: TextStyle(color: Colors.grey),
+                          ),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
@@ -626,7 +681,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               backgroundColor: const Color(0xFFF9D408),
                               foregroundColor: Colors.black,
                               padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
                             onPressed: () async {
                               Navigator.pop(context);
@@ -634,44 +691,71 @@ class _HomeScreenState extends State<HomeScreen> {
                               final user = AuthService.instance.currentUser;
 
                               try {
-                                LatLng? originCoords = await _getLatLngFromAddress(_originController.text);
-                                LatLng? destCoords = await _getLatLngFromAddress(_destinationController.text);
+                                LatLng? originCoords =
+                                    await _getLatLngFromAddress(
+                                      _originController.text,
+                                    );
+                                LatLng? destCoords =
+                                    await _getLatLngFromAddress(
+                                      _destinationController.text,
+                                    );
 
                                 if (originCoords == null) {
-                                  final currentPos = await LocationService.instance.current();
-                                  originCoords = LatLng(currentPos.latitude, currentPos.longitude);
+                                  final currentPos = await LocationService
+                                      .instance
+                                      .current();
+                                  originCoords = LatLng(
+                                    currentPos.latitude,
+                                    currentPos.longitude,
+                                  );
                                 }
 
-                                DocumentReference tripRef = await FirebaseFirestore.instance.collection('trips').add({
-                                  'passengerId': user!.uid,
-                                  'passengerName': user.name,
-                                  'originAddress': _originController.text.isNotEmpty ? _originController.text : 'Mi ubicación actual',
-                                  'destinationAddress': _destinationController.text,
-                                  'origin': GeoPoint(originCoords.latitude, originCoords.longitude),
-                                  'destination': destCoords != null ? GeoPoint(destCoords.latitude, destCoords.longitude) : null,
-                                  'fareAmount': _estimatedFare,
-                                  'distanceKm': _distanceKm,
-                                  'durationText': _durationText,
-                                  'paymentMethod': _selectedPaymentMethod,
-                                  'serviceType': _selectedServiceType,
-                                  'status': 'pending',
-                                  'driverId': null,
-                                  'completedAt': null,
-                                  'createdAt': FieldValue.serverTimestamp(),
-                                });
+                                DocumentReference
+                                tripRef = await FirebaseFirestore.instance
+                                    .collection('trips')
+                                    .add({
+                                      'passengerId': user!.uid,
+                                      'passengerName': user.name,
+                                      'originAddress':
+                                          _originController.text.isNotEmpty
+                                          ? _originController.text
+                                          : 'Mi ubicación actual',
+                                      'destinationAddress':
+                                          _destinationController.text,
+                                      'origin': GeoPoint(
+                                        originCoords.latitude,
+                                        originCoords.longitude,
+                                      ),
+                                      'destination': destCoords != null
+                                          ? GeoPoint(
+                                              destCoords.latitude,
+                                              destCoords.longitude,
+                                            )
+                                          : null,
+                                      'fareAmount': _estimatedFare,
+                                      'distanceKm': _distanceKm,
+                                      'durationText': _durationText,
+                                      'paymentMethod': _selectedPaymentMethod,
+                                      'serviceType': _selectedServiceType,
+                                      'status': 'pending',
+                                      'driverId': null,
+                                      'completedAt': null,
+                                      'createdAt': FieldValue.serverTimestamp(),
+                                    });
 
                                 setState(() {
-                                  _activeTripId = tripRef.id; 
+                                  _activeTripId = tripRef.id;
                                   _isSearchingDriver = true;
                                 });
 
                                 _startSearchTimer();
-
                               } catch (e) {
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
-                                      content: Text('Error al enviar la solicitud: $e'),
+                                      content: Text(
+                                        'Error al enviar la solicitud: $e',
+                                      ),
                                       backgroundColor: Colors.red,
                                     ),
                                   );
@@ -680,7 +764,10 @@ class _HomeScreenState extends State<HomeScreen> {
                             },
                             child: const Text(
                               'Solicitar viaje',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                         ),
@@ -711,7 +798,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     setState(() {
-      _activeTripId = null; 
+      _activeTripId = null;
       _isSearchingDriver = false;
       _tripSelected = false;
       _originController.clear();
@@ -748,12 +835,20 @@ class _HomeScreenState extends State<HomeScreen> {
               decoration: const BoxDecoration(color: Color(0xFFF9D408)),
               accountName: Text(
                 user?.name ?? 'Usuario',
-                style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18),
+                style: const TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
               ),
-              accountEmail: Text(user?.email ?? 'correo@ejemplo.com', style: const TextStyle(color: Colors.black87)),
+              accountEmail: Text(
+                user?.email ?? 'correo@ejemplo.com',
+                style: const TextStyle(color: Colors.black87),
+              ),
               currentAccountPicture: CircleAvatar(
                 backgroundColor: Colors.white,
-                backgroundImage: user?.photoUrl != null && user!.photoUrl!.isNotEmpty
+                backgroundImage:
+                    user?.photoUrl != null && user!.photoUrl!.isNotEmpty
                     ? NetworkImage(user.photoUrl!)
                     : null,
                 child: (user?.photoUrl == null || user?.photoUrl == '')
@@ -780,7 +875,13 @@ class _HomeScreenState extends State<HomeScreen> {
             const Divider(),
             ListTile(
               leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text('Cerrar sesión', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+              title: const Text(
+                'Cerrar sesión',
+                style: TextStyle(
+                  color: Colors.red,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               onTap: () async {
                 Navigator.pop(context);
                 await _signOut();
@@ -804,7 +905,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       return _buildMainContent(user);
                     }
 
-                    final tripData = snapshot.data!.data() as Map<String, dynamic>;
+                    final tripData =
+                        snapshot.data!.data() as Map<String, dynamic>;
                     final String status = tripData['status'] ?? 'pending';
 
                     // Si el conductor acepta o el viaje está en curso, muestra ActiveTripScreen
@@ -836,7 +938,10 @@ class _HomeScreenState extends State<HomeScreen> {
         },
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Inicio'),
-          BottomNavigationBarItem(icon: Icon(Icons.history), label: 'Historial'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.history),
+            label: 'Historial',
+          ),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Perfil'),
         ],
       ),
@@ -876,13 +981,19 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Container(
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
             decoration: BoxDecoration(
-              color: _isSearchingDriver ? const Color(0xFF1E1E1E) : Colors.white,
+              color: _isSearchingDriver
+                  ? const Color(0xFF1E1E1E)
+                  : Colors.white,
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(24),
                 topRight: Radius.circular(24),
               ),
               boxShadow: const [
-                BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, -2)),
+                BoxShadow(
+                  color: Colors.black26,
+                  blurRadius: 10,
+                  offset: Offset(0, -2),
+                ),
               ],
             ),
             child: SingleChildScrollView(
@@ -896,26 +1007,76 @@ class _HomeScreenState extends State<HomeScreen> {
                           children: [
                             Column(
                               children: [
-                                const Icon(Icons.map, color: Color(0xFFF9D408), size: 20),
+                                const Icon(
+                                  Icons.map,
+                                  color: Color(0xFFF9D408),
+                                  size: 20,
+                                ),
                                 const SizedBox(height: 4),
-                                Text('${_distanceKm.toStringAsFixed(1)} km', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                const Text('Distancia', style: TextStyle(color: Colors.grey, fontSize: 11)),
+                                Text(
+                                  '${_distanceKm.toStringAsFixed(1)} km',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const Text(
+                                  'Distancia',
+                                  style: TextStyle(
+                                    color: Colors.grey,
+                                    fontSize: 11,
+                                  ),
+                                ),
                               ],
                             ),
                             Column(
                               children: [
-                                const Icon(Icons.access_time, color: Color(0xFFF9D408), size: 20),
+                                const Icon(
+                                  Icons.access_time,
+                                  color: Color(0xFFF9D408),
+                                  size: 20,
+                                ),
                                 const SizedBox(height: 4),
-                                Text(_durationText.isNotEmpty ? _durationText : '15 min', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                const Text('Tiempo', style: TextStyle(color: Colors.grey, fontSize: 11)),
+                                Text(
+                                  _durationText.isNotEmpty
+                                      ? _durationText
+                                      : '15 min',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const Text(
+                                  'Tiempo',
+                                  style: TextStyle(
+                                    color: Colors.grey,
+                                    fontSize: 11,
+                                  ),
+                                ),
                               ],
                             ),
                             Column(
                               children: [
-                                const Icon(Icons.payment, color: Color(0xFFF9D408), size: 20),
+                                const Icon(
+                                  Icons.payment,
+                                  color: Color(0xFFF9D408),
+                                  size: 20,
+                                ),
                                 const SizedBox(height: 4),
-                                Text('S/ ${_estimatedFare.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                const Text('Estimado', style: TextStyle(color: Colors.grey, fontSize: 11)),
+                                Text(
+                                  'S/ ${_estimatedFare.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const Text(
+                                  'Estimado',
+                                  style: TextStyle(
+                                    color: Colors.grey,
+                                    fontSize: 11,
+                                  ),
+                                ),
                               ],
                             ),
                           ],
@@ -923,7 +1084,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         const SizedBox(height: 15),
                         Container(
                           width: double.infinity,
-                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 15),
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 12,
+                            horizontal: 15,
+                          ),
                           decoration: BoxDecoration(
                             color: const Color(0xFF2A2A2A),
                             borderRadius: BorderRadius.circular(12),
@@ -931,7 +1095,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: const Center(
                             child: Text(
                               'Ya tienes un viaje en curso',
-                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                         ),
@@ -941,26 +1108,51 @@ class _HomeScreenState extends State<HomeScreen> {
                           decoration: BoxDecoration(
                             color: const Color(0xFF2A2A2A),
                             borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: const Color(0xFFF9D408), width: 1),
+                            border: Border.all(
+                              color: const Color(0xFFF9D408),
+                              width: 1,
+                            ),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
                                   Row(
                                     children: const [
-                                      Icon(Icons.search, color: Color(0xFFF9D408)),
+                                      Icon(
+                                        Icons.search,
+                                        color: Color(0xFFF9D408),
+                                      ),
                                       SizedBox(width: 8),
-                                      Text('Buscando conductor', style: TextStyle(color: Color(0xFFF9D408), fontWeight: FontWeight.bold)),
+                                      Text(
+                                        'Buscando conductor',
+                                        style: TextStyle(
+                                          color: Color(0xFFF9D408),
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
                                     ],
                                   ),
-                                  Text('Tu oferta: S/ ${_estimatedFare.toStringAsFixed(2)}', style: const TextStyle(color: Color(0xFFF9D408), fontWeight: FontWeight.bold)),
+                                  Text(
+                                    'Tu oferta: S/ ${_estimatedFare.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      color: Color(0xFFF9D408),
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                                 ],
                               ),
                               const SizedBox(height: 6),
-                              const Text('Buscando conductor cercano...', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                              const Text(
+                                'Buscando conductor cercano...',
+                                style: TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 12,
+                                ),
+                              ),
                               const SizedBox(height: 15),
                               Container(
                                 padding: const EdgeInsets.all(10),
@@ -970,26 +1162,64 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                                 child: Row(
                                   children: [
-                                    const Icon(Icons.timer, color: Color(0xFFF9D408), size: 18),
+                                    const Icon(
+                                      Icons.timer,
+                                      color: Color(0xFFF9D408),
+                                      size: 18,
+                                    ),
                                     const SizedBox(width: 8),
-                                    Text('La solicitud se cerrará en $_formattedTimer', style: const TextStyle(color: Colors.white, fontSize: 13)),
+                                    Text(
+                                      'La solicitud se cerrará en $_formattedTimer',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
                               const SizedBox(height: 15),
                               Row(
                                 children: [
-                                  const Icon(Icons.trip_origin, color: Colors.green, size: 14),
+                                  const Icon(
+                                    Icons.trip_origin,
+                                    color: Colors.green,
+                                    size: 14,
+                                  ),
                                   const SizedBox(width: 6),
-                                  Expanded(child: Text(_originController.text.isNotEmpty ? _originController.text : 'Mi ubicación actual', style: const TextStyle(color: Colors.white, fontSize: 12), overflow: TextOverflow.ellipsis)),
+                                  Expanded(
+                                    child: Text(
+                                      _originController.text.isNotEmpty
+                                          ? _originController.text
+                                          : 'Mi ubicación actual',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
                                 ],
                               ),
                               const SizedBox(height: 5),
                               Row(
                                 children: [
-                                  const Icon(Icons.flag, color: Colors.red, size: 14),
+                                  const Icon(
+                                    Icons.flag,
+                                    color: Colors.red,
+                                    size: 14,
+                                  ),
                                   const SizedBox(width: 6),
-                                  Expanded(child: Text(_destinationController.text, style: const TextStyle(color: Colors.white, fontSize: 12), overflow: TextOverflow.ellipsis)),
+                                  Expanded(
+                                    child: Text(
+                                      _destinationController.text,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
                                 ],
                               ),
                               const SizedBox(height: 20),
@@ -999,13 +1229,19 @@ class _HomeScreenState extends State<HomeScreen> {
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.red,
                                     foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
                                   ),
                                   onPressed: _cancelSearch,
                                   child: const Text(
                                     'Cancelar Viaje',
-                                    style: TextStyle(fontWeight: FontWeight.bold),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1020,7 +1256,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       children: [
                         const Text(
                           'Introduce la ruta...',
-                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black),
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black,
+                          ),
                         ),
                         const SizedBox(height: 15),
                         TextField(
@@ -1032,26 +1272,46 @@ class _HomeScreenState extends State<HomeScreen> {
                             fillColor: Colors.white,
                             hintText: 'De: Mi ubicación actual',
                             hintStyle: const TextStyle(color: Colors.grey),
-                            prefixIcon: const Icon(Icons.trip_origin, color: Colors.black, size: 20),
+                            prefixIcon: const Icon(
+                              Icons.trip_origin,
+                              color: Colors.black,
+                              size: 20,
+                            ),
                             suffixIcon: _originController.text.isNotEmpty
                                 ? IconButton(
-                                    icon: const Icon(Icons.clear, color: Colors.black54),
+                                    icon: const Icon(
+                                      Icons.clear,
+                                      color: Colors.black54,
+                                    ),
                                     onPressed: _clearRoute,
                                   )
                                 : null,
-                            contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 14,
+                              horizontal: 12,
+                            ),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(color: Colors.grey.shade300, width: 1),
+                              borderSide: BorderSide(
+                                color: Colors.grey.shade300,
+                                width: 1,
+                              ),
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(color: Colors.black, width: 1),
+                              borderSide: const BorderSide(
+                                color: Colors.black,
+                                width: 1,
+                              ),
                             ),
                           ),
-                          style: const TextStyle(fontSize: 14, color: Colors.black87),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Colors.black87,
+                          ),
                         ),
-                        if (_isSearchingOrigin && _originSuggestions.isNotEmpty) ...[
+                        if (_isSearchingOrigin &&
+                            _originSuggestions.isNotEmpty) ...[
                           const SizedBox(height: 5),
                           Container(
                             constraints: const BoxConstraints(maxHeight: 180),
@@ -1066,8 +1326,15 @@ class _HomeScreenState extends State<HomeScreen> {
                               itemBuilder: (context, index) {
                                 final suggestion = _originSuggestions[index];
                                 return ListTile(
-                                  leading: const Icon(Icons.location_on, color: Colors.grey, size: 20),
-                                  title: Text(suggestion, style: const TextStyle(fontSize: 13)),
+                                  leading: const Icon(
+                                    Icons.location_on,
+                                    color: Colors.grey,
+                                    size: 20,
+                                  ),
+                                  title: Text(
+                                    suggestion,
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
                                   onTap: () => _selectOrigin(suggestion),
                                 );
                               },
@@ -1084,26 +1351,46 @@ class _HomeScreenState extends State<HomeScreen> {
                             fillColor: Colors.white,
                             hintText: 'A: ¿A dónde vas?',
                             hintStyle: const TextStyle(color: Colors.grey),
-                            prefixIcon: const Icon(Icons.flag, color: Colors.black, size: 20),
+                            prefixIcon: const Icon(
+                              Icons.flag,
+                              color: Colors.black,
+                              size: 20,
+                            ),
                             suffixIcon: _destinationController.text.isNotEmpty
                                 ? IconButton(
-                                    icon: const Icon(Icons.clear, color: Colors.black54),
+                                    icon: const Icon(
+                                      Icons.clear,
+                                      color: Colors.black54,
+                                    ),
                                     onPressed: _clearRoute,
                                   )
                                 : null,
-                            contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 14,
+                              horizontal: 12,
+                            ),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(color: Colors.grey.shade300, width: 1),
+                              borderSide: BorderSide(
+                                color: Colors.grey.shade300,
+                                width: 1,
+                              ),
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(color: Colors.black, width: 1),
+                              borderSide: const BorderSide(
+                                color: Colors.black,
+                                width: 1,
+                              ),
                             ),
                           ),
-                          style: const TextStyle(fontSize: 14, color: Colors.black87),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Colors.black87,
+                          ),
                         ),
-                        if (_isSearchingDestination && _destinationSuggestions.isNotEmpty) ...[
+                        if (_isSearchingDestination &&
+                            _destinationSuggestions.isNotEmpty) ...[
                           const SizedBox(height: 5),
                           Container(
                             constraints: const BoxConstraints(maxHeight: 180),
@@ -1116,10 +1403,18 @@ class _HomeScreenState extends State<HomeScreen> {
                               shrinkWrap: true,
                               itemCount: _destinationSuggestions.length,
                               itemBuilder: (context, index) {
-                                final suggestion = _destinationSuggestions[index];
+                                final suggestion =
+                                    _destinationSuggestions[index];
                                 return ListTile(
-                                  leading: const Icon(Icons.location_on, color: Colors.grey, size: 20),
-                                  title: Text(suggestion, style: const TextStyle(fontSize: 13)),
+                                  leading: const Icon(
+                                    Icons.location_on,
+                                    color: Colors.grey,
+                                    size: 20,
+                                  ),
+                                  title: Text(
+                                    suggestion,
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
                                   onTap: () => _selectDestination(suggestion),
                                 );
                               },
@@ -1129,7 +1424,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         const SizedBox(height: 15),
                         const Text(
                           'Lugares frecuentes',
-                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87),
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
                         ),
                         const SizedBox(height: 10),
                         Row(
@@ -1137,26 +1436,46 @@ class _HomeScreenState extends State<HomeScreen> {
                             Expanded(
                               child: OutlinedButton.icon(
                                 style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
                                   side: BorderSide(color: Colors.grey.shade300),
                                 ),
                                 onPressed: () => _selectDestination('Casa'),
-                                icon: const Icon(Icons.home, color: Colors.amber),
-                                label: const Text('Casa', style: TextStyle(color: Colors.black87)),
+                                icon: const Icon(
+                                  Icons.home,
+                                  color: Colors.amber,
+                                ),
+                                label: const Text(
+                                  'Casa',
+                                  style: TextStyle(color: Colors.black87),
+                                ),
                               ),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: OutlinedButton.icon(
                                 style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
                                   side: BorderSide(color: Colors.grey.shade300),
                                 ),
                                 onPressed: () => _selectDestination('Hospital'),
-                                icon: const Icon(Icons.local_hospital, color: Colors.amber),
-                                label: const Text('Hospital', style: TextStyle(color: Colors.black87)),
+                                icon: const Icon(
+                                  Icons.local_hospital,
+                                  color: Colors.amber,
+                                ),
+                                label: const Text(
+                                  'Hospital',
+                                  style: TextStyle(color: Colors.black87),
+                                ),
                               ),
                             ),
                           ],
@@ -1169,7 +1488,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               backgroundColor: const Color(0xFFF9D408),
                               foregroundColor: Colors.black,
                               padding: const EdgeInsets.symmetric(vertical: 15),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                               elevation: 0,
                             ),
                             onPressed: () {
@@ -1177,13 +1498,22 @@ class _HomeScreenState extends State<HomeScreen> {
                                 _showRequestModal();
                               } else {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Por favor, selecciona un destino')),
+                                  const SnackBar(
+                                    content: Text(
+                                      'Por favor, selecciona un destino',
+                                    ),
+                                  ),
                                 );
                               }
                             },
                             child: Text(
-                              _tripSelected ? 'Continuar solicitud' : 'Seleccionar destino',
-                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                              _tripSelected
+                                  ? 'Continuar solicitud'
+                                  : 'Seleccionar destino',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                         ),

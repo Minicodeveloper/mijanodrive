@@ -207,6 +207,7 @@ Color getTripStatusColor(TripStatus s) {
     case TripStatus.active:
       return Colors.green;
     case TripStatus.accepted:
+    case TripStatus.arrived:
       return Colors.orange;
     default:
       return Colors.blueGrey;
@@ -219,6 +220,8 @@ String getTripStatusEs(TripStatus s) {
       return 'Buscando conductor';
     case TripStatus.accepted:
       return 'Conductor asignado';
+    case TripStatus.arrived:
+      return 'Conductor llegó';
     case TripStatus.active:
       return 'En curso';
     case TripStatus.completed:

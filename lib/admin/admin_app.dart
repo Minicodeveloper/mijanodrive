@@ -13,10 +13,7 @@ import 'modules/alerts_module.dart';
 import 'modules/security_module.dart';
 import '../admin/modules/drivers_module.dart';
 
-enum AdminRole {
-  superAdmin,
-  operator,
-}
+enum AdminRole { superAdmin, operator }
 
 /// Panel de administración web de Mijano Drive.
 /// Mismo Firestore, mismo tema que la app móvil. Se muestra con kIsWeb.
@@ -63,7 +60,10 @@ class _AdminShellState extends State<AdminShell> {
 
     DocumentSnapshot<Map<String, dynamic>> doc;
     try {
-      doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
     } catch (e) {
       _kickOut('Error al verificar permisos: $e');
       return;
@@ -92,7 +92,9 @@ class _AdminShellState extends State<AdminShell> {
         _actualRole = AdminRole.superAdmin;
         _isLoadingRole = false;
       });
-    } else if (normalized == 'operator' || normalized == 'operador' || normalized == 'gerente') {
+    } else if (normalized == 'operator' ||
+        normalized == 'operador' ||
+        normalized == 'gerente') {
       setState(() {
         _actualRole = AdminRole.operator;
         _isLoadingRole = false;
@@ -104,18 +106,27 @@ class _AdminShellState extends State<AdminShell> {
 
   void _kickOut([String? message]) {
     if (message != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     }
     final navigator = Navigator.of(context, rootNavigator: true);
     fb.FirebaseAuth.instance.signOut();
     navigator.pushNamedAndRemoveUntil('/login', (_) => false);
   }
 
-  Future<void> _actualizarEstadoDocumento(BuildContext context, Driver driver, String campoEstado, String nuevoEstado, StateSetter setStateDialog) async {
+  Future<void> _actualizarEstadoDocumento(
+    BuildContext context,
+    Driver driver,
+    String campoEstado,
+    String nuevoEstado,
+    StateSetter setStateDialog,
+  ) async {
     try {
-      await FirebaseFirestore.instance.collection('drivers').doc(driver.uid).update({
-        'documents.$campoEstado': nuevoEstado,
-      });
+      await FirebaseFirestore.instance
+          .collection('drivers')
+          .doc(driver.uid)
+          .update({'documents.$campoEstado': nuevoEstado});
 
       setStateDialog(() {
         driver.documents[campoEstado] = nuevoEstado;
@@ -128,9 +139,9 @@ class _AdminShellState extends State<AdminShell> {
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al actualizar: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error al actualizar: $e')));
       }
     }
   }
@@ -138,9 +149,7 @@ class _AdminShellState extends State<AdminShell> {
   @override
   Widget build(BuildContext context) {
     if (_isLoadingRole) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     final role = _actualRole ?? widget.role;
@@ -149,9 +158,9 @@ class _AdminShellState extends State<AdminShell> {
       appBar: wide
           ? null
           : AppBar(
-        title: const Text('Mijano Drive · Panel'),
-        backgroundColor: MijanoTheme.sol,
-      ),
+              title: const Text('Mijano Drive · Panel'),
+              backgroundColor: MijanoTheme.sol,
+            ),
       drawer: wide ? null : Drawer(child: _sidebar(role, closeDrawer: true)),
       body: Row(
         children: [
@@ -167,7 +176,11 @@ class _AdminShellState extends State<AdminShell> {
     );
   }
 
-  Widget _buildNavItem(IconData icon, String title, {bool closeDrawer = false}) {
+  Widget _buildNavItem(
+    IconData icon,
+    String title, {
+    bool closeDrawer = false,
+  }) {
     final isSelected = _currentView == title;
     return Material(
       color: Colors.transparent,
@@ -205,48 +218,101 @@ class _AdminShellState extends State<AdminShell> {
           Container(
             padding: const EdgeInsets.all(20),
             color: MijanoTheme.sol,
-            child: Row(children: const [
-              Icon(Icons.two_wheeler, color: MijanoTheme.ink),
-              SizedBox(width: 10),
-              Text('MIJANO DRIVE',
+            child: Row(
+              children: const [
+                Icon(Icons.two_wheeler, color: MijanoTheme.ink),
+                SizedBox(width: 10),
+                Text(
+                  'MIJANO DRIVE',
                   style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: MijanoTheme.ink,
-                      letterSpacing: 0.5)),
-            ]),
+                    fontWeight: FontWeight.w900,
+                    color: MijanoTheme.ink,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 12),
           Expanded(
             child: ListView(
               children: [
                 Theme(
-                  data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                  data: Theme.of(
+                    context,
+                  ).copyWith(dividerColor: Colors.transparent),
                   child: ExpansionTile(
                     initiallyExpanded: true,
                     iconColor: Colors.white70,
                     collapsedIconColor: Colors.white70,
-                    title: const Text('GENERAL', style: TextStyle(color: Colors.white38, fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 1.2)),
+                    title: const Text(
+                      'GENERAL',
+                      style: TextStyle(
+                        color: Colors.white38,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
                     children: [
-                      _buildNavItem(Icons.dashboard, 'Panel', closeDrawer: closeDrawer),
-                      _buildNavItem(Icons.people, 'Pasajeros', closeDrawer: closeDrawer),
-                      _buildNavItem(Icons.two_wheeler, 'Conductores', closeDrawer: closeDrawer),
+                      _buildNavItem(
+                        Icons.dashboard,
+                        'Panel',
+                        closeDrawer: closeDrawer,
+                      ),
+                      _buildNavItem(
+                        Icons.people,
+                        'Pasajeros',
+                        closeDrawer: closeDrawer,
+                      ),
+                      _buildNavItem(
+                        Icons.two_wheeler,
+                        'Conductores',
+                        closeDrawer: closeDrawer,
+                      ),
                       if (role == AdminRole.superAdmin)
-                        _buildNavItem(Icons.attach_money, 'Tarifas', closeDrawer: closeDrawer),
+                        _buildNavItem(
+                          Icons.attach_money,
+                          'Tarifas',
+                          closeDrawer: closeDrawer,
+                        ),
                     ],
                   ),
                 ),
                 Theme(
-                  data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                  data: Theme.of(
+                    context,
+                  ).copyWith(dividerColor: Colors.transparent),
                   child: ExpansionTile(
                     initiallyExpanded: true,
                     iconColor: Colors.white70,
                     collapsedIconColor: Colors.white70,
-                    title: const Text('SEGURIDAD', style: TextStyle(color: Colors.white38, fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 1.2)),
+                    title: const Text(
+                      'SEGURIDAD',
+                      style: TextStyle(
+                        color: Colors.white38,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
                     children: [
-                      _buildNavItem(Icons.chat, 'Soporte', closeDrawer: closeDrawer),
-                      _buildNavItem(Icons.emergency, 'Alertas S.O.S.', closeDrawer: closeDrawer),
+                      _buildNavItem(
+                        Icons.chat,
+                        'Soporte',
+                        closeDrawer: closeDrawer,
+                      ),
+                      _buildNavItem(
+                        Icons.emergency,
+                        'Alertas S.O.S.',
+                        closeDrawer: closeDrawer,
+                      ),
                       if (role == AdminRole.superAdmin)
-                        _buildNavItem(Icons.security, 'Permisos', closeDrawer: closeDrawer),
+                        _buildNavItem(
+                          Icons.security,
+                          'Permisos',
+                          closeDrawer: closeDrawer,
+                        ),
                     ],
                   ),
                 ),
@@ -257,10 +323,7 @@ class _AdminShellState extends State<AdminShell> {
             padding: const EdgeInsets.all(16),
             child: Text(
               'Rol: ${role == AdminRole.superAdmin ? 'SuperAdmin' : 'Operador'}',
-              style: const TextStyle(
-                color: Colors.white38,
-                fontSize: 12,
-              ),
+              style: const TextStyle(color: Colors.white38, fontSize: 12),
             ),
           ),
           Padding(
@@ -296,18 +359,31 @@ class _AdminShellState extends State<AdminShell> {
     final bool canSeeMoney = role == AdminRole.superAdmin;
 
     switch (_currentView) {
-      case 'Panel': return _DashboardModule(role: role, parentState: this, canSeeMoney: canSeeMoney);
-      case 'Pasajeros': return UsersModule(canSeeMoney: canSeeMoney);
-      case 'Conductores': return DriversModule(onUpdateStatus: _actualizarEstadoDocumento, canSeeMoney: canSeeMoney);
+      case 'Panel':
+        return _DashboardModule(
+          role: role,
+          parentState: this,
+          canSeeMoney: canSeeMoney,
+        );
+      case 'Pasajeros':
+        return UsersModule(canSeeMoney: canSeeMoney);
+      case 'Conductores':
+        return DriversModule(
+          onUpdateStatus: _actualizarEstadoDocumento,
+          canSeeMoney: canSeeMoney,
+        );
       case 'Tarifas':
         if (role != AdminRole.superAdmin) return const _AccessDenied();
         return const TariffsModule();
-      case 'Soporte': return ReportsModule(canSeeMoney: canSeeMoney);
-      case 'Alertas S.O.S.': return AlertsModule(canSeeMoney: canSeeMoney);
+      case 'Soporte':
+        return ReportsModule(canSeeMoney: canSeeMoney);
+      case 'Alertas S.O.S.':
+        return AlertsModule(canSeeMoney: canSeeMoney);
       case 'Permisos':
         if (role != AdminRole.superAdmin) return const _AccessDenied();
         return const SecurityModule();
-      default: return const Center(child: Text('Módulo no encontrado'));
+      default:
+        return const Center(child: Text('Módulo no encontrado'));
     }
   }
 }
@@ -322,9 +398,19 @@ class _AccessDenied extends StatelessWidget {
         children: [
           Icon(Icons.security, size: 64, color: Colors.grey),
           SizedBox(height: 16),
-          Text('Acceso Denegado', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black54)),
+          Text(
+            'Acceso Denegado',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Colors.black54,
+            ),
+          ),
           SizedBox(height: 8),
-          Text('No tienes permisos suficientes para ver este módulo', style: TextStyle(color: Colors.black45)),
+          Text(
+            'No tienes permisos suficientes para ver este módulo',
+            style: TextStyle(color: Colors.black45),
+          ),
         ],
       ),
     );
@@ -341,9 +427,14 @@ class _Header extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title,
-            style: const TextStyle(
-                fontSize: 26, fontWeight: FontWeight.w900, color: MijanoTheme.ink)),
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 26,
+            fontWeight: FontWeight.w900,
+            color: MijanoTheme.ink,
+          ),
+        ),
         const SizedBox(height: 4),
         Text(subtitle, style: const TextStyle(color: Colors.black54)),
         const SizedBox(height: 20),
@@ -375,7 +466,11 @@ class _DashboardModule extends StatelessWidget {
   final AdminRole role;
   final _AdminShellState parentState;
   final bool canSeeMoney;
-  const _DashboardModule({required this.role, required this.parentState, required this.canSeeMoney});
+  const _DashboardModule({
+    required this.role,
+    required this.parentState,
+    required this.canSeeMoney,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -400,14 +495,36 @@ class _DashboardModule extends StatelessWidget {
                   final trips = tsnap.data ?? [];
 
                   final dineroEnCurso = trips.fold<double>(
-                      0.0, (total, t) => total + t.fareAmount);
+                    0.0,
+                    (total, t) => total + t.fareAmount,
+                  );
 
                   final stats = <_Kpi>[
-                    _Kpi('Viajes Activos', '${trips.length}', Icons.route, Colors.blue),
-                    _Kpi('Conductores Libres', '$online', Icons.two_wheeler, Colors.green),
-                    _Kpi('Total Conductores', '${drivers.length}', Icons.people, Colors.orange),
+                    _Kpi(
+                      'Viajes Activos',
+                      '${trips.length}',
+                      Icons.route,
+                      Colors.blue,
+                    ),
+                    _Kpi(
+                      'Conductores Libres',
+                      '$online',
+                      Icons.two_wheeler,
+                      Colors.green,
+                    ),
+                    _Kpi(
+                      'Total Conductores',
+                      '${drivers.length}',
+                      Icons.people,
+                      Colors.orange,
+                    ),
                     if (canSeeMoney)
-                      _Kpi('S/ en Curso', 'S/ ${dineroEnCurso.toStringAsFixed(2)}', Icons.attach_money, Colors.purple),
+                      _Kpi(
+                        'S/ en Curso',
+                        'S/ ${dineroEnCurso.toStringAsFixed(2)}',
+                        Icons.attach_money,
+                        Colors.purple,
+                      ),
                   ];
 
                   return LayoutBuilder(
@@ -415,9 +532,10 @@ class _DashboardModule extends StatelessWidget {
                       const spacing = 16.0;
                       final n = stats.length;
                       final maxW = constraints.maxWidth;
-                      
+
                       final cols = maxW >= 900 ? n : (maxW >= 380 ? 2 : 1);
-                      final cardW = ((maxW - spacing * (cols - 1)) / cols).floorToDouble();
+                      final cardW = ((maxW - spacing * (cols - 1)) / cols)
+                          .floorToDouble();
 
                       return Wrap(
                         spacing: spacing,
@@ -429,8 +547,10 @@ class _DashboardModule extends StatelessWidget {
                               stats[i].value,
                               stats[i].icon,
                               stats[i].color,
-                              
-                              width: (cols > 1 && i == n - 1 && n % cols == 1) ? maxW : cardW,
+
+                              width: (cols > 1 && i == n - 1 && n % cols == 1)
+                                  ? maxW
+                                  : cardW,
                             ),
                         ],
                       );
@@ -444,7 +564,11 @@ class _DashboardModule extends StatelessWidget {
           const SizedBox(height: 24),
           const Text(
             'Solicitudes Pendientes',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: MijanoTheme.ink),
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: MijanoTheme.ink,
+            ),
           ),
           const SizedBox(height: 12),
           _card(
@@ -471,7 +595,8 @@ class _DashboardModule extends StatelessWidget {
                 }
                 return Column(
                   children: [
-                    for (final d in pendingDrivers) _pendingItem(context, fs, d),
+                    for (final d in pendingDrivers)
+                      _pendingItem(context, fs, d),
                   ],
                 );
               },
@@ -493,18 +618,32 @@ class _DashboardModule extends StatelessWidget {
                         final drivers = snapshot.data ?? [];
 
                         final Set<Marker> markers = drivers
-                            .where((d) => d.currentLatitude != null && d.currentLongitude != null)
+                            .where(
+                              (d) =>
+                                  d.currentLatitude != null &&
+                                  d.currentLongitude != null,
+                            )
                             .map((d) {
-                          return Marker(
-                            markerId: MarkerId(d.uid),
-                            position: LatLng(d.currentLatitude!, d.currentLongitude!),
-                            infoWindow: InfoWindow(title: d.name, snippet: 'Placa: ${d.plate}'),
-                          );
-                        }).toSet();
+                              return Marker(
+                                markerId: MarkerId(d.uid),
+                                position: LatLng(
+                                  d.currentLatitude!,
+                                  d.currentLongitude!,
+                                ),
+                                infoWindow: InfoWindow(
+                                  title: d.name,
+                                  snippet: 'Placa: ${d.plate}',
+                                ),
+                              );
+                            })
+                            .toSet();
 
                         return GoogleMap(
                           initialCameraPosition: const CameraPosition(
-                            target: LatLng(-12.0464, -77.0428), // Lima por defecto
+                            target: LatLng(
+                              -12.0464,
+                              -77.0428,
+                            ), // Lima por defecto
                             zoom: 13,
                           ),
                           markers: markers,
@@ -517,13 +656,21 @@ class _DashboardModule extends StatelessWidget {
                       top: 10,
                       left: 10,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.9),
                           borderRadius: BorderRadius.circular(20),
-                          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
+                          boxShadow: const [
+                            BoxShadow(color: Colors.black12, blurRadius: 4),
+                          ],
                         ),
-                        child: const Text('Conectado en vivo', style: TextStyle(fontWeight: FontWeight.bold)),
+                        child: const Text(
+                          'Conectado en vivo',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
                       ),
                     ),
                   ],
@@ -533,8 +680,14 @@ class _DashboardModule extends StatelessWidget {
           ),
 
           const SizedBox(height: 24),
-          const Text('Viajes en curso',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: MijanoTheme.ink)),
+          const Text(
+            'Viajes en curso',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: MijanoTheme.ink,
+            ),
+          ),
           const SizedBox(height: 12),
           _card(
             child: StreamBuilder<List<Trip>>(
@@ -542,55 +695,93 @@ class _DashboardModule extends StatelessWidget {
               builder: (context, snap) {
                 if (snap.connectionState == ConnectionState.waiting) {
                   return const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Center(child: CircularProgressIndicator()));
+                    padding: EdgeInsets.all(24),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
                 }
                 final trips = snap.data ?? [];
                 if (trips.isEmpty) {
                   return const Padding(
-                      padding: EdgeInsets.all(32),
-                      child: Center(
-                        child: Column(
-                          children: [
-                            Icon(Icons.inbox, size: 40, color: Colors.black26),
-                            SizedBox(height: 8),
-                            Text('No hay viajes en curso', style: TextStyle(color: Colors.black54)),
-                          ],
-                        ),
-                      ));
+                    padding: EdgeInsets.all(32),
+                    child: Center(
+                      child: Column(
+                        children: [
+                          Icon(Icons.inbox, size: 40, color: Colors.black26),
+                          SizedBox(height: 8),
+                          Text(
+                            'No hay viajes en curso',
+                            style: TextStyle(color: Colors.black54),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
                 }
                 return Column(
                   children: [
                     for (final t in trips)
                       ListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         hoverColor: Colors.grey.shade50,
                         leading: Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color: _statusColor(t.status).withValues(alpha: 0.1),
+                            color: _statusColor(
+                              t.status,
+                            ).withValues(alpha: 0.1),
                             shape: BoxShape.circle,
                           ),
-                          child: Icon(Icons.two_wheeler, color: _statusColor(t.status), size: 24),
+                          child: Icon(
+                            Icons.two_wheeler,
+                            color: _statusColor(t.status),
+                            size: 24,
+                          ),
                         ),
                         title: Text(
-                            '${t.originAddress ?? "Origen"} → ${t.destinationAddress ?? "Destino"}',
-                            style: const TextStyle(fontWeight: FontWeight.bold)),
+                          '${t.originAddress ?? "Origen"} → ${t.destinationAddress ?? "Destino"}',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
                         subtitle: Padding(
                           padding: const EdgeInsets.only(top: 4),
-                          child: Text('${t.passengerName ?? "Pasajero"} · ${_statusEs(t.status)}'),
+                          child: Text(
+                            '${t.passengerName ?? "Pasajero"} · ${_statusEs(t.status)}',
+                          ),
                         ),
                         trailing: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             if (canSeeMoney)
-                              Text('S/ ${t.fareAmount.toStringAsFixed(2)}',
-                                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: MijanoTheme.ink))
+                              Text(
+                                'S/ ${t.fareAmount.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 16,
+                                  color: MijanoTheme.ink,
+                                ),
+                              )
                             else
-                              const Text('—', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: Colors.grey)),
-                            const Text('Efectivo', style: TextStyle(fontSize: 12, color: Colors.black54)),
+                              const Text(
+                                '—',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 16,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            const Text(
+                              'Efectivo',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.black54,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -644,7 +835,11 @@ class _DashboardModule extends StatelessWidget {
           'Placa: ${d.plate} · Vehículo: ${d.vehicleModel}',
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: MijanoTheme.ink),
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 13,
+            color: MijanoTheme.ink,
+          ),
         ),
       ],
     );
@@ -656,7 +851,9 @@ class _DashboardModule extends StatelessWidget {
         OutlinedButton.icon(
           style: OutlinedButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
           icon: const Icon(Icons.visibility_outlined, size: 16),
           label: const Text('Ver Doc'),
@@ -668,7 +865,9 @@ class _DashboardModule extends StatelessWidget {
             foregroundColor: Colors.red.shade700,
             elevation: 0,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
           icon: const Icon(Icons.close, size: 16),
           label: const Text('Rechazar'),
@@ -680,7 +879,9 @@ class _DashboardModule extends StatelessWidget {
             foregroundColor: Colors.green.shade700,
             elevation: 0,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
           icon: const Icon(Icons.check, size: 16),
           label: const Text('Aprobar'),
@@ -724,7 +925,13 @@ class _DashboardModule extends StatelessWidget {
     );
   }
 
-  Widget _stat(String label, String value, IconData icon, Color color, {required double width}) {
+  Widget _stat(
+    String label,
+    String value,
+    IconData icon,
+    Color color, {
+    required double width,
+  }) {
     return Container(
       width: width,
       padding: const EdgeInsets.all(20),
@@ -737,34 +944,51 @@ class _DashboardModule extends StatelessWidget {
             color: Colors.black.withValues(alpha: 0.02),
             blurRadius: 10,
             offset: const Offset(0, 4),
-          )
+          ),
         ],
       ),
-      child: Row(children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(icon, color: color, size: 28),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Text(value,
-                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: MijanoTheme.ink)),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
             ),
-            Text(label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.black54, fontSize: 13, fontWeight: FontWeight.w500)),
-          ]),
-        ),
-      ]),
+            child: Icon(icon, color: color, size: 28),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    value,
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      color: MijanoTheme.ink,
+                    ),
+                  ),
+                ),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.black54,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -774,6 +998,7 @@ Color _statusColor(TripStatus s) {
     case TripStatus.active:
       return Colors.green;
     case TripStatus.accepted:
+    case TripStatus.arrived:
       return Colors.orange;
     default:
       return Colors.blueGrey;
@@ -786,6 +1011,8 @@ String _statusEs(TripStatus s) {
       return 'Buscando conductor';
     case TripStatus.accepted:
       return 'Conductor asignado';
+    case TripStatus.arrived:
+      return 'Conductor llegó';
     case TripStatus.active:
       return 'En curso';
     case TripStatus.completed:
@@ -814,9 +1041,22 @@ extension _DocumentDialogExtension on _AdminShellState {
                       title: 'DNI (Frente)',
                       url: driver.documents['docFront'],
                       status: driver.documents['docFrontStatus'] ?? 'pendiente',
-                      onView: () => _showFullImage(context, driver.documents['docFront']),
-                      onApprove: () => _actualizarEstadoDocumento(context, driver, 'docFrontStatus', 'aprobado', setStateDialog),
-                      onReject: () => _actualizarEstadoDocumento(context, driver, 'docFrontStatus', 'rechazado', setStateDialog),
+                      onView: () =>
+                          _showFullImage(context, driver.documents['docFront']),
+                      onApprove: () => _actualizarEstadoDocumento(
+                        context,
+                        driver,
+                        'docFrontStatus',
+                        'aprobado',
+                        setStateDialog,
+                      ),
+                      onReject: () => _actualizarEstadoDocumento(
+                        context,
+                        driver,
+                        'docFrontStatus',
+                        'rechazado',
+                        setStateDialog,
+                      ),
                     ),
                     const Divider(height: 16),
 
@@ -825,20 +1065,54 @@ extension _DocumentDialogExtension on _AdminShellState {
                       title: 'DNI (Reverso)',
                       url: driver.documents['docBack'],
                       status: driver.documents['docBackStatus'] ?? 'pendiente',
-                      onView: () => _showFullImage(context, driver.documents['docBack']),
-                      onApprove: () => _actualizarEstadoDocumento(context, driver, 'docBackStatus', 'aprobado', setStateDialog),
-                      onReject: () => _actualizarEstadoDocumento(context, driver, 'docBackStatus', 'rechazado', setStateDialog),
+                      onView: () =>
+                          _showFullImage(context, driver.documents['docBack']),
+                      onApprove: () => _actualizarEstadoDocumento(
+                        context,
+                        driver,
+                        'docBackStatus',
+                        'aprobado',
+                        setStateDialog,
+                      ),
+                      onReject: () => _actualizarEstadoDocumento(
+                        context,
+                        driver,
+                        'docBackStatus',
+                        'rechazado',
+                        setStateDialog,
+                      ),
                     ),
                     const Divider(height: 16),
 
                     // 3. Licencia de Conducir
                     _buildDocItem(
                       title: 'Licencia de Conducir',
-                      url: driver.licensePhotoUrl ?? driver.documents['licensedDocument'],
-                      status: driver.documents['licensedDocumentStatus'] ?? driver.documents['licenseStatus'] ?? 'pendiente',
-                      onView: () => _showFullImage(context, driver.licensePhotoUrl ?? driver.documents['licensedDocument']),
-                      onApprove: () => _actualizarEstadoDocumento(context, driver, 'licensedDocumentStatus', 'aprobado', setStateDialog),
-                      onReject: () => _actualizarEstadoDocumento(context, driver, 'licensedDocumentStatus', 'rechazado', setStateDialog),
+                      url:
+                          driver.licensePhotoUrl ??
+                          driver.documents['licensedDocument'],
+                      status:
+                          driver.documents['licensedDocumentStatus'] ??
+                          driver.documents['licenseStatus'] ??
+                          'pendiente',
+                      onView: () => _showFullImage(
+                        context,
+                        driver.licensePhotoUrl ??
+                            driver.documents['licensedDocument'],
+                      ),
+                      onApprove: () => _actualizarEstadoDocumento(
+                        context,
+                        driver,
+                        'licensedDocumentStatus',
+                        'aprobado',
+                        setStateDialog,
+                      ),
+                      onReject: () => _actualizarEstadoDocumento(
+                        context,
+                        driver,
+                        'licensedDocumentStatus',
+                        'rechazado',
+                        setStateDialog,
+                      ),
                     ),
                     const Divider(height: 16),
 
@@ -846,10 +1120,28 @@ extension _DocumentDialogExtension on _AdminShellState {
                     _buildDocItem(
                       title: 'SOAT / Revisión Técnica',
                       url: driver.soatPhotoUrl ?? driver.documents['soatPhoto'],
-                      status: driver.documents['soatPhotoStatus'] ?? driver.documents['soatStatus'] ?? 'pendiente',
-                      onView: () => _showFullImage(context, driver.soatPhotoUrl ?? driver.documents['soatPhoto']),
-                      onApprove: () => _actualizarEstadoDocumento(context, driver, 'soatPhotoStatus', 'aprobado', setStateDialog),
-                      onReject: () => _actualizarEstadoDocumento(context, driver, 'soatPhotoStatus', 'rechazado', setStateDialog),
+                      status:
+                          driver.documents['soatPhotoStatus'] ??
+                          driver.documents['soatStatus'] ??
+                          'pendiente',
+                      onView: () => _showFullImage(
+                        context,
+                        driver.soatPhotoUrl ?? driver.documents['soatPhoto'],
+                      ),
+                      onApprove: () => _actualizarEstadoDocumento(
+                        context,
+                        driver,
+                        'soatPhotoStatus',
+                        'aprobado',
+                        setStateDialog,
+                      ),
+                      onReject: () => _actualizarEstadoDocumento(
+                        context,
+                        driver,
+                        'soatPhotoStatus',
+                        'rechazado',
+                        setStateDialog,
+                      ),
                     ),
                     const Divider(height: 16),
 
@@ -857,10 +1149,26 @@ extension _DocumentDialogExtension on _AdminShellState {
                     _buildDocItem(
                       title: 'Antecedentes Policiales',
                       url: driver.documents['policeRecord'],
-                      status: driver.documents['policeRecordStatus'] ?? 'pendiente',
-                      onView: () => _showFullImage(context, driver.documents['policeRecord']),
-                      onApprove: () => _actualizarEstadoDocumento(context, driver, 'policeRecordStatus', 'aprobado', setStateDialog),
-                      onReject: () => _actualizarEstadoDocumento(context, driver, 'policeRecordStatus', 'rechazado', setStateDialog),
+                      status:
+                          driver.documents['policeRecordStatus'] ?? 'pendiente',
+                      onView: () => _showFullImage(
+                        context,
+                        driver.documents['policeRecord'],
+                      ),
+                      onApprove: () => _actualizarEstadoDocumento(
+                        context,
+                        driver,
+                        'policeRecordStatus',
+                        'aprobado',
+                        setStateDialog,
+                      ),
+                      onReject: () => _actualizarEstadoDocumento(
+                        context,
+                        driver,
+                        'policeRecordStatus',
+                        'rechazado',
+                        setStateDialog,
+                      ),
                     ),
                     const Divider(height: 16),
 
@@ -868,10 +1176,27 @@ extension _DocumentDialogExtension on _AdminShellState {
                     _buildDocItem(
                       title: 'Antecedentes Penales',
                       url: driver.documents['criminalRecord'],
-                      status: driver.documents['criminalRecordStatus'] ?? 'pendiente',
-                      onView: () => _showFullImage(context, driver.documents['criminalRecord']),
-                      onApprove: () => _actualizarEstadoDocumento(context, driver, 'criminalRecordStatus', 'aprobado', setStateDialog),
-                      onReject: () => _actualizarEstadoDocumento(context, driver, 'criminalRecordStatus', 'rechazado', setStateDialog),
+                      status:
+                          driver.documents['criminalRecordStatus'] ??
+                          'pendiente',
+                      onView: () => _showFullImage(
+                        context,
+                        driver.documents['criminalRecord'],
+                      ),
+                      onApprove: () => _actualizarEstadoDocumento(
+                        context,
+                        driver,
+                        'criminalRecordStatus',
+                        'aprobado',
+                        setStateDialog,
+                      ),
+                      onReject: () => _actualizarEstadoDocumento(
+                        context,
+                        driver,
+                        'criminalRecordStatus',
+                        'rechazado',
+                        setStateDialog,
+                      ),
                     ),
                     const Divider(height: 16),
 
@@ -879,10 +1204,27 @@ extension _DocumentDialogExtension on _AdminShellState {
                     _buildDocItem(
                       title: 'Tarjeta de Propiedad',
                       url: driver.documents['propertyCardPhoto'],
-                      status: driver.documents['propertyCardPhotoStatus'] ?? 'pendiente',
-                      onView: () => _showFullImage(context, driver.documents['propertyCardPhoto']),
-                      onApprove: () => _actualizarEstadoDocumento(context, driver, 'propertyCardPhotoStatus', 'aprobado', setStateDialog),
-                      onReject: () => _actualizarEstadoDocumento(context, driver, 'propertyCardPhotoStatus', 'rechazado', setStateDialog),
+                      status:
+                          driver.documents['propertyCardPhotoStatus'] ??
+                          'pendiente',
+                      onView: () => _showFullImage(
+                        context,
+                        driver.documents['propertyCardPhoto'],
+                      ),
+                      onApprove: () => _actualizarEstadoDocumento(
+                        context,
+                        driver,
+                        'propertyCardPhotoStatus',
+                        'aprobado',
+                        setStateDialog,
+                      ),
+                      onReject: () => _actualizarEstadoDocumento(
+                        context,
+                        driver,
+                        'propertyCardPhotoStatus',
+                        'rechazado',
+                        setStateDialog,
+                      ),
                     ),
                     const Divider(height: 16),
 
@@ -890,10 +1232,26 @@ extension _DocumentDialogExtension on _AdminShellState {
                     _buildDocItem(
                       title: 'Foto del Vehículo',
                       url: driver.documents['vehiclePhoto'],
-                      status: driver.documents['vehiclePhotoStatus'] ?? 'pendiente',
-                      onView: () => _showFullImage(context, driver.documents['vehiclePhoto']),
-                      onApprove: () => _actualizarEstadoDocumento(context, driver, 'vehiclePhotoStatus', 'aprobado', setStateDialog),
-                      onReject: () => _actualizarEstadoDocumento(context, driver, 'vehiclePhotoStatus', 'rechazado', setStateDialog),
+                      status:
+                          driver.documents['vehiclePhotoStatus'] ?? 'pendiente',
+                      onView: () => _showFullImage(
+                        context,
+                        driver.documents['vehiclePhoto'],
+                      ),
+                      onApprove: () => _actualizarEstadoDocumento(
+                        context,
+                        driver,
+                        'vehiclePhotoStatus',
+                        'aprobado',
+                        setStateDialog,
+                      ),
+                      onReject: () => _actualizarEstadoDocumento(
+                        context,
+                        driver,
+                        'vehiclePhotoStatus',
+                        'rechazado',
+                        setStateDialog,
+                      ),
                     ),
                   ],
                 ),
@@ -902,10 +1260,11 @@ extension _DocumentDialogExtension on _AdminShellState {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.black,
+                style: TextButton.styleFrom(foregroundColor: Colors.black),
+                child: const Text(
+                  'Cerrar',
+                  style: TextStyle(fontWeight: FontWeight.bold),
                 ),
-                child: const Text('Cerrar', style: TextStyle(fontWeight: FontWeight.bold)),
               ),
             ],
           );
@@ -928,7 +1287,10 @@ extension _DocumentDialogExtension on _AdminShellState {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Previsualización de Documento', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  const Text(
+                    'Previsualización de Documento',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
                   IconButton(
                     icon: const Icon(Icons.close),
                     onPressed: () => Navigator.pop(context),
@@ -994,7 +1356,10 @@ Widget _buildDocItem({
             Flexible(
               child: Text(
                 title,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                ),
               ),
             ),
             const SizedBox(width: 8),
@@ -1025,23 +1390,31 @@ Widget _buildDocItem({
                 borderRadius: BorderRadius.circular(8),
                 child: (url != null && url.isNotEmpty)
                     ? Image.network(
-                  url,
-                  width: 65,
-                  height: 65,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    width: 65,
-                    height: 65,
-                    color: Colors.grey.shade200,
-                    child: const Icon(Icons.broken_image, size: 24, color: Colors.grey),
-                  ),
-                )
+                        url,
+                        width: 65,
+                        height: 65,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          width: 65,
+                          height: 65,
+                          color: Colors.grey.shade200,
+                          child: const Icon(
+                            Icons.broken_image,
+                            size: 24,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      )
                     : Container(
-                  width: 65,
-                  height: 65,
-                  color: Colors.grey.shade200,
-                  child: const Icon(Icons.insert_drive_file_outlined, size: 24, color: Colors.grey),
-                ),
+                        width: 65,
+                        height: 65,
+                        color: Colors.grey.shade200,
+                        child: const Icon(
+                          Icons.insert_drive_file_outlined,
+                          size: 24,
+                          color: Colors.grey,
+                        ),
+                      ),
               ),
             ),
             const SizedBox(width: 16),
@@ -1055,7 +1428,10 @@ Widget _buildDocItem({
                     onPressed: onReject,
                     style: TextButton.styleFrom(foregroundColor: Colors.red),
                     icon: const Icon(Icons.close, size: 16),
-                    label: const Text('Rechazar', style: TextStyle(fontSize: 13)),
+                    label: const Text(
+                      'Rechazar',
+                      style: TextStyle(fontSize: 13),
+                    ),
                   ),
                   ElevatedButton.icon(
                     onPressed: onApprove,
@@ -1063,11 +1439,19 @@ Widget _buildDocItem({
                       backgroundColor: const Color(0xFFE3FCEF),
                       foregroundColor: const Color(0xFF006644),
                       elevation: 0,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                     icon: const Icon(Icons.check, size: 16),
-                    label: const Text('Aprobar', style: TextStyle(fontSize: 13)),
+                    label: const Text(
+                      'Aprobar',
+                      style: TextStyle(fontSize: 13),
+                    ),
                   ),
                 ],
               ),

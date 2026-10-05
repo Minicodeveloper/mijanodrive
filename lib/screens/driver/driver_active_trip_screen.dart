@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../models/trip_model.dart';
 import '../../models/user_model.dart';
 import '../../services/auth_service.dart';
+import '../../services/directions_service.dart';
 import '../../services/firestore_service.dart';
 import '../../services/location_service.dart';
 import '../../theme.dart';
@@ -26,8 +27,14 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
   Position? _driverPosition;
   User? _passenger;
   StreamSubscription<Position>? _locationSubscription;
+  final Set<Polyline> _polylines = {};
   bool _sendingSos = false;
   bool _sosSent = false;
+  bool _updatingStatus = false;
+  TripStatus? _optimisticStatus;
+  TripStatus? _lastRouteStatus;
+  LatLng? _lastRouteOrigin;
+  int _routeRequestId = 0;
 
   String get _driverId => AuthService.instance.currentUser?.uid ?? '';
 
@@ -106,29 +113,29 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Set<Marker> get _markers {
+  Set<Marker> _markers(Trip trip) {
     final markers = <Marker>{
       Marker(
         markerId: const MarkerId('origin'),
         position: LatLng(
-          widget.trip.origin.latitude,
-          widget.trip.origin.longitude,
+          trip.origin.latitude,
+          trip.origin.longitude,
         ),
         infoWindow: InfoWindow(
           title: 'Recoger pasajero',
-          snippet: widget.trip.originAddress ?? 'Origen',
+          snippet: trip.originAddress ?? 'Origen',
         ),
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
       ),
       Marker(
         markerId: const MarkerId('destination'),
         position: LatLng(
-          widget.trip.destination.latitude,
-          widget.trip.destination.longitude,
+          trip.destination.latitude,
+          trip.destination.longitude,
         ),
         infoWindow: InfoWindow(
           title: 'Destino',
-          snippet: widget.trip.destinationAddress ?? 'Destino',
+          snippet: trip.destinationAddress ?? 'Destino',
         ),
       ),
     };
@@ -148,22 +155,154 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
     return markers;
   }
 
+  String _statusLabel(TripStatus status) {
+    switch (status) {
+      case TripStatus.pending:
+        return 'Esperando confirmación';
+      case TripStatus.accepted:
+        return 'En camino al pasajero';
+      case TripStatus.arrived:
+        return 'Llegaste al punto de recojo';
+      case TripStatus.active:
+        return 'Viaje en curso';
+      case TripStatus.completed:
+        return 'Viaje finalizado';
+      case TripStatus.cancelled:
+        return 'Viaje cancelado';
+    }
+  }
+
+  String? _nextStatusButtonLabel(TripStatus status) {
+    switch (status) {
+      case TripStatus.accepted:
+        return 'Indicar que llegué';
+      case TripStatus.arrived:
+        return 'Iniciar viaje';
+      case TripStatus.active:
+        return 'Finalizar viaje';
+      case TripStatus.completed:
+        return 'Viaje finalizado';
+      case TripStatus.pending:
+      case TripStatus.cancelled:
+        return null;
+    }
+  }
+
+  Future<void> _advanceTrip(Trip trip, TripStatus status) async {
+    final nextStatus = switch (status) {
+      TripStatus.accepted => TripStatus.arrived,
+      TripStatus.arrived => TripStatus.active,
+      TripStatus.active => TripStatus.completed,
+      _ => null,
+    };
+    if (nextStatus == null || _updatingStatus) return;
+
+    setState(() {
+      _updatingStatus = true;
+      _optimisticStatus = nextStatus;
+    });
+    try {
+      await FirestoreService.instance.updateTrip(trip.id, {
+        'status': nextStatus.name,
+        if (nextStatus == TripStatus.completed) 'completedAt': DateTime.now(),
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() => _optimisticStatus = null);
+        _showMessage('No se pudo actualizar el estado del viaje.');
+      }
+    } finally {
+      if (mounted) setState(() => _updatingStatus = false);
+    }
+  }
+
+  void _scheduleRouteUpdate(Trip trip, TripStatus status) {
+    if (status != TripStatus.accepted && status != TripStatus.active) {
+      _routeRequestId++;
+      if (_polylines.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(_polylines.clear);
+        });
+      }
+      _lastRouteStatus = status;
+      return;
+    }
+
+    final pickup = LatLng(trip.origin.latitude, trip.origin.longitude);
+    final destination = LatLng(
+      trip.destination.latitude,
+      trip.destination.longitude,
+    );
+    final driverPosition = _driverPosition;
+    if (status == TripStatus.accepted && driverPosition == null) return;
+    final routeOrigin = status == TripStatus.active
+        ? pickup
+        : driverPosition == null
+        ? pickup
+        : LatLng(driverPosition.latitude, driverPosition.longitude);
+
+    final statusChanged = _lastRouteStatus != status;
+    final driverMoved =
+        status == TripStatus.accepted &&
+        _lastRouteOrigin != null &&
+        Geolocator.distanceBetween(
+              _lastRouteOrigin!.latitude,
+              _lastRouteOrigin!.longitude,
+              routeOrigin.latitude,
+              routeOrigin.longitude,
+            ) >=
+            250;
+    if (!statusChanged && !driverMoved) return;
+
+    _lastRouteStatus = status;
+    _lastRouteOrigin = routeOrigin;
+    final requestId = ++_routeRequestId;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final route = await DirectionsService.routeCoordinates(
+        routeOrigin,
+        status == TripStatus.active ? destination : pickup,
+      );
+      if (!mounted || requestId != _routeRequestId) return;
+      setState(() {
+        _polylines
+          ..clear()
+          ..add(
+            Polyline(
+              polylineId: const PolylineId('driver_trip_route'),
+              color: status == TripStatus.active ? Colors.green : Colors.blue,
+              width: 5,
+              points: route,
+            ),
+          );
+      });
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final origin = LatLng(
-      widget.trip.origin.latitude,
-      widget.trip.origin.longitude,
-    );
+    return StreamBuilder<Trip?>(
+      stream: FirestoreService.instance.tripStream(widget.trip.id),
+      initialData: widget.trip,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Scaffold(
+            body: Center(child: Text('No se pudo actualizar el viaje.')),
+          );
+        }
+        final trip = snapshot.data ?? widget.trip;
+        final status = _optimisticStatus ?? trip.status;
+        _scheduleRouteUpdate(trip, status);
+        final origin = LatLng(trip.origin.latitude, trip.origin.longitude);
 
-    return Scaffold(
+        return Scaffold(
       body: Stack(
         children: [
           GoogleMap(
             initialCameraPosition: CameraPosition(target: origin, zoom: 14),
             onMapCreated: (controller) {
               final destination = LatLng(
-                widget.trip.destination.latitude,
-                widget.trip.destination.longitude,
+                trip.destination.latitude,
+                trip.destination.longitude,
               );
               if (origin.latitude != destination.latitude ||
                   origin.longitude != destination.longitude) {
@@ -192,7 +331,8 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
                 );
               }
             },
-            markers: _markers,
+            markers: _markers(trip),
+            polylines: _polylines,
             myLocationEnabled: _driverPosition != null,
             myLocationButtonEnabled: true,
             zoomControlsEnabled: false,
@@ -240,10 +380,18 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        widget.trip.originAddress ?? 'Punto de recojo',
+                        trip.originAddress ?? 'Punto de recojo',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(color: Colors.black54),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _statusLabel(status),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: MijanoTheme.ink,
+                        ),
                       ),
                       const SizedBox(height: 14),
                       Row(
@@ -253,7 +401,7 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
                               onPressed: () => Navigator.of(context).push(
                                 MaterialPageRoute<void>(
                                   builder: (_) => DriverTripChatScreen(
-                                    tripId: widget.trip.id,
+                                    tripId: trip.id,
                                     senderId: _driverId,
                                     senderName: _driverName,
                                     conversationTitle:
@@ -298,6 +446,46 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
                           ),
                         ],
                       ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed:
+                              _updatingStatus ||
+                                  status == TripStatus.completed ||
+                                  status == TripStatus.pending ||
+                                  status == TripStatus.cancelled
+                              ? null
+                              : () => _advanceTrip(trip, status),
+                          icon: Icon(
+                            status == TripStatus.accepted
+                                ? Icons.location_on
+                                : status == TripStatus.arrived
+                                ? Icons.play_arrow
+                                : status == TripStatus.active
+                                ? Icons.flag
+                                : Icons.check_circle,
+                          ),
+                          label: Text(
+                            _nextStatusButtonLabel(status) ??
+                                _statusLabel(status),
+                          ),
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                        ),
+                      ),
+                      if (status == TripStatus.completed ||
+                          status == TripStatus.cancelled) ...[
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: const Text('Volver al panel'),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -306,6 +494,8 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
           ),
         ],
       ),
+    );
+      },
     );
   }
 }
@@ -320,6 +510,8 @@ class DriverActiveTripScreen extends StatelessWidget {
     switch (status) {
       case TripStatus.accepted:
         return 'Dirígete al punto de recojo';
+      case TripStatus.arrived:
+        return 'Llegaste al punto de recojo';
       case TripStatus.active:
         return 'Viaje en curso';
       case TripStatus.completed:
@@ -373,6 +565,7 @@ class DriverActiveTripScreen extends StatelessWidget {
         }
 
         final isAccepted = trip.status == TripStatus.accepted;
+        final isArrived = trip.status == TripStatus.arrived;
         final isActive = trip.status == TripStatus.active;
         final isFinished =
             trip.status == TripStatus.completed ||
@@ -414,6 +607,12 @@ class DriverActiveTripScreen extends StatelessWidget {
                 _TripDetail(label: 'Pago', value: trip.paymentMethod.name),
                 const Spacer(),
                 if (isAccepted)
+                  FilledButton.icon(
+                    onPressed: () => _updateStatus(context, 'arrived'),
+                    icon: const Icon(Icons.location_on),
+                    label: const Text('Indicar que llegué'),
+                  ),
+                if (isArrived)
                   FilledButton.icon(
                     onPressed: () => _updateStatus(context, 'active'),
                     icon: const Icon(Icons.play_arrow),

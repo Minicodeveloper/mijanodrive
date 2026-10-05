@@ -1,10 +1,8 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:http/http.dart' as http;
 import '../../services/firestore_service.dart';
+import '../../services/directions_service.dart';
 import '../../services/location_service.dart';
 import '../../services/auth_service.dart';
 import '../../models/trip_model.dart';
@@ -43,15 +41,14 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
   double? _lastDriverLat;
   double? _lastDriverLng;
 
-  // Colocar la api del mapa para que se haga el trazado
-  final String _googleApiKey = 'AIzaSyBLQjIeANXfVOCw9l21nfJ_vp3DUzNzXYY';
-
   String _statusLabel(TripStatus status) {
     switch (status) {
       case TripStatus.pending:
         return 'Buscando conductor...';
       case TripStatus.accepted:
         return 'Conductor en camino';
+      case TripStatus.arrived:
+        return 'Conductor llegó al punto de recojo';
       case TripStatus.active:
         return 'Viaje en curso';
       default:
@@ -134,69 +131,6 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     }
   }
 
-  /// Método nativo para decodificar la polilínea de Google sin librerías externas
-  List<LatLng> _decodePolyline(String encoded) {
-    List<LatLng> points = <LatLng>[];
-    int index = 0, len = encoded.length;
-    int lat = 0, lng = 0;
-
-    while (index < len) {
-      int b, shift = 0, result = 0;
-      do {
-        b = encoded.codeUnitAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-      int dlat = ((result & 1) != 0) ? ~(result >> 1) : (result >> 1);
-      lat += dlat;
-
-      shift = 0;
-      result = 0;
-      do {
-        b = encoded.codeUnitAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-      int dlng = ((result & 1) != 0) ? ~(result >> 1) : (result >> 1);
-      lng += dlng;
-
-      points.add(LatLng(lat / 1E5, lng / 1E5));
-    }
-    return points;
-  }
-
-  /// Método para consultar la Google Directions API y obtener los puntos reales de las calles
-  Future<List<LatLng>> _getRouteCoordinates(
-    LatLng origin,
-    LatLng destination,
-  ) async {
-    List<LatLng> routePoints = [];
-    try {
-      final url = Uri.parse(
-        'https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&mode=driving&key=$_googleApiKey',
-      );
-
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['routes'] != null && data['routes'].isNotEmpty) {
-          final pointsEncoded =
-              data['routes'][0]['overview_polyline']['points'];
-          routePoints = _decodePolyline(pointsEncoded);
-        }
-      }
-    } catch (_) {
-      // Si falla la red, respaldamos con línea recta
-      routePoints = [origin, destination];
-    }
-
-    if (routePoints.isEmpty) {
-      routePoints = [origin, destination];
-    }
-
-    return routePoints;
-  }
-
   /// Actualización optimizada del mapa incorporando rutas de calles reales
   void _updateMapElements(Trip? trip) async {
     if (trip == null) return;
@@ -249,13 +183,13 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
 
     if (trip.status == TripStatus.accepted) {
       final startPoint = driverLatLng ?? originLatLng;
-      polylineCoordinates = await _getRouteCoordinates(
+      polylineCoordinates = await DirectionsService.routeCoordinates(
         startPoint,
         originLatLng,
       );
       polylineColor = Colors.blue;
     } else if (trip.status == TripStatus.active) {
-      polylineCoordinates = await _getRouteCoordinates(
+      polylineCoordinates = await DirectionsService.routeCoordinates(
         originLatLng,
         destLatLng,
       );

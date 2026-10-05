@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum TripStatus { pending, accepted, active, completed, cancelled }
+enum TripStatus { pending, accepted, arrived, active, completed, cancelled }
 
 enum PaymentMethod { cash, wallet, card }
 
@@ -110,6 +110,8 @@ class Trip {
     switch (status) {
       case 'accepted':
         return TripStatus.accepted;
+      case 'arrived':
+        return TripStatus.arrived;
       case 'active':
         return TripStatus.active;
       case 'completed':
