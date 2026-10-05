@@ -12,6 +12,7 @@ import '../../services/directions_service.dart';
 import '../../services/firestore_service.dart';
 import '../../services/location_service.dart';
 import '../../theme.dart';
+import '../../config/app_config.dart';
 import 'driver_trip_chat_screen.dart';
 
 class DriverActiveMapScreen extends StatefulWidget {
@@ -41,6 +42,8 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
   String get _driverName =>
       AuthService.instance.currentUser?.name ?? 'Conductor';
 
+  DateTime? _lastPublishedTime;
+
   @override
   void initState() {
     super.initState();
@@ -66,12 +69,33 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
       final position = await LocationService.instance.current();
       if (!mounted) return;
       setState(() => _driverPosition = position);
+      
+      _publishLocation(position);
+
       _locationSubscription = LocationService.instance.stream().listen((
         position,
       ) {
-        if (mounted) setState(() => _driverPosition = position);
+        if (!mounted) return;
+        setState(() => _driverPosition = position);
+        _publishLocation(position);
       });
     } catch (_) {}
+  }
+
+  void _publishLocation(Position pos) {
+    final now = DateTime.now();
+    if (_lastPublishedTime != null) {
+      final diff = now.difference(_lastPublishedTime!);
+      if (diff < AppConfig.locationPublishInterval) {
+        return; // Throttled
+      }
+    }
+
+    _lastPublishedTime = now;
+    // Dispara y olvida (throttle aplicado)
+    FirestoreService.instance
+        .updateDriverLocation(_driverId, pos.latitude, pos.longitude)
+        .catchError((_) {});
   }
 
   Future<void> _callPassenger() async {

@@ -97,7 +97,7 @@ class _PassengerSupportChatScreenState extends State<PassengerSupportChatScreen>
           // Listado de mensajes en tiempo real desde Firestore
           Expanded(
             child: StreamBuilder<List<Map<String, dynamic>>>(
-              stream: _fs.supportMessagesForPassenger(widget.passengerUid),
+              stream: _fs.supportMessagesForUser(widget.passengerUid),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting &&
                     !snapshot.hasData) {

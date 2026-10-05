@@ -18,4 +18,10 @@ class AppConfig {
     'Tarapoto': {'base': 3.0, 'perKm': 1.8},
     'Iquitos': {'base': 3.5, 'perKm': 2.1},
   };
+
+  /// Intervalo para publicar la ubicación del conductor a Firestore.
+  static const Duration locationPublishInterval = Duration(seconds: 30);
+
+  /// Umbral para considerar inactiva/caduca la ubicación de un conductor (3 veces el intervalo).
+  static const Duration staleLocationThreshold = Duration(seconds: 90);
 }

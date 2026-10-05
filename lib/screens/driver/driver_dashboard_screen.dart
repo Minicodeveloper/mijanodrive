@@ -9,6 +9,7 @@ import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
 import '../../services/location_service.dart';
 import '../../theme.dart';
+import '../../config/app_config.dart';
 import 'driver_active_trip_screen.dart';
 
 class DriverDashboardScreen extends StatefulWidget {
@@ -47,6 +48,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
   String get _uid => _auth.currentUser?.uid ?? 'demo-driver';
 
+  DateTime? _lastPublishedTime;
+
   @override
   void initState() {
     super.initState();
@@ -71,25 +74,38 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         _driverPosition = pos;
       });
 
-      await _fs.updateDriverLocation(_uid, pos.latitude, pos.longitude);
+      _publishLocation(pos);
 
       _locationSubscription = LocationService.instance.stream().listen((
         pos,
-      ) async {
+      ) {
         if (!mounted) return;
 
         setState(() {
           _driverPosition = pos;
         });
 
-        try {
-          await _fs.updateDriverLocation(_uid, pos.latitude, pos.longitude);
-        } catch (_) {}
+        _publishLocation(pos);
       });
     } catch (_) {
-      
-      
+      // Ubicación no permitida o no disponible
     }
+  }
+
+  void _publishLocation(Position pos) {
+    if (!_available) return;
+
+    final now = DateTime.now();
+    if (_lastPublishedTime != null) {
+      final diff = now.difference(_lastPublishedTime!);
+      if (diff < AppConfig.locationPublishInterval) {
+        return; // Throttled
+      }
+    }
+
+    _lastPublishedTime = now;
+    // Dispara y olvida para no bloquear la UI
+    _fs.updateDriverLocation(_uid, pos.latitude, pos.longitude).catchError((_) {});
   }
 
   void _toggleAvailability(bool value) {
@@ -98,6 +114,12 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     });
 
     _fs.setDriverAvailability(_uid, value);
+
+    if (value && _driverPosition != null) {
+      // Fuerza publicación inmediata si pasa a estar disponible
+      _lastPublishedTime = null;
+      _publishLocation(_driverPosition!);
+    }
   }
 
   Future<void> _accept(Trip trip) async {

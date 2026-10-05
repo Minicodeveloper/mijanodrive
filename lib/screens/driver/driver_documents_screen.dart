@@ -49,7 +49,11 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
         }
       }
     } catch (e) {
-      debugPrint('Error al inicializar documentos: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error al inicializar estado de documentos')),
+        );
+      }
     }
   }
 

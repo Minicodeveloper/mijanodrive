@@ -32,7 +32,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
   Driver? _driver;
   String? _lastDriverId;
   GoogleMapController? _mapController;
-  BitmapDescriptor? _mototaxiIcon;
+  BitmapDescriptor? _mototaxiIcon; // Icono personalizado del mototaxi
 
   final Set<Polyline> _polylines = {};
   final Set<Marker> _markers = {};
@@ -47,11 +47,12 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     _loadCustomMarker();
   }
 
+  // Cargar la imagen del mototaxi como icono del mapa
   Future<void> _loadCustomMarker() async {
     try {
       _mototaxiIcon = await BitmapDescriptor.fromAssetImage(
         const ImageConfiguration(size: Size(48, 48)),
-        'assets/images/ic_mototaxi_marker.png',
+        'assets/images/ic_mototaxi_marker.png', // Ruta de tu imagen en assets
       );
     } catch (e) {
       debugPrint('Error al cargar el icono del mototaxi: $e');
@@ -65,13 +66,13 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
       case TripStatus.accepted:
         return 'Conductor en camino';
       case TripStatus.arrived:
-        return 'El mototaxi ha llegado al punto de recojo';
+        return 'El conductor ha llegado al punto de recojo';
       case TripStatus.active:
         return 'Viaje en curso hacia tu destino';
       case TripStatus.completed:
         return 'Viaje finalizado';
       default:
-        return 'Viaje en curso';
+        return '';
     }
   }
 
@@ -112,9 +113,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isSendingSos = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al enviar SOS: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error al enviar SOS: $e')));
       }
     }
   }
@@ -124,14 +125,12 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
       await FirestoreService.instance.updateTrip(widget.tripId, {
         'status': 'cancelled',
       });
-      if (mounted) {
-        Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
-      }
+      if (mounted) Navigator.of(context).pop();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al cancelar: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error al cancelar: $e')));
       }
     }
   }
@@ -151,6 +150,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     }
   }
 
+  /// Abre Google Maps en modo navegación guiada de primera persona
   Future<void> _openGoogleMapsNavigation(double destLat, double destLng) async {
     final String navigationUrl = 'google.navigation:q=$destLat,$destLng&mode=d';
     final String webMapsUrl = 'https://www.google.com/maps/dir/?api=1&destination=$destLat,$destLng&travelmode=driving';
@@ -163,15 +163,26 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
       if (await canLaunchUrl(navUri)) {
         // ignore: deprecated_member_use
         await launchUrl(navUri, mode: LaunchMode.externalApplication);
-      } else {
+      } else if (await canLaunchUrl(webUri)) {
         // ignore: deprecated_member_use
         await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No se pudo abrir Google Maps')),
+          );
+        }
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al abrir Google Maps: $e')),
-        );
+      try {
+        // ignore: deprecated_member_use
+        await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error al abrir el mapa: $e')),
+          );
+        }
       }
     }
   }
@@ -205,9 +216,10 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
         Marker(
           markerId: const MarkerId('driver_marker'),
           position: driverLatLng,
+          // AQUÍ SE USA LA IMAGEN DEL MOTOTAXI EN VEZ DEL GLOBO CLÁSICO
           icon: _mototaxiIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
           infoWindow: InfoWindow(
-            title: _driver?.name ?? 'Mototaxi',
+            title: _driver?.name ?? 'Conductor',
             snippet: _driver?.plate,
           ),
           anchor: const Offset(0.5, 0.5),
@@ -218,8 +230,6 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     List<LatLng> polylineCoordinates = [];
     Color polylineColor = Colors.blue;
 
-    // CORRECCIÓN: Si está aceptado, dibuja del conductor al origen.
-    // Si ya llegó (arrived) o está en curso (active), dibuja la ruta desde el origen hacia el destino final.
     if (trip.status == TripStatus.accepted) {
       final startPoint = driverLatLng ?? originLatLng;
       polylineCoordinates = await DirectionsService.routeCoordinates(
@@ -232,7 +242,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
         originLatLng,
         destLatLng,
       );
-      polylineColor = Colors.green; // Color verde para la ruta hacia el destino
+      polylineColor = Colors.green;
     }
 
     if (polylineCoordinates.isNotEmpty) {
@@ -250,7 +260,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
       Marker(
         markerId: const MarkerId('origin_marker'),
         position: originLatLng,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+        icon: BitmapDescriptor.defaultMarkerWithHue(
+          BitmapDescriptor.hueGreen,
+        ),
         infoWindow: const InfoWindow(title: 'Punto de recogida'),
       ),
     );
@@ -273,26 +285,26 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
       });
     }
 
-    if (_mapController != null) {
-      if (trip.status == TripStatus.active || trip.status == TripStatus.arrived) {
-        _mapController!.animateCamera(
-          CameraUpdate.newLatLngBounds(
-            LatLngBounds(
-              southwest: LatLng(
-                originLatLng.latitude < destLatLng.latitude ? originLatLng.latitude : destLatLng.latitude,
-                originLatLng.longitude < destLatLng.longitude ? originLatLng.longitude : destLatLng.longitude,
-              ),
-              northeast: LatLng(
-                originLatLng.latitude > destLatLng.latitude ? originLatLng.latitude : destLatLng.latitude,
-                originLatLng.longitude > destLatLng.longitude ? originLatLng.longitude : destLatLng.longitude,
-              ),
+    if (_mapController != null &&
+        driverLatLng != null &&
+        trip.status == TripStatus.accepted) {
+      _mapController!.animateCamera(CameraUpdate.newLatLng(driverLatLng));
+    } else if (_mapController != null && trip.status == TripStatus.active) {
+      _mapController!.animateCamera(
+        CameraUpdate.newLatLngBounds(
+          LatLngBounds(
+            southwest: LatLng(
+              originLatLng.latitude < destLatLng.latitude ? originLatLng.latitude : destLatLng.latitude,
+              originLatLng.longitude < destLatLng.longitude ? originLatLng.longitude : destLatLng.longitude,
             ),
-            70,
+            northeast: LatLng(
+              originLatLng.latitude > destLatLng.latitude ? originLatLng.latitude : destLatLng.latitude,
+              originLatLng.longitude > destLatLng.longitude ? originLatLng.longitude : destLatLng.longitude,
+            ),
           ),
-        );
-      } else if (driverLatLng != null) {
-        _mapController!.animateCamera(CameraUpdate.newLatLng(driverLatLng));
-      }
+          70,
+        ),
+      );
     }
   }
 
@@ -303,28 +315,18 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
       builder: (context, snapshot) {
         final trip = snapshot.data;
 
-        // Si el viaje se completa, redirige a calificación y limpia la pila para volver al inicio correctamente
         if (trip != null &&
             trip.status == TripStatus.completed &&
             !_hasNavigatedToRating) {
           _hasNavigatedToRating = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            Navigator.of(context).pushNamedAndRemoveUntil(
+            Navigator.of(context).pushReplacementNamed(
               '/rating',
-              (route) => false,
               arguments: {
                 'driverName': _driver?.name ?? 'Conductor',
                 'tripId': widget.tripId,
               },
             );
-          });
-        }
-
-        if (trip != null && trip.status == TripStatus.cancelled) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
-            }
           });
         }
 
@@ -385,6 +387,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                   _mapController = controller;
                 },
               ),
+              // Tarjeta superior con botón de navegación en primera persona
               Positioned(
                 top: 40,
                 left: 20,
@@ -408,13 +411,14 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                             child: Text(
                               trip != null
                                   ? _statusLabel(trip.status)
-                                  : 'Cargando viaje...',
+                                  : 'Cargando...',
                               style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                           ),
+                          // Botón para abrir Google Maps en modo navegación guiada (1ra persona)
                           IconButton(
                             onPressed: () => _openGoogleMapsNavigation(destLat, destLng),
                             icon: const Icon(Icons.navigation, color: Colors.blue),
@@ -422,7 +426,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                           ),
                           IconButton(
                             onPressed: () {
-                              Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+                              Navigator.of(context).pop();
                             },
                             icon: const Icon(Icons.close),
                           ),
@@ -442,6 +446,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                   ),
                 ),
               ),
+              // Tarjeta inferior (Conductor y acciones)
               Positioned(
                 bottom: 20,
                 left: 20,

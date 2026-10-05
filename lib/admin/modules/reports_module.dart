@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
 import 'package:flutter/material.dart';
 import '../../services/firestore_service.dart';
 import '../../models/trip_model.dart';
@@ -18,7 +19,7 @@ class _ReportsModuleState extends State<ReportsModule> {
 
 
   Widget _buildTabs() {
-    final tabs = ['Viajes Activos', 'Usuarios', 'Conductores', 'Soporte'];
+    final tabs = ['Viajes Activos', 'Pasajeros', 'Conductores', 'Soporte', 'Reportes'];
     return Wrap(
       spacing: 8,
       runSpacing: 8,
@@ -41,7 +42,7 @@ class _ReportsModuleState extends State<ReportsModule> {
   }
 
   // ==== VISTA 0: "TODOS" (Monitoreo de Chats Activos en Viajes) ====
-  Widget _buildAllTripsChats() {
+  Widget _buildAllTripsChats(Map<String, Map<String, dynamic>> userCache) {
     return adminCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -63,6 +64,9 @@ class _ReportsModuleState extends State<ReportsModule> {
                 itemCount: trips.length,
                 itemBuilder: (ctx, i) {
                   final t = trips[i];
+                  final pName = userCache[t.passengerId]?['name'] ?? 'Usuario eliminado';
+                  final dName = t.driverId != null ? (userCache[t.driverId]?['name'] ?? 'Conductor') : 'Sin asignar';
+
                   return Container(
                     margin: const EdgeInsets.only(bottom: 16),
                     decoration: BoxDecoration(
@@ -76,7 +80,7 @@ class _ReportsModuleState extends State<ReportsModule> {
                         child: const Icon(Icons.chat_bubble_outline, color: MijanoTheme.ink),
                       ),
                       title: Text('Viaje: ${t.originAddress} → ${t.destinationAddress}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text('Pasajero: ${t.passengerId} · Cond: ${t.driverId ?? "Sin asignar"} · Estado: ${t.status.name}', style: const TextStyle(fontSize: 12)),
+                      subtitle: Text('Pasajero: $pName · Cond: $dName · Estado: ${t.status.name}', style: const TextStyle(fontSize: 12)),
                       children: [
                         Container(
                           height: 300,
@@ -96,7 +100,7 @@ class _ReportsModuleState extends State<ReportsModule> {
   }
 
 
-  Widget _buildReportsList(String filter) {
+  Widget _buildReportsList(Map<String, Map<String, dynamic>> userCache) {
     return adminCard(
       child: StreamBuilder<List<Map<String, dynamic>>>(
         stream: fs.allReports(),
@@ -121,14 +125,20 @@ class _ReportsModuleState extends State<ReportsModule> {
             itemCount: openReports.length,
             itemBuilder: (ctx, i) {
               final r = openReports[i];
+              final reportedUserId = r['reportedUserId']?.toString() ?? '';
+              final reportedBy = r['reportedByDriverId']?.toString() ?? '';
+
+              final reportedName = userCache[reportedUserId]?['name'] ?? 'Sin nombre';
+              final reporterName = userCache[reportedBy]?['name'] ?? 'Sin nombre';
+
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: const CircleAvatar(backgroundColor: Colors.red, child: Icon(Icons.warning, color: Colors.white)),
-                    title: Text('Reportado: ${r['reportedUserId']}', maxLines: 1, overflow: TextOverflow.ellipsis),
-                    subtitle: Text('Razón: ${r['reason']} · Por: ${r['reportedByDriverId']}', maxLines: 2, overflow: TextOverflow.ellipsis),
+                    title: Text('Reportado: $reportedName', maxLines: 1, overflow: TextOverflow.ellipsis),
+                    subtitle: Text('Razón: ${r['reason']} · Por: $reporterName', maxLines: 2, overflow: TextOverflow.ellipsis),
                   ),
                   Align(
                     alignment: Alignment.centerRight,
@@ -149,38 +159,54 @@ class _ReportsModuleState extends State<ReportsModule> {
   }
 
 
-  Widget _buildDriverSupportSection() {
-    return const AdminDriverSupportView();
+  Widget _buildSupportSection(String? roleFilter, Map<String, Map<String, dynamic>> userCache) {
+    return AdminSupportView(roleFilter: roleFilter, userCache: userCache);
   }
 
   @override
   Widget build(BuildContext context) {
-    Widget activeView;
-    if (_currentTab == 0) {
-      activeView = _buildAllTripsChats();
-    } else if (_currentTab == 1) {
-      activeView = _buildReportsList('passenger');
-    } else if (_currentTab == 2) {
-      activeView = _buildReportsList('driver');
-    } else {
-      activeView = _buildDriverSupportSection();
-    }
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: fs.allUsers(),
+      builder: (context, userSnap) {
+        if (!userSnap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
-    return LayoutBuilder(builder: (context, c) {
-      final compact = c.maxWidth < 720;
-      return SingleChildScrollView(
-        padding: EdgeInsets.all(compact ? 14 : 28),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const AdminHeader('Reportes y Soporte', 'Monitoreo de chats y bandeja de soporte'),
-            _buildTabs(),
-            const SizedBox(height: 24),
-            activeView,
-          ],
-        ),
-      );
-    });
+        final users = userSnap.data ?? [];
+        final Map<String, Map<String, dynamic>> userCache = {
+          for (final u in users) u['uid']: u
+        };
+
+        Widget activeView;
+        if (_currentTab == 0) {
+          activeView = _buildAllTripsChats(userCache);
+        } else if (_currentTab == 1) {
+          activeView = _buildSupportSection('passenger', userCache);
+        } else if (_currentTab == 2) {
+          activeView = _buildSupportSection('driver', userCache);
+        } else if (_currentTab == 3) {
+          activeView = _buildSupportSection(null, userCache);
+        } else {
+          activeView = _buildReportsList(userCache);
+        }
+
+        return LayoutBuilder(builder: (context, c) {
+          final compact = c.maxWidth < 720;
+          return SingleChildScrollView(
+            padding: EdgeInsets.all(compact ? 14 : 28),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const AdminHeader('Reportes y Soporte', 'Monitoreo de chats y bandeja de soporte'),
+                _buildTabs(),
+                const SizedBox(height: 24),
+                activeView,
+              ],
+            ),
+          );
+        });
+      },
+    );
   }
 }
 
@@ -239,7 +265,7 @@ class _ChatMonitorState extends State<_ChatMonitor> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('[${m['senderId'] == 'support' ? 'Soporte/Admin' : 'Usuario'}]${m['senderName'] ?? ''}',
+                          Text(isSupport ? 'Soporte/Admin' : (m['senderName']?.toString() ?? 'Usuario'),
                               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: isSupport ? Colors.white : Colors.white70)),
                           const SizedBox(height: 4),
                           Text(m['text'] ?? '', style: const TextStyle(color: Colors.white)),
@@ -307,16 +333,19 @@ class _ChatMonitorState extends State<_ChatMonitor> {
 }
 
 
-class AdminDriverSupportView extends StatefulWidget {
-  const AdminDriverSupportView({super.key});
+class AdminSupportView extends StatefulWidget {
+  final String? roleFilter;
+  final Map<String, Map<String, dynamic>> userCache;
+
+  const AdminSupportView({super.key, this.roleFilter, required this.userCache});
 
   @override
-  State<AdminDriverSupportView> createState() => _AdminDriverSupportViewState();
+  State<AdminSupportView> createState() => _AdminSupportViewState();
 }
 
-class _AdminDriverSupportViewState extends State<AdminDriverSupportView> {
-  String? selectedDriverUid;
-  String? selectedDriverName;
+class _AdminSupportViewState extends State<AdminSupportView> {
+  String? selectedUserId;
+  String? selectedUserName;
   final TextEditingController _replyController = TextEditingController();
   final fs = FirestoreService.instance;
 
@@ -327,7 +356,7 @@ class _AdminDriverSupportViewState extends State<AdminDriverSupportView> {
   }
 
   Future<void> _sendAdminReply() async {
-    final uid = selectedDriverUid;
+    final uid = selectedUserId;
     if (uid == null || _replyController.text.trim().isEmpty) return;
 
     final text = _replyController.text.trim();
@@ -335,7 +364,7 @@ class _AdminDriverSupportViewState extends State<AdminDriverSupportView> {
 
     await fs.sendAdminSupportMessage(
       userId: uid,
-      userName: selectedDriverName ?? '',
+      userName: selectedUserName ?? '',
       text: text,
     );
   }
@@ -350,7 +379,7 @@ class _AdminDriverSupportViewState extends State<AdminDriverSupportView> {
       Widget body;
       if (compact) {
         // Móvil / vertical: lista o conversación, nunca ambas.
-        body = selectedDriverUid == null ? _buildChatList(compact) : _buildConversation(compact);
+        body = selectedUserId == null ? _buildChatList(compact) : _buildConversation(compact);
       } else {
         body = Row(
           children: [
@@ -364,7 +393,7 @@ class _AdminDriverSupportViewState extends State<AdminDriverSupportView> {
               ),
             ),
             Expanded(
-              child: selectedDriverUid == null
+              child: selectedUserId == null
                   ? const Center(
                 child: Text(
                   'Selecciona un chat de soporte de la lista.',
@@ -405,7 +434,23 @@ class _AdminDriverSupportViewState extends State<AdminDriverSupportView> {
           return const Center(child: CircularProgressIndicator());
         }
 
-        final chats = snapshot.data ?? [];
+        var chats = snapshot.data ?? [];
+        
+        // Filter by role if a filter is set
+        if (widget.roleFilter != null) {
+          chats = chats.where((chat) {
+            String role = chat['role']?.toString() ?? widget.userCache[chat['id']]?['role']?.toString() ?? '';
+            return role.toLowerCase() == widget.roleFilter!.toLowerCase();
+          }).toList();
+        }
+
+        // Sort by updatedAt descending
+        chats.sort((a, b) {
+          final aTime = (a['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final bTime = (b['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return bTime.compareTo(aTime);
+        });
+
         if (chats.isEmpty) {
           return const Center(
             child: Padding(
@@ -423,33 +468,70 @@ class _AdminDriverSupportViewState extends State<AdminDriverSupportView> {
           itemCount: chats.length,
           itemBuilder: (context, index) {
             final chat = chats[index];
-            final driverUid = chat['id'] as String?;
-            final name = (chat['name'] ?? 'Sin nombre').toString();
+            final userId = chat['id'] as String?;
             final lastMessage = (chat['lastMessage'] ?? 'Sin mensajes').toString();
-            final isSelected = !compact && selectedDriverUid == driverUid;
+            final isSelected = !compact && selectedUserId == userId;
+            final isUnread = chat['unreadByAdmin'] == true;
+            
+            String role = chat['role']?.toString() ?? widget.userCache[userId]?['role']?.toString() ?? '';
+            role = role.toLowerCase();
+            final name = chat['name']?.toString() ?? widget.userCache[userId]?['name']?.toString() ?? 'Sin nombre';
 
             return Material(
               color: isSelected ? MijanoTheme.sol.withValues(alpha: 0.25) : Colors.transparent,
               child: ListTile(
-                leading: const CircleAvatar(
-                  backgroundColor: MijanoTheme.sol,
-                  child: Icon(Icons.support_agent, color: MijanoTheme.ink),
+                leading: Stack(
+                  children: [
+                    const CircleAvatar(
+                      backgroundColor: MijanoTheme.sol,
+                      child: Icon(Icons.support_agent, color: MijanoTheme.ink),
+                    ),
+                    if (isUnread)
+                      Positioned(
+                        right: 0,
+                        top: 0,
+                        child: Container(
+                          width: 12,
+                          height: 12,
+                          decoration: const BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
-                title: Text(name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                title: Row(
+                  children: [
+                    Expanded(
+                      child: Text(name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontWeight: isUnread ? FontWeight.w900 : FontWeight.bold)),
+                    ),
+                    if (role == 'passenger' || role == 'pasajero')
+                      const AdminBadge('Pasajero', Colors.blue)
+                    else if (role == 'driver')
+                      const AdminBadge('Conductor', Colors.orange)
+                  ],
+                ),
                 subtitle: Text(
                   lastMessage,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12),
+                  style: TextStyle(fontSize: 12, fontWeight: isUnread ? FontWeight.bold : FontWeight.normal, color: isUnread ? Colors.black87 : Colors.black54),
                 ),
                 trailing: compact ? const Icon(Icons.chevron_right, color: Colors.black38) : null,
-                onTap: () => setState(() {
-                  selectedDriverUid = driverUid;
-                  selectedDriverName = name;
-                }),
+                onTap: () {
+                  setState(() {
+                    selectedUserId = userId;
+                    selectedUserName = name;
+                  });
+                  // Mark as read
+                  if (isUnread && userId != null) {
+                    fs.markSupportChatRead(userId);
+                  }
+                },
               ),
             );
           },
@@ -474,8 +556,8 @@ class _AdminDriverSupportViewState extends State<AdminDriverSupportView> {
                 IconButton(
                   icon: const Icon(Icons.arrow_back, color: MijanoTheme.ink),
                   onPressed: () => setState(() {
-                    selectedDriverUid = null;
-                    selectedDriverName = null;
+                    selectedUserId = null;
+                    selectedUserName = null;
                   }),
                 )
               else
@@ -485,7 +567,7 @@ class _AdminDriverSupportViewState extends State<AdminDriverSupportView> {
                 ),
               Expanded(
                 child: Text(
-                  'Soporte con: ${selectedDriverName ?? ''}',
+                  'Soporte con: ${selectedUserName ?? ''}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -500,7 +582,7 @@ class _AdminDriverSupportViewState extends State<AdminDriverSupportView> {
         ),
         Expanded(
           child: StreamBuilder<List<Map<String, dynamic>>>(
-            stream: fs.supportMessagesForDriver(selectedDriverUid!),
+            stream: fs.supportMessagesForUser(selectedUserId!),
             builder: (context, snapshot) {
               if (!snapshot.hasData) {
                 return const Center(child: CircularProgressIndicator());
@@ -520,6 +602,7 @@ class _AdminDriverSupportViewState extends State<AdminDriverSupportView> {
                     final msg = messages[index];
                     final isAdmin = msg['isAdmin'] ?? false;
                     final text = (msg['text'] ?? '').toString();
+                    final senderName = msg['senderName']?.toString() ?? 'Usuario';
 
                     return Align(
                       alignment: isAdmin ? Alignment.centerRight : Alignment.centerLeft,
@@ -540,7 +623,7 @@ class _AdminDriverSupportViewState extends State<AdminDriverSupportView> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              isAdmin ? 'Soporte (Central)' : 'Usuario',
+                              isAdmin ? 'Soporte (Central)' : senderName,
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,

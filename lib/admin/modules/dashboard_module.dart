@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../theme.dart';
 import '../../models/trip_model.dart';
 import '../../models/driver_model.dart';
 import '../../services/firestore_service.dart';
 import 'shared_admin_widgets.dart';
 import '../admin_app.dart' show AdminRole;
+import '../widgets/live_drivers_map.dart';
 
 class DashboardModule extends StatelessWidget {
   final AdminRole role;
@@ -203,57 +202,7 @@ class DashboardModule extends StatelessWidget {
           const AdminHeader('Mapa en vivo', 'Ubicación actual de conductores libres y ocupados'),
 
           adminCard(
-            child: SizedBox(
-              height: 350,
-              width: double.infinity,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Stack(
-                  children: [
-                    StreamBuilder<List<Driver>>(
-                      stream: fs.allDrivers(),
-                      builder: (context, dsnap) {
-                        final drivers = dsnap.data ?? [];
-                        final activeDrivers = drivers.where((d) => d.currentLatitude != null && d.currentLongitude != null).toList();
-
-                        final markers = activeDrivers.map((d) => Marker(
-                          markerId: MarkerId(d.uid),
-                          position: LatLng(d.currentLatitude!, d.currentLongitude!),
-                          infoWindow: InfoWindow(title: 'Cond. ${d.plate}', snippet: d.isAvailable ? 'Libre' : 'Ocupado'),
-                          icon: BitmapDescriptor.defaultMarkerWithHue(d.isAvailable ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueRed),
-                        )).toSet();
-
-                        final initialLat = activeDrivers.isNotEmpty ? activeDrivers.first.currentLatitude! : -12.046374;
-                        final initialLng = activeDrivers.isNotEmpty ? activeDrivers.first.currentLongitude! : -77.042793;
-
-                        return GoogleMap(
-                          initialCameraPosition: CameraPosition(
-                            target: LatLng(initialLat, initialLng),
-                            zoom: 11,
-                          ),
-                          markers: markers,
-                          myLocationEnabled: false,
-                          zoomControlsEnabled: true,
-                        );
-                      },
-                    ),
-                    Positioned(
-                      top: 10,
-                      left: 10,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.9),
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
-                        ),
-                        child: const Text('Conectado en vivo', style: TextStyle(fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            child: const LiveDriversMap(),
           ),
 
           const SizedBox(height: 24),
@@ -283,42 +232,50 @@ class DashboardModule extends StatelessWidget {
                         ),
                       ));
                 }
-                return Column(
-                  children: [
-                    for (final t in trips)
-                      ListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        hoverColor: Colors.grey.shade50,
-                        leading: Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: getTripStatusColor(t.status).withValues(alpha: 0.1),
-                            shape: BoxShape.circle,
+                return StreamBuilder<List<Map<String, dynamic>>>(
+                  stream: fs.allUsers(),
+                  builder: (context, userSnap) {
+                    final users = userSnap.data ?? [];
+                    final userCache = {for (final u in users) u['uid']: u};
+
+                    return Column(
+                      children: [
+                        for (final t in trips)
+                          ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            hoverColor: Colors.grey.shade50,
+                            leading: Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: getTripStatusColor(t.status).withValues(alpha: 0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(Icons.two_wheeler, color: getTripStatusColor(t.status), size: 24),
+                            ),
+                            title: Text(
+                                '${t.originAddress ?? "Origen"} → ${t.destinationAddress ?? "Destino"}',
+                                style: const TextStyle(fontWeight: FontWeight.bold)),
+                            subtitle: Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text('${t.passengerName ?? userCache[t.passengerId]?['name'] ?? "Usuario eliminado"} · ${getTripStatusEs(t.status)}'),
+                            ),
+                            trailing: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                if (canSeeMoney)
+                                  Text('S/ ${t.fareAmount.toStringAsFixed(2)}',
+                                      style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: MijanoTheme.ink))
+                                else
+                                  const Text('—', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: Colors.grey)),
+                                const Text('Efectivo', style: TextStyle(fontSize: 12, color: Colors.black54)),
+                              ],
+                            ),
                           ),
-                          child: Icon(Icons.two_wheeler, color: getTripStatusColor(t.status), size: 24),
-                        ),
-                        title: Text(
-                            '${t.originAddress ?? "Origen"} → ${t.destinationAddress ?? "Destino"}',
-                            style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text('${t.passengerName ?? "Pasajero"} · ${getTripStatusEs(t.status)}'),
-                        ),
-                        trailing: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            if (canSeeMoney)
-                              Text('S/ ${t.fareAmount.toStringAsFixed(2)}',
-                                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: MijanoTheme.ink))
-                            else
-                              const Text('—', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: Colors.grey)),
-                            const Text('Efectivo', style: TextStyle(fontSize: 12, color: Colors.black54)),
-                          ],
-                        ),
-                      ),
-                  ],
+                      ],
+                    );
+                  }
                 );
               },
             ),
@@ -408,14 +365,7 @@ class DashboardModule extends StatelessWidget {
                                     icon: const Icon(Icons.close, size: 16),
                                     label: const Text('Rechazar', style: TextStyle(fontSize: 12)),
                                     onPressed: () async {
-                                      documents[key] = {
-                                        'url': '',
-                                        'status': 'rejected',
-                                      };
-
-                                      await FirebaseFirestore.instance.collection('users').doc(driverUid).set({
-                                        'documents': documents,
-                                      }, SetOptions(merge: true));
+                                      await FirestoreService.instance.updateDriverDocumentStatus(driverUid, key, 'rejected');
 
                                       await FirestoreService.instance.notifyDriver(
                                           driverUid,
@@ -437,14 +387,7 @@ class DashboardModule extends StatelessWidget {
                                     icon: const Icon(Icons.check, size: 16),
                                     label: const Text('Aprobar', style: TextStyle(fontSize: 12)),
                                     onPressed: () async {
-                                      documents[key] = {
-                                        'url': url,
-                                        'status': 'approved',
-                                      };
-
-                                      await FirebaseFirestore.instance.collection('users').doc(driverUid).set({
-                                        'documents': documents,
-                                      }, SetOptions(merge: true));
+                                      await FirestoreService.instance.updateDriverDocumentStatus(driverUid, key, 'approved');
 
                                       setStateDialog(() {});
                                     },

@@ -34,9 +34,7 @@ class DocumentService {
         'documents.$documentKey': downloadUrl,
       });
 
-      print('¡Documento subido y registrado con éxito!');
     } catch (e) {
-      print('Error al subir el documento: $e');
       rethrow; 
     }
   }

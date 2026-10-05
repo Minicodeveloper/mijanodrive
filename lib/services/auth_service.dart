@@ -34,13 +34,10 @@ class AuthService {
           .child(uid)
           .child('$uid.jpg');
 
-      print("Subiendo imagen para UID: $uid...");
       await ref.putFile(imageFile);
       final downloadUrl = await ref.getDownloadURL();
-      print("¡Imagen subida con éxito! URL: $downloadUrl");
       return downloadUrl;
     } catch (e) {
-      print(" ERROR AL SUBIR LA IMAGEN A STORAGE: $e");
       return null;
     }
   }

@@ -307,7 +307,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             imageFile: entry.value!,
                           );
                         } catch (e) {
-                          debugPrint('Error subiendo documento $key: $e');
+                          // Se ignora el error de subida para no interrumpir el registro; el admin o conductor lo podrán ver/subir después.
                         }
                       }
                     }

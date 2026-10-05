@@ -21,6 +21,7 @@ class Driver {
   bool isAvailable;
   final double? currentLatitude;
   final double? currentLongitude;
+  final DateTime? locationUpdatedAt;
 
   Driver({
     required this.uid,
@@ -43,6 +44,7 @@ class Driver {
     this.isAvailable = true,
     this.currentLatitude,
     this.currentLongitude,
+    this.locationUpdatedAt,
   });
 
   Map<String, dynamic> toMap() {
@@ -71,6 +73,55 @@ class Driver {
   }
 
   factory Driver.fromMap(Map<String, dynamic> map, String uid) {
+    // 1. Manejo seguro de 'documents' que puede ser List o Map
+    Map<String, dynamic> parsedDocs = {};
+    if (map['documents'] is Map) {
+      parsedDocs = Map<String, dynamic>.from(map['documents']);
+    } else if (map['documents'] is List) {
+      final list = map['documents'] as List;
+      for (var item in list) {
+        if (item is Map) {
+          final id = item['id'];
+          if (id == 'dni') {
+            parsedDocs['docFront'] = item['url'];
+            parsedDocs['docFrontStatus'] = item['status'];
+          } else if (id == 'license') {
+            parsedDocs['licensedDocument'] = item['url'];
+            parsedDocs['licensedDocumentStatus'] = item['status'];
+          } else if (id == 'soat') {
+            parsedDocs['soatPhoto'] = item['url'];
+            parsedDocs['soatPhotoStatus'] = item['status'];
+          } else {
+            // Fallback genérico
+            parsedDocs[id.toString()] = item['url'];
+            parsedDocs['${id}Status'] = item['status'];
+          }
+        }
+      }
+    }
+
+    // 2. Manejo seguro de 'createdAt' (Timestamp, String o int)
+    DateTime parsedDate = DateTime.now();
+    final cAt = map['createdAt'];
+    if (cAt is Timestamp) {
+      parsedDate = cAt.toDate();
+    } else if (cAt is String) {
+      parsedDate = DateTime.tryParse(cAt) ?? DateTime.now();
+    } else if (cAt is int) {
+      parsedDate = DateTime.fromMillisecondsSinceEpoch(cAt);
+    }
+
+    // 3. Manejo seguro de locationUpdatedAt
+    DateTime? locUpdatedAt;
+    final lAt = map['locationUpdatedAt'];
+    if (lAt is Timestamp) {
+      locUpdatedAt = lAt.toDate();
+    } else if (lAt is String) {
+      locUpdatedAt = DateTime.tryParse(lAt);
+    } else if (lAt is int) {
+      locUpdatedAt = DateTime.fromMillisecondsSinceEpoch(lAt);
+    }
+
     return Driver(
       uid: uid,
       name: map['name'] ?? map['fullName'] ?? 'Sin nombre',
@@ -83,15 +134,16 @@ class Driver {
       photoUrl: map['photoUrl'],
       soatPhotoUrl: map['soatPhotoUrl'],
       licensePhotoUrl: map['licensePhotoUrl'],
-      documents: Map<String, dynamic>.from(map['documents'] ?? {}), 
+      documents: parsedDocs, 
       isApproved: map['isApproved'] ?? false,
       isBlocked: map['isBlocked'] ?? false,
       status: map['status'] ?? 'pending',
       city: map['city'] ?? '',
-      createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      isAvailable: map['isAvailable'] ?? true,
+      createdAt: parsedDate,
+      isAvailable: map['isAvailable'] ?? false,
       currentLatitude: (map['currentLatitude'] as num?)?.toDouble(),
       currentLongitude: (map['currentLongitude'] as num?)?.toDouble(),
+      locationUpdatedAt: locUpdatedAt,
     );
   }
 
@@ -120,6 +172,7 @@ class Driver {
     bool? isAvailable,
     double? currentLatitude,
     double? currentLongitude,
+    DateTime? locationUpdatedAt,
   }) {
     return Driver(
       uid: uid ?? this.uid,
@@ -142,6 +195,7 @@ class Driver {
       isAvailable: isAvailable ?? this.isAvailable,
       currentLatitude: currentLatitude ?? this.currentLatitude,
       currentLongitude: currentLongitude ?? this.currentLongitude,
+      locationUpdatedAt: locationUpdatedAt ?? this.locationUpdatedAt,
     );
   }
 }

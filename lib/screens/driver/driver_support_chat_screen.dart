@@ -60,7 +60,7 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
         children: [
           Expanded(
             child: StreamBuilder<List<Map<String, dynamic>>>(
-              stream: _fs.supportMessagesForDriver(widget.driverUid),
+              stream: _fs.supportMessagesForUser(widget.driverUid),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());

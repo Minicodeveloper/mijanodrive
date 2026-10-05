@@ -145,7 +145,11 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
     } catch (e) {
-      print('Error al verificar viaje activo: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error al verificar viaje activo')),
+        );
+      }
     }
   }
 
@@ -323,7 +327,11 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
     } catch (e) {
-      print('Error obteniendo coordenadas: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error obteniendo coordenadas')),
+        );
+      }
     }
     return null;
   }
@@ -481,7 +489,11 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         );
       } catch (e) {
-        print('Error obteniendo la ruta: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Error obteniendo la ruta')),
+          );
+        }
       }
     }
   }
@@ -793,7 +805,11 @@ class _HomeScreenState extends State<HomeScreen> {
             .doc(_activeTripId)
             .update({'status': 'cancelled'});
       } catch (e) {
-        print('Error al actualizar estado cancelado en Firestore: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Error al cancelar la búsqueda')),
+          );
+        }
       }
     }
 

@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
 import '../models/trip_model.dart';
 import '../models/driver_model.dart';
 import '../models/wallet_model.dart';
 import '../models/tariff_model.dart';
+import '../utils/role_helper.dart';
 
 class FirestoreService {
   static final FirestoreService instance = FirestoreService._();
@@ -66,6 +68,7 @@ class FirestoreService {
       _db.collection('drivers').doc(uid).set({
         'currentLatitude': lat,
         'currentLongitude': lng,
+        'locationUpdatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
   // ---- Viajes ----
@@ -159,30 +162,74 @@ class FirestoreService {
       .snapshots()
       .map((q) => q.docs.map((d) => Trip.fromFirestore(d)).toList());
 
-  /// Conductores pendientes de aprobación optimizados para la consola web.
-  Stream<List<Driver>> pendingDrivers() => _db
-      .collection('users')
-      .where('role', isEqualTo: 'driver')
-      .where('status', isEqualTo: 'pending')
-      .snapshots()
-      .map((q) {
-        return q.docs
-            .map((d) {
-              try {
-                return Driver.fromFirestore(d);
-              } catch (e) {
-                return null;
-              }
-            })
-            .whereType<Driver>()
-            .toList();
-      });
+  Stream<List<Driver>>? _allDriversStream;
 
-  /// Todos los conductores (aprobados + pendientes) para el mapa en vivo.
-  Stream<List<Driver>> allDrivers() => _db
-      .collection('drivers')
-      .snapshots()
-      .map((q) => q.docs.map((d) => Driver.fromFirestore(d)).toList());
+  /// Todos los conductores (aprobados + pendientes) combinando 'users' y 'drivers'.
+  Stream<List<Driver>> allDrivers() {
+    if (_allDriversStream != null) return _allDriversStream!;
+
+    late StreamController<List<Driver>> controller;
+    StreamSubscription? usersSub;
+    StreamSubscription? driversSub;
+
+    List<Map<String, dynamic>> usersData = [];
+    List<Map<String, dynamic>> driversData = [];
+
+    void emit() {
+      final driversMap = {for (final d in driversData) d['uid'] ?? d['id']: d};
+      final result = <Driver>[];
+
+      for (final u in usersData) {
+        final role = RoleHelper.normalizeRole(u['role']);
+        if (role == 'driver') {
+          final uid = u['uid'] ?? u['id'];
+          if (uid == null) continue;
+          final dData = driversMap[uid] ?? {};
+          
+          final merged = <String, dynamic>{
+             ...u,
+             // Mantenemos lat/lng y disponibilidad actualizadas de drivers
+             'currentLatitude': dData['currentLatitude'],
+             'currentLongitude': dData['currentLongitude'],
+             'locationUpdatedAt': dData['locationUpdatedAt'],
+             'isAvailable': dData['isAvailable'] ?? u['isAvailable'] ?? false,
+          };
+          
+          try {
+            result.add(Driver.fromMap(merged, uid));
+          } catch (e) {
+            // Tolerar doc malformado o fallos y omitirlo
+          }
+        }
+      }
+      controller.add(result);
+    }
+
+    controller = StreamController<List<Driver>>.broadcast(
+      onListen: () {
+        usersSub = _db.collection('users').snapshots().listen((snap) {
+          usersData = snap.docs.map((d) => {'uid': d.id, 'id': d.id, ...d.data()}).toList();
+          emit();
+        });
+        driversSub = _db.collection('drivers').snapshots().listen((snap) {
+          driversData = snap.docs.map((d) => {'uid': d.id, 'id': d.id, ...d.data()}).toList();
+          emit();
+        });
+      },
+      onCancel: () {
+        usersSub?.cancel();
+        driversSub?.cancel();
+        _allDriversStream = null;
+      }
+    );
+
+    _allDriversStream = controller.stream;
+    return _allDriversStream!;
+  }
+
+  /// Conductores pendientes de aprobación optimizados para la consola web.
+  Stream<List<Driver>> pendingDrivers() => 
+      allDrivers().map((drivers) => drivers.where((d) => d.status == 'pending').toList());
 
   /// Actualiza la cuenta en `users` (login / estado de la cuenta) y, si existe,
   /// en `drivers` (listado del panel), para que ambas colecciones no se
@@ -216,6 +263,42 @@ class FirestoreService {
       if (isRejected) data['status'] = 'rejected';
     }
     return _updateAccountDocs(uid, data);
+  }
+
+  Future<void> updateDriverDocumentStatus(String uid, String campoEstado, String nuevoEstado) async {
+    final userRef = _db.collection('users').doc(uid);
+    final doc = await userRef.get();
+    if (!doc.exists) return;
+    
+    final data = doc.data()!;
+    var docs = data['documents'];
+    
+    Map<String, dynamic> parsedDocs = {};
+    if (docs is List) {
+       for (var item in docs) {
+         if (item is Map) {
+            final id = item['id'];
+            if (id == 'dni') {
+              parsedDocs['docFront'] = item['url'];
+              parsedDocs['docFrontStatus'] = item['status'];
+            } else if (id == 'license') {
+              parsedDocs['licensedDocument'] = item['url'];
+              parsedDocs['licensedDocumentStatus'] = item['status'];
+            } else if (id == 'soat') {
+              parsedDocs['soatPhoto'] = item['url'];
+              parsedDocs['soatPhotoStatus'] = item['status'];
+            } else {
+              parsedDocs[id.toString()] = item['url'];
+              parsedDocs['${id}Status'] = item['status'];
+            }
+         }
+       }
+    } else if (docs is Map) {
+       parsedDocs = Map<String, dynamic>.from(docs);
+    }
+
+    parsedDocs[campoEstado] = nuevoEstado;
+    await _updateAccountDocs(uid, {'documents': parsedDocs});
   }
 
   // =====================================================
@@ -424,33 +507,23 @@ class FirestoreService {
     }, SetOptions(merge: true));
   }
 
-  /// Stream para listar todos los chats de soporte activos en la consola web
-  Stream<List<Map<String, dynamic>>> allSupportChats() =>
-      _db.collection('support_chats').snapshots().map((q) {
-        print('🔥 Documentos encontrados en support_chats: ${q.docs.length}');
-        return q.docs.map((d) => {'id': d.id, ...d.data()}).toList();
-      });
+  Stream<List<Map<String, dynamic>>> allSupportChats() => _db
+      .collection('support_chats')
+      .snapshots()
+      .map((q) => q.docs.map((d) => {'id': d.id, ...d.data()}).toList());
 
-  /// 🌟 STREAM UNIVERSAL: Lee los mensajes de soporte de cualquier usuario (Conductor o Pasajero)
-  Stream<List<Map<String, dynamic>>> supportMessagesForUser(String userId) =>
-      _db
-          .collection('support_chats')
-          .doc(userId)
-          .collection('messages')
-          .orderBy('timestamp', descending: false)
-          .snapshots()
-          .map((q) => q.docs.map((d) => {'id': d.id, ...d.data()}).toList());
+  Future<void> markSupportChatRead(String userId) => _db
+      .collection('support_chats')
+      .doc(userId)
+      .set({'unreadByAdmin': false}, SetOptions(merge: true));
 
-  /// Stream específico para conductor
-  Stream<List<Map<String, dynamic>>> supportMessagesForDriver(
-    String driverUid,
-  ) => supportMessagesForUser(driverUid);
-
-  /// Stream específico para pasajero
-  Stream<List<Map<String, dynamic>>> supportMessagesForPassenger(
-    String passengerUid,
-  ) => supportMessagesForUser(passengerUid);
-
+  Stream<List<Map<String, dynamic>>> supportMessagesForUser(String userId) => _db
+      .collection('support_chats')
+      .doc(userId)
+      .collection('messages')
+      .orderBy('timestamp', descending: false)
+      .snapshots()
+      .map((q) => q.docs.map((d) => {'id': d.id, ...d.data()}).toList());
   // =====================================================
 
   Future<void> resolveReport(String id) => _db

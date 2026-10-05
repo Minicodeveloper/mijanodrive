@@ -42,8 +42,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
         throw Exception('No hay un usuario autenticado en AuthService');
       }
 
-      print('👤 Usuario ID: ${user.uid}');
-
       
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
@@ -72,11 +70,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         distanceKm: widget.distanceKm,
       );
 
-      print('📦 Objeto Trip creado, convirtiendo a Map...');
-      print(trip.toMap());
-
       final tripId = await FirestoreService.instance.createTrip(trip);
-      print('✅ ¡Viaje creado con éxito en Firestore con ID: $tripId');
 
       if (!mounted) return;
 
@@ -88,10 +82,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           'tripId': tripId,
         },
       );
-    } catch (e, stackTrace) {
-      print('❌ ERROR DETALLADO AL CREAR VIAJE: $e');
-      print(stackTrace);
-
+    } catch (e) {
       if (!mounted) return;
 
       setState(() => _isProcessing = false);

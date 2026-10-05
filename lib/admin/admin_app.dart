@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../theme.dart';
 import '../models/trip_model.dart';
 import '../models/driver_model.dart';
@@ -11,6 +10,7 @@ import 'modules/tariffs_module.dart';
 import 'modules/reports_module.dart';
 import 'modules/alerts_module.dart';
 import 'modules/security_module.dart';
+import 'widgets/live_drivers_map.dart';
 import '../admin/modules/drivers_module.dart';
 
 enum AdminRole { superAdmin, operator }
@@ -123,10 +123,7 @@ class _AdminShellState extends State<AdminShell> {
     StateSetter setStateDialog,
   ) async {
     try {
-      await FirebaseFirestore.instance
-          .collection('drivers')
-          .doc(driver.uid)
-          .update({'documents.$campoEstado': nuevoEstado});
+      await FirestoreService.instance.updateDriverDocumentStatus(driver.uid, campoEstado, nuevoEstado);
 
       setStateDialog(() {
         driver.documents[campoEstado] = nuevoEstado;
@@ -605,78 +602,7 @@ class _DashboardModule extends StatelessWidget {
 
           const SizedBox(height: 24),
           _card(
-            child: SizedBox(
-              height: 400,
-              width: double.infinity,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Stack(
-                  children: [
-                    StreamBuilder<List<Driver>>(
-                      stream: fs.allDrivers(),
-                      builder: (context, snapshot) {
-                        final drivers = snapshot.data ?? [];
-
-                        final Set<Marker> markers = drivers
-                            .where(
-                              (d) =>
-                                  d.currentLatitude != null &&
-                                  d.currentLongitude != null,
-                            )
-                            .map((d) {
-                              return Marker(
-                                markerId: MarkerId(d.uid),
-                                position: LatLng(
-                                  d.currentLatitude!,
-                                  d.currentLongitude!,
-                                ),
-                                infoWindow: InfoWindow(
-                                  title: d.name,
-                                  snippet: 'Placa: ${d.plate}',
-                                ),
-                              );
-                            })
-                            .toSet();
-
-                        return GoogleMap(
-                          initialCameraPosition: const CameraPosition(
-                            target: LatLng(
-                              -12.0464,
-                              -77.0428,
-                            ), // Lima por defecto
-                            zoom: 13,
-                          ),
-                          markers: markers,
-                          myLocationButtonEnabled: false,
-                          zoomControlsEnabled: true,
-                        );
-                      },
-                    ),
-                    Positioned(
-                      top: 10,
-                      left: 10,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.9),
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: const [
-                            BoxShadow(color: Colors.black12, blurRadius: 4),
-                          ],
-                        ),
-                        child: const Text(
-                          'Conectado en vivo',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            child: const LiveDriversMap(),
           ),
 
           const SizedBox(height: 24),
