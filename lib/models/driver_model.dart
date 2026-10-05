@@ -4,7 +4,7 @@ class Driver {
   final String uid;
   final String name; 
   final String email; 
-  final String phone; 
+  final String phone; // <--- Añadido aquí
   final String licenseNumber;
   final String plate;
   final String vehicleBrand; 
@@ -26,7 +26,7 @@ class Driver {
     required this.uid,
     required this.name,
     required this.email,
-    required this.phone, 
+    required this.phone, // <--- Añadido al constructor
     required this.licenseNumber,
     required this.plate,
     required this.vehicleBrand,
@@ -50,7 +50,7 @@ class Driver {
       'uid': uid,
       'name': name,
       'email': email,
-      'phone': phone, 
+      'phone': phone, // <--- Añadido a toMap
       'licenseNumber': licenseNumber,
       'plate': plate,
       'vehicleBrand': vehicleBrand,
@@ -75,7 +75,7 @@ class Driver {
       uid: uid,
       name: map['name'] ?? map['fullName'] ?? 'Sin nombre',
       email: map['email'] ?? 'Sin correo',
-      phone: map['phone'] ?? '', 
+      phone: map['phone'] ?? '', // <--- Mapeado desde Firestore
       licenseNumber: map['licenseNumber'] ?? '',
       plate: map['plate'] ?? map['vehiclePlate'] ?? '',
       vehicleBrand: map['vehicleBrand'] ?? '',
@@ -103,7 +103,7 @@ class Driver {
     String? uid,
     String? name,
     String? email,
-    String? phone, 
+    String? phone, // <--- Añadido a copyWith
     String? licenseNumber,
     String? plate,
     String? vehicleBrand,
@@ -125,7 +125,7 @@ class Driver {
       uid: uid ?? this.uid,
       name: name ?? this.name,
       email: email ?? this.email,
-      phone: phone ?? this.phone, 
+      phone: phone ?? this.phone, // <--- Añadido aquí
       licenseNumber: licenseNumber ?? this.licenseNumber,
       plate: plate ?? this.plate,
       vehicleBrand: vehicleBrand ?? this.vehicleBrand,
