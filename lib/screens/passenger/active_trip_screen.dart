@@ -32,14 +32,32 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
   Driver? _driver;
   String? _lastDriverId;
   GoogleMapController? _mapController;
+  BitmapDescriptor? _mototaxiIcon; // Icono personalizado del mototaxi
 
   final Set<Polyline> _polylines = {};
   final Set<Marker> _markers = {};
 
-  // Variables para control de optimización y evitar lag
   TripStatus? _lastStatus;
   double? _lastDriverLat;
   double? _lastDriverLng;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCustomMarker();
+  }
+
+  // Cargar la imagen del mototaxi como icono del mapa
+  Future<void> _loadCustomMarker() async {
+    try {
+      _mototaxiIcon = await BitmapDescriptor.fromAssetImage(
+        const ImageConfiguration(size: Size(48, 48)),
+        'assets/images/ic_mototaxi_marker.png', // Ruta de tu imagen en assets
+      );
+    } catch (e) {
+      debugPrint('Error al cargar el icono del mototaxi: $e');
+    }
+  }
 
   String _statusLabel(TripStatus status) {
     switch (status) {
@@ -48,9 +66,11 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
       case TripStatus.accepted:
         return 'Conductor en camino';
       case TripStatus.arrived:
-        return 'Conductor llegó al punto de recojo';
+        return 'El conductor ha llegado al punto de recojo';
       case TripStatus.active:
-        return 'Viaje en curso';
+        return 'Viaje en curso hacia tu destino';
+      case TripStatus.completed:
+        return 'Viaje finalizado';
       default:
         return '';
     }
@@ -75,14 +95,13 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
       final user = AuthService.instance.currentUser;
 
       await FirestoreService.instance.createSosAlert(
-        driverId:
-            _driver?.uid ?? 'Sin asignar', // Podría aún no tener conductor
+        driverId: _driver?.uid ?? 'Sin asignar',
         latitude: pos.latitude,
         longitude: pos.longitude,
         city: user?.city ?? 'Tarapoto',
         name: user?.name,
         phone: user?.phone,
-        plate: _driver?.plate, // La placa del conductor si ya existe
+        plate: _driver?.plate,
         reportedBy: 'passenger',
       );
       if (mounted) {
@@ -131,11 +150,46 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     }
   }
 
-  /// Actualización optimizada del mapa incorporando rutas de calles reales
+  /// Abre Google Maps en modo navegación guiada de primera persona
+  Future<void> _openGoogleMapsNavigation(double destLat, double destLng) async {
+    final String navigationUrl = 'google.navigation:q=$destLat,$destLng&mode=d';
+    final String webMapsUrl = 'https://www.google.com/maps/dir/?api=1&destination=$destLat,$destLng&travelmode=driving';
+
+    final Uri navUri = Uri.parse(navigationUrl);
+    final Uri webUri = Uri.parse(webMapsUrl);
+
+    try {
+      // ignore: deprecated_member_use
+      if (await canLaunchUrl(navUri)) {
+        // ignore: deprecated_member_use
+        await launchUrl(navUri, mode: LaunchMode.externalApplication);
+      } else if (await canLaunchUrl(webUri)) {
+        // ignore: deprecated_member_use
+        await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No se pudo abrir Google Maps')),
+          );
+        }
+      }
+    } catch (e) {
+      try {
+        // ignore: deprecated_member_use
+        await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error al abrir el mapa: $e')),
+          );
+        }
+      }
+    }
+  }
+
   void _updateMapElements(Trip? trip) async {
     if (trip == null) return;
 
-    // 1. Obtener coordenadas de Origen y Destino
     final originLatLng = LatLng(
       trip.origin.latitude,
       trip.origin.longitude,
@@ -145,7 +199,6 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
       trip.destination.longitude,
     );
 
-    // 2. Ubicación del conductor
     LatLng? driverLatLng;
     if (_driver != null) {
       double? lat = _driver!.currentLatitude;
@@ -155,19 +208,16 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
       }
     }
 
-    // Conjuntos temporales para evitar parpadeos
     final Set<Marker> newMarkers = {};
     final Set<Polyline> newPolylines = {};
 
-    // Marcador del conductor
     if (driverLatLng != null) {
       newMarkers.add(
         Marker(
           markerId: const MarkerId('driver_marker'),
           position: driverLatLng,
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-            BitmapDescriptor.hueAzure,
-          ),
+          // AQUÍ SE USA LA IMAGEN DEL MOTOTAXI EN VEZ DEL GLOBO CLÁSICO
+          icon: _mototaxiIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
           infoWindow: InfoWindow(
             title: _driver?.name ?? 'Conductor',
             snippet: _driver?.plate,
@@ -177,7 +227,6 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
       );
     }
 
-    // 3. Obtener el trazado adaptado a las calles según el estado del viaje
     List<LatLng> polylineCoordinates = [];
     Color polylineColor = Colors.blue;
 
@@ -188,7 +237,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
         originLatLng,
       );
       polylineColor = Colors.blue;
-    } else if (trip.status == TripStatus.active) {
+    } else if (trip.status == TripStatus.arrived || trip.status == TripStatus.active) {
       polylineCoordinates = await DirectionsService.routeCoordinates(
         originLatLng,
         destLatLng,
@@ -207,7 +256,6 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
       );
     }
 
-    // Marcador de Origen
     newMarkers.add(
       Marker(
         markerId: const MarkerId('origin_marker'),
@@ -219,7 +267,6 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
       ),
     );
 
-    // Marcador de Destino
     newMarkers.add(
       Marker(
         markerId: const MarkerId('destination_marker'),
@@ -229,7 +276,6 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
       ),
     );
 
-    // Actualizamos los estados visuales en batch
     if (mounted) {
       setState(() {
         _markers.clear();
@@ -239,11 +285,26 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
       });
     }
 
-    // Seguir suavemente al conductor con la cámara del mapa si está en camino
     if (_mapController != null &&
         driverLatLng != null &&
         trip.status == TripStatus.accepted) {
       _mapController!.animateCamera(CameraUpdate.newLatLng(driverLatLng));
+    } else if (_mapController != null && trip.status == TripStatus.active) {
+      _mapController!.animateCamera(
+        CameraUpdate.newLatLngBounds(
+          LatLngBounds(
+            southwest: LatLng(
+              originLatLng.latitude < destLatLng.latitude ? originLatLng.latitude : destLatLng.latitude,
+              originLatLng.longitude < destLatLng.longitude ? originLatLng.longitude : destLatLng.longitude,
+            ),
+            northeast: LatLng(
+              originLatLng.latitude > destLatLng.latitude ? originLatLng.latitude : destLatLng.latitude,
+              originLatLng.longitude > destLatLng.longitude ? originLatLng.longitude : destLatLng.longitude,
+            ),
+          ),
+          70,
+        ),
+      );
     }
   }
 
@@ -254,7 +315,6 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
       builder: (context, snapshot) {
         final trip = snapshot.data;
 
-        // Auto-navegar a calificación al finalizar
         if (trip != null &&
             trip.status == TripStatus.completed &&
             !_hasNavigatedToRating) {
@@ -306,6 +366,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
             ? rawFare.toDouble()
             : double.tryParse(rawFare.toString()) ?? 0.0;
 
+        final destLat = trip?.destination.latitude ?? -6.4869;
+        final destLng = trip?.destination.longitude ?? -76.3654;
+
         return Scaffold(
           body: Stack(
             children: [
@@ -324,7 +387,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                   _mapController = controller;
                 },
               ),
-              // Tarjeta superior
+              // Tarjeta superior con botón de navegación en primera persona
               Positioned(
                 top: 40,
                 left: 20,
@@ -354,6 +417,12 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
+                          ),
+                          // Botón para abrir Google Maps en modo navegación guiada (1ra persona)
+                          IconButton(
+                            onPressed: () => _openGoogleMapsNavigation(destLat, destLng),
+                            icon: const Icon(Icons.navigation, color: Colors.blue),
+                            tooltip: 'Navegar en Google Maps',
                           ),
                           IconButton(
                             onPressed: () {
@@ -498,26 +567,15 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                           Expanded(
                             child: OutlinedButton.icon(
                               onPressed: () {
-                                print('--- BOTÓN LLAMAR PRESIONADO ---');
-                                print('_driver object: $_driver');
-                                print('_driver?.phone: ${_driver?.phone}');
-                                print('widget.tripData["driverPhone"]: ${widget.tripData['driverPhone']}');
-
                                 final phone = _driver?.phone ?? 
                                               widget.tripData['driverPhone'] ?? 
                                               '';
-                                
-                                print('Teléfono resultante para llamar: "$phone"');
-
                                 if (phone.isEmpty) {
-                                  print('-> El teléfono está vacío o nulo.');
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(content: Text('El teléfono del conductor está vacío')),
                                   );
                                   return;
                                 }
-
-                                print('-> Ejecutando llamada a: $phone');
                                 _makePhoneCall(phone);
                               },
                               icon: const Icon(Icons.call),
