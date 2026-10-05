@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http;
 import '../../services/firestore_service.dart';
@@ -10,6 +9,7 @@ import '../../services/auth_service.dart';
 import '../../models/trip_model.dart';
 import '../../models/driver_model.dart';
 import '../../theme.dart';
+import '../driver/driver_trip_chat_screen.dart';
 
 class ActiveTripScreen extends StatefulWidget {
   final String tripId;
@@ -75,9 +75,10 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     try {
       final pos = await LocationService.instance.current();
       final user = AuthService.instance.currentUser;
-      
+
       await FirestoreService.instance.createSosAlert(
-        driverId: _driver?.uid ?? 'Sin asignar', // Podría aún no tener conductor
+        driverId:
+            _driver?.uid ?? 'Sin asignar', // Podría aún no tener conductor
         latitude: pos.latitude,
         longitude: pos.longitude,
         city: user?.city ?? 'Tarapoto',
@@ -119,16 +120,10 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
 
   Future<void> _makePhoneCall(String phoneNumber) async {
     final cleanedNumber = phoneNumber.replaceAll(RegExp(r'[^\d+]'), '');
-    final Uri launchUri = Uri(
-      scheme: 'tel',
-      path: cleanedNumber,
-    );
+    final Uri launchUri = Uri(scheme: 'tel', path: cleanedNumber);
     try {
       // ignore: deprecated_member_use
-      await launchUrl(
-        launchUri,
-        mode: LaunchMode.externalApplication,
-      );
+      await launchUrl(launchUri, mode: LaunchMode.externalApplication);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -170,7 +165,10 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
   }
 
   /// Método para consultar la Google Directions API y obtener los puntos reales de las calles
-  Future<List<LatLng>> _getRouteCoordinates(LatLng origin, LatLng destination) async {
+  Future<List<LatLng>> _getRouteCoordinates(
+    LatLng origin,
+    LatLng destination,
+  ) async {
     List<LatLng> routePoints = [];
     try {
       final url = Uri.parse(
@@ -181,7 +179,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['routes'] != null && data['routes'].isNotEmpty) {
-          final pointsEncoded = data['routes'][0]['overview_polyline']['points'];
+          final pointsEncoded =
+              data['routes'][0]['overview_polyline']['points'];
           routePoints = _decodePolyline(pointsEncoded);
         }
       }
@@ -202,22 +201,14 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     if (trip == null) return;
 
     // 1. Obtener coordenadas de Origen y Destino
-    LatLng? originLatLng;
-    LatLng? destLatLng;
-
-    final rawOrigin = trip.origin ?? widget.tripData['origin'];
-    if (rawOrigin is GeoPoint) {
-      originLatLng = LatLng(rawOrigin.latitude, rawOrigin.longitude);
-    } else if (rawOrigin is Map && rawOrigin['latitude'] != null) {
-      originLatLng = LatLng(rawOrigin['latitude'], rawOrigin['longitude']);
-    }
-
-    final rawDest = trip.destination ?? widget.tripData['destination'];
-    if (rawDest is GeoPoint) {
-      destLatLng = LatLng(rawDest.latitude, rawDest.longitude);
-    } else if (rawDest is Map && rawDest['latitude'] != null) {
-      destLatLng = LatLng(rawDest['latitude'], rawDest['longitude']);
-    }
+    final originLatLng = LatLng(
+      trip.origin.latitude,
+      trip.origin.longitude,
+    );
+    final destLatLng = LatLng(
+      trip.destination.latitude,
+      trip.destination.longitude,
+    );
 
     // 2. Ubicación del conductor
     LatLng? driverLatLng;
@@ -239,7 +230,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
         Marker(
           markerId: const MarkerId('driver_marker'),
           position: driverLatLng,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueAzure,
+          ),
           infoWindow: InfoWindow(
             title: _driver?.name ?? 'Conductor',
             snippet: _driver?.plate,
@@ -255,15 +248,17 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
 
     if (trip.status == TripStatus.accepted) {
       final startPoint = driverLatLng ?? originLatLng;
-      if (startPoint != null && originLatLng != null) {
-        polylineCoordinates = await _getRouteCoordinates(startPoint, originLatLng);
-        polylineColor = Colors.blue;
-      }
+      polylineCoordinates = await _getRouteCoordinates(
+        startPoint,
+        originLatLng,
+      );
+      polylineColor = Colors.blue;
     } else if (trip.status == TripStatus.active) {
-      if (originLatLng != null && destLatLng != null) {
-        polylineCoordinates = await _getRouteCoordinates(originLatLng, destLatLng);
-        polylineColor = Colors.green;
-      }
+      polylineCoordinates = await _getRouteCoordinates(
+        originLatLng,
+        destLatLng,
+      );
+      polylineColor = Colors.green;
     }
 
     if (polylineCoordinates.isNotEmpty) {
@@ -278,28 +273,26 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     }
 
     // Marcador de Origen
-    if (originLatLng != null) {
-      newMarkers.add(
-        Marker(
-          markerId: const MarkerId('origin_marker'),
-          position: originLatLng,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-          infoWindow: const InfoWindow(title: 'Punto de recogida'),
+    newMarkers.add(
+      Marker(
+        markerId: const MarkerId('origin_marker'),
+        position: originLatLng,
+        icon: BitmapDescriptor.defaultMarkerWithHue(
+          BitmapDescriptor.hueGreen,
         ),
-      );
-    }
+        infoWindow: const InfoWindow(title: 'Punto de recogida'),
+      ),
+    );
 
     // Marcador de Destino
-    if (destLatLng != null) {
-      newMarkers.add(
-        Marker(
-          markerId: const MarkerId('destination_marker'),
-          position: destLatLng,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-          infoWindow: const InfoWindow(title: 'Destino final'),
-        ),
-      );
-    }
+    newMarkers.add(
+      Marker(
+        markerId: const MarkerId('destination_marker'),
+        position: destLatLng,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+        infoWindow: const InfoWindow(title: 'Destino final'),
+      ),
+    );
 
     // Actualizamos los estados visuales en batch
     if (mounted) {
@@ -312,7 +305,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     }
 
     // Seguir suavemente al conductor con la cámara del mapa si está en camino
-    if (_mapController != null && driverLatLng != null && trip.status == TripStatus.accepted) {
+    if (_mapController != null &&
+        driverLatLng != null &&
+        trip.status == TripStatus.accepted) {
       _mapController!.animateCamera(CameraUpdate.newLatLng(driverLatLng));
     }
   }
@@ -334,7 +329,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
               '/rating',
               arguments: {
                 'driverName': _driver?.name ?? 'Conductor',
-                'tripId': widget.tripId
+                'tripId': widget.tripId,
               },
             );
           });
@@ -344,9 +339,10 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
           _fetchDriverIfNeeded(trip.driverId);
 
           bool statusChanged = _lastStatus != trip.status;
-          bool driverMoved = _driver != null &&
+          bool driverMoved =
+              _driver != null &&
               (_lastDriverLat != _driver!.currentLatitude ||
-               _lastDriverLng != _driver!.currentLongitude);
+                  _lastDriverLng != _driver!.currentLongitude);
 
           if (statusChanged || driverMoved || _markers.isEmpty) {
             _lastStatus = trip.status;
@@ -363,13 +359,17 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
           }
         }
 
-        final destinationText = trip?.destinationAddress ?? 
-            widget.tripData['destinationAddress'] ?? 
-            widget.tripData['destination']?.toString() ?? 
+        final destinationText =
+            trip?.destinationAddress ??
+            widget.tripData['destinationAddress'] ??
+            widget.tripData['destination']?.toString() ??
             'Sin destino';
-            
-        final rawFare = widget.tripData['fareAmount'] ?? widget.tripData['fare'] ?? 0.0;
-        final fareValue = rawFare is num ? rawFare.toDouble() : double.tryParse(rawFare.toString()) ?? 0.0;
+
+        final rawFare =
+            widget.tripData['fareAmount'] ?? widget.tripData['fare'] ?? 0.0;
+        final fareValue = rawFare is num
+            ? rawFare.toDouble()
+            : double.tryParse(rawFare.toString()) ?? 0.0;
 
         return Scaffold(
           body: Stack(
@@ -472,7 +472,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  (trip?.driverName != null && trip!.driverName!.isNotEmpty)
+                                  (trip?.driverName != null &&
+                                          trip!.driverName!.isNotEmpty)
                                       ? trip.driverName!
                                       : 'Conductor asignado',
                                   style: const TextStyle(
@@ -491,7 +492,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                                         ),
                                         decoration: BoxDecoration(
                                           color: MijanoTheme.sol,
-                                          borderRadius: BorderRadius.circular(4),
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
                                         ),
                                         child: Text(
                                           trip!.driverPlate!,
@@ -533,18 +536,25 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                         children: [
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: _driver == null
-                                  ? null
-                                  : () {
-                                      Navigator.of(context).pushNamed(
-                                        '/chat',
-                                        arguments: {
-                                          'tripId': widget.tripId,
-                                          'driverId': _driver!.uid,
-                                          'driverName': _driver!.name,
-                                        },
-                                      );
-                                    },
+                              onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => DriverTripChatScreen(
+                                    tripId: widget.tripId,
+                                    senderId:
+                                        AuthService.instance.currentUser?.uid ??
+                                        '',
+                                    senderName:
+                                        AuthService
+                                            .instance
+                                            .currentUser
+                                            ?.name ??
+                                        'Pasajero',
+                                    conversationTitle: _driver != null
+                                        ? 'Conductor'
+                                        : 'Chat del viaje',
+                                  ),
+                                ),
+                              ),
                               icon: const Icon(Icons.chat),
                               label: const Text('Chat'),
                             ),
@@ -552,7 +562,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                           const SizedBox(width: 10),
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: (_driver == null || _driver!.phone.isEmpty)
+                              onPressed:
+                                  (_driver == null || _driver!.phone.isEmpty)
                                   ? null
                                   : () {
                                       _makePhoneCall(_driver!.phone);

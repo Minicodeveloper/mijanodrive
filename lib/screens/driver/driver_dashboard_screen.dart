@@ -9,6 +9,7 @@ import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
 import '../../services/location_service.dart';
 import '../../theme.dart';
+import 'driver_active_trip_screen.dart';
 
 class DriverDashboardScreen extends StatefulWidget {
   const DriverDashboardScreen({super.key});
@@ -70,14 +71,11 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         _driverPosition = pos;
       });
 
-      await _fs.updateDriverLocation(
-        _uid,
-        pos.latitude,
-        pos.longitude,
-      );
+      await _fs.updateDriverLocation(_uid, pos.latitude, pos.longitude);
 
-      _locationSubscription =
-          LocationService.instance.stream().listen((pos) async {
+      _locationSubscription = LocationService.instance.stream().listen((
+        pos,
+      ) async {
         if (!mounted) return;
 
         setState(() {
@@ -85,11 +83,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         });
 
         try {
-          await _fs.updateDriverLocation(
-            _uid,
-            pos.latitude,
-            pos.longitude,
-          );
+          await _fs.updateDriverLocation(_uid, pos.latitude, pos.longitude);
         } catch (_) {}
       });
     } catch (_) {
@@ -123,20 +117,16 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Aceptaste el viaje a ${trip.destinationAddress ?? 'Destino'}',
-          ),
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => DriverActiveMapScreen(trip: trip),
         ),
       );
     } catch (_) {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No se pudo aceptar el viaje'),
-        ),
+        const SnackBar(content: Text('No se pudo aceptar el viaje')),
       );
     }
   }
@@ -217,14 +207,9 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         return AlertDialog(
           title: const Row(
             children: [
-              Icon(
-                Icons.notifications_active,
-                color: MijanoTheme.sol,
-              ),
+              Icon(Icons.notifications_active, color: MijanoTheme.sol),
               SizedBox(width: 8),
-              Expanded(
-                child: Text('Nuevo viaje cercano'),
-              ),
+              Expanded(child: Text('Nuevo viaje cercano')),
             ],
           ),
           content: Column(
@@ -283,11 +268,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     );
   }
 
-  Widget _alertInfoRow(
-    IconData icon,
-    String title,
-    String value,
-  ) {
+  Widget _alertInfoRow(IconData icon, String title, String value) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -296,16 +277,11 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         Expanded(
           child: RichText(
             text: TextSpan(
-              style: const TextStyle(
-                color: Colors.black87,
-                fontSize: 14,
-              ),
+              style: const TextStyle(color: Colors.black87, fontSize: 14),
               children: [
                 TextSpan(
                   text: '$title: ',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                  ),
+                  style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
                 TextSpan(text: value),
               ],
@@ -361,9 +337,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No se pudo enviar la alerta S.O.S.'),
-        ),
+        const SnackBar(content: Text('No se pudo enviar la alerta S.O.S.')),
       );
     }
   }
@@ -383,25 +357,18 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
           // Estado de disponibilidad.
           Container(
             color: MijanoTheme.sol,
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 8,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               children: [
                 Icon(
-                  _available
-                      ? Icons.check_circle
-                      : Icons.pause_circle,
+                  _available ? Icons.check_circle : Icons.pause_circle,
                   color: MijanoTheme.ink,
                   size: 20,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    _available
-                        ? 'Disponible para viajes'
-                        : 'No disponible',
+                    _available ? 'Disponible para viajes' : 'No disponible',
                     style: const TextStyle(
                       fontWeight: FontWeight.w800,
                       color: MijanoTheme.ink,
@@ -419,28 +386,20 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
           // Ciudad.
           Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 8,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(
               children: [
                 const Icon(Icons.location_on, size: 18),
                 const SizedBox(width: 6),
                 Text(
                   'Viajes en $_city',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
                 const Spacer(),
                 if (_driverPosition != null)
                   const Row(
                     children: [
-                      Icon(
-                        Icons.gps_fixed,
-                        size: 16,
-                      ),
+                      Icon(Icons.gps_fixed, size: 16),
                       SizedBox(width: 4),
                       Text(
                         'GPS activo',
@@ -478,18 +437,25 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                 ? const Center(
                     child: Text(
                       'Actívate para recibir viajes',
-                      style: TextStyle(
-                        color: Colors.black54,
-                      ),
+                      style: TextStyle(color: Colors.black54),
                     ),
                   )
                 : StreamBuilder<List<Trip>>(
                     stream: _fs.pendingTrips(),
                     builder: (context, snap) {
-                      if (snap.connectionState ==
-                          ConnectionState.waiting) {
-                        return const Center(
-                          child: CircularProgressIndicator(),
+                      if (snap.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+
+                      if (snap.hasError) {
+                        return Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Text(
+                              'No se pudieron cargar los viajes: ${snap.error}',
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
                         );
                       }
 
@@ -502,9 +468,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                               SizedBox(height: 12),
                               Text(
                                 'Obteniendo ubicación GPS...',
-                                style: TextStyle(
-                                  color: Colors.black54,
-                                ),
+                                style: TextStyle(color: Colors.black54),
                               ),
                             ],
                           ),
@@ -519,24 +483,25 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                       _checkForNewNearbyTripAlerts(trips);
 
                       if (nearbyTrips.isEmpty) {
-                        return const Center(
+                        return Center(
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
+                              const Icon(
                                 Icons.two_wheeler,
                                 size: 48,
                                 color: Colors.black26,
                               ),
-                              SizedBox(height: 12),
+                              const SizedBox(height: 12),
                               Text(
-                                'No hay viajes cercanos por ahora',
-                                style: TextStyle(
-                                  color: Colors.black54,
-                                ),
+                                trips.isEmpty
+                                    ? 'No hay solicitudes pendientes en $_city'
+                                    : 'Hay ${trips.length} solicitud(es), pero ninguna está dentro de 3 km',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(color: Colors.black54),
                               ),
-                              SizedBox(height: 4),
-                              Text(
+                              const SizedBox(height: 4),
+                              const Text(
                                 'Se muestran viajes dentro de 3 km',
                                 style: TextStyle(
                                   color: Colors.black38,
@@ -551,8 +516,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                       return ListView.separated(
                         padding: const EdgeInsets.all(16),
                         itemCount: nearbyTrips.length,
-                        separatorBuilder: (_, _) =>
-                            const SizedBox(height: 12),
+                        separatorBuilder: (_, _) => const SizedBox(height: 12),
                         itemBuilder: (_, i) {
                           return _tripCard(nearbyTrips[i]);
                         },
@@ -572,10 +536,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: MijanoTheme.cream,
-        border: Border.all(
-          color: MijanoTheme.ink,
-          width: 2,
-        ),
+        border: Border.all(color: MijanoTheme.ink, width: 2),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
@@ -588,26 +549,16 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
           const SizedBox(height: 8),
           Row(
             children: [
-              const Icon(
-                Icons.trip_origin,
-                size: 16,
-              ),
+              const Icon(Icons.trip_origin, size: 16),
               const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  trip.originAddress ?? 'Origen',
-                ),
-              ),
+              Expanded(child: Text(trip.originAddress ?? 'Origen')),
             ],
           ),
           const Padding(
             padding: EdgeInsets.only(left: 7),
             child: SizedBox(
               height: 16,
-              child: VerticalDivider(
-                color: MijanoTheme.ink,
-                thickness: 1,
-              ),
+              child: VerticalDivider(color: MijanoTheme.ink, thickness: 1),
             ),
           ),
           Row(
@@ -621,9 +572,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
               Expanded(
                 child: Text(
                   trip.destinationAddress ?? 'Destino',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
             ],
@@ -661,6 +610,5 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         ],
       ),
     );
-
   }
 }
