@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/mijano_icon.dart';
 import 'package:mijano_drive_app/services/auth_service.dart';
 import 'package:mijano_drive_app/models/user_model.dart';
 import 'package:mijano_drive_app/screens/driver/pending_account_screen.dart';
@@ -123,11 +124,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 10),
 
                 const Center(
-                  child: Icon(
-                    Icons.two_wheeler,
-                    size: 80,
-                    color: Color(0xFFF9D408),
-                  ),
+                  child: MototaxiIcon(size: 96),
                 ),
 
                 const SizedBox(height: 20),

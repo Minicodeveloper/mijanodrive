@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../models/tariff_model.dart';
 import '../../services/firestore_service.dart';
 import '../../theme.dart';
+import '../../widgets/mijano_icon.dart';
 import 'shared_admin_widgets.dart';
 
 enum _TariffField {
@@ -556,7 +557,7 @@ class _TariffsModuleState extends State<TariffsModule> {
   Widget _categoryChip(VehicleCategory category) {
     final selected = _simCategory == category;
     return ChoiceChip(
-      avatar: Icon(category.icon, size: 18, color: MijanoTheme.ink),
+      avatar: MijanoIcon(category.icon, size: 18, color: MijanoTheme.ink),
       label: Text(category.label),
       selected: selected,
       showCheckmark: false,
@@ -579,7 +580,7 @@ class _TariffsModuleState extends State<TariffsModule> {
             color: MijanoTheme.sol.withValues(alpha: 0.25),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(icon, color: MijanoTheme.ink),
+          child: MijanoIcon(icon, color: MijanoTheme.ink),
         ),
         const SizedBox(width: 12),
         Expanded(

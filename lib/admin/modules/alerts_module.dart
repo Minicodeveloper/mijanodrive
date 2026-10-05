@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../theme.dart';
+import '../../widgets/mijano_icon.dart';
 import '../../services/firestore_service.dart';
 import 'shared_admin_widgets.dart';
 
@@ -326,7 +327,17 @@ class _AlertsModuleState extends State<AlertsModule> {
                       children: [
                         if (name != null) Text('👤 $name', style: const TextStyle(fontWeight: FontWeight.w600)),
                         if (phone != null) Text('📞 $phone', style: const TextStyle(fontWeight: FontWeight.w600)),
-                        if (plate != null) Text('🛵 Placa: $plate', style: const TextStyle(fontWeight: FontWeight.w600)),
+                        if (plate != null)
+                          Text.rich(
+                            TextSpan(children: [
+                              const WidgetSpan(
+                                alignment: PlaceholderAlignment.middle,
+                                child: MototaxiIcon(size: 18),
+                              ),
+                              TextSpan(text: ' Placa: $plate'),
+                            ]),
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
                         if (name == null && phone == null) 
                           const Text('⚠️ Datos de identidad no adjuntos en alerta', style: TextStyle(color: Colors.orange)),
                       ],

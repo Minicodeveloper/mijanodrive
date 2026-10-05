@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../models/trip_model.dart';
 import '../../services/firestore_service.dart';
 import '../../theme.dart';
+import '../../widgets/mijano_icon.dart';
 
 /// Pantalla "radar" de espera que se muestra mientras el viaje está en
 /// estado [TripStatus.pending].  Escucha en tiempo real el documento
@@ -174,11 +175,7 @@ class _SearchingTripScreenState extends State<SearchingTripScreen>
                             child: child,
                           );
                         },
-                        child: const Icon(
-                          Icons.two_wheeler,
-                          size: 52,
-                          color: MijanoTheme.ink,
-                        ),
+                        child: const MototaxiIcon(size: 60),
                       ),
                     ),
                   ),

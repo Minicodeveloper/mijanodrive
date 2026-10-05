@@ -5,6 +5,7 @@ import '../../config/app_config.dart';
 import '../../models/user_model.dart';
 import '../../services/auth_service.dart';
 import '../../theme.dart';
+import '../../widgets/mijano_icon.dart';
 
 /// Configuración obligatoria del perfil (primera vez):
 /// DNI + RENIEC autollenado, selfie en vivo, ciudad detectada, rol.
@@ -213,7 +214,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
           borderRadius: BorderRadius.circular(14),
         ),
         child: Column(children: [
-          Icon(icon, size: 34, color: MijanoTheme.ink),
+          MijanoIcon(icon, size: 34, color: MijanoTheme.ink),
           const SizedBox(height: 8),
           Text(label,
               style: const TextStyle(

@@ -11,6 +11,7 @@ import 'modules/reports_module.dart';
 import 'modules/alerts_module.dart';
 import 'modules/security_module.dart';
 import 'widgets/live_drivers_map.dart';
+import '../widgets/mijano_icon.dart';
 import '../admin/modules/drivers_module.dart';
 
 enum AdminRole { superAdmin, operator }
@@ -227,7 +228,7 @@ class _AdminShellState extends State<AdminShell> {
             color: MijanoTheme.sol,
             child: Row(
               children: const [
-                Icon(Icons.two_wheeler, color: MijanoTheme.ink),
+                MototaxiIcon(size: 30),
                 SizedBox(width: 10),
                 Text(
                   'MIJANO DRIVE',
@@ -706,11 +707,7 @@ class _DashboardModule extends StatelessWidget {
                                           ).withValues(alpha: 0.1),
                                           shape: BoxShape.circle,
                                         ),
-                                        child: Icon(
-                                          Icons.two_wheeler,
-                                          color: _statusColor(t.status),
-                                          size: 24,
-                                        ),
+                                        child: const MototaxiIcon(size: 28),
                                       ),
                                       title: Text(
                                         '${t.originAddress ?? "Origen"} → ${t.destinationAddress ?? "Destino"}',
@@ -931,7 +928,7 @@ class _DashboardModule extends StatelessWidget {
               color: color.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(icon, color: color, size: 28),
+            child: MijanoIcon(icon, color: color, size: 28),
           ),
           const SizedBox(width: 16),
           Expanded(

@@ -51,7 +51,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
   Future<void> _loadCustomMarker() async {
     try {
       _mototaxiIcon = await BitmapDescriptor.fromAssetImage(
-        const ImageConfiguration(size: Size(48, 48)),
+        const ImageConfiguration(size: Size(34, 45)), // mantiene la proporción del PNG
         'assets/images/ic_mototaxi_marker.png', // Ruta de tu imagen en assets
       );
     } catch (e) {

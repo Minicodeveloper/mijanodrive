@@ -6,6 +6,7 @@ import '../../firebase_options.dart';
 import '../../models/driver_model.dart';
 import '../../services/firestore_service.dart';
 import '../../theme.dart';
+import '../../widgets/mijano_icon.dart';
 import '../../utils/validators.dart';
 import 'profile_dialogs.dart';
 import 'shared_admin_widgets.dart';
@@ -193,7 +194,7 @@ class _SecurityModuleState extends State<SecurityModule> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(icon, size: 20, color: color),
+              MijanoIcon(icon, size: 20, color: color),
               const SizedBox(width: 10),
               Expanded(
                 child: Text.rich(

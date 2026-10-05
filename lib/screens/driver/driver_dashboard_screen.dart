@@ -9,6 +9,7 @@ import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
 import '../../services/location_service.dart';
 import '../../theme.dart';
+import '../../widgets/mijano_icon.dart';
 import '../../config/app_config.dart';
 import 'driver_active_trip_screen.dart';
 
@@ -509,11 +510,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(
-                                Icons.two_wheeler,
-                                size: 48,
-                                color: Colors.black26,
-                              ),
+                              const MototaxiIcon(size: 56, opacity: 0.35),
                               const SizedBox(height: 12),
                               Text(
                                 trips.isEmpty

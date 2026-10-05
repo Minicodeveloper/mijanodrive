@@ -7,6 +7,7 @@ import '../../models/driver_model.dart';
 import '../../services/firestore_service.dart';
 import '../../config/app_config.dart';
 import '../utils/marker_icons.dart';
+import '../../widgets/mijano_icon.dart';
 
 class _DriverMarkerTracker {
   Driver driver;
@@ -336,7 +337,16 @@ class _LiveDriversMapState extends State<LiveDriversMap> {
             const SizedBox(height: 8),
             Text('📞 ${d.phone.isNotEmpty ? d.phone : 'Sin teléfono'}', style: const TextStyle(fontSize: 13)),
             const SizedBox(height: 4),
-            Text('🛵 ${d.plate} · ${d.vehicleModel.isNotEmpty ? d.vehicleModel : 'Vehículo'}', style: const TextStyle(fontSize: 13)),
+            Text.rich(
+              TextSpan(children: [
+                const WidgetSpan(
+                  alignment: PlaceholderAlignment.middle,
+                  child: MototaxiIcon(size: 18),
+                ),
+                TextSpan(text: ' ${d.plate} · ${d.vehicleModel.isNotEmpty ? d.vehicleModel : 'Vehículo'}'),
+              ]),
+              style: const TextStyle(fontSize: 13),
+            ),
             const SizedBox(height: 4),
             Text('⏱️ Ubicación: $timeAgo', style: const TextStyle(fontSize: 12, color: Colors.black54)),
           ],
