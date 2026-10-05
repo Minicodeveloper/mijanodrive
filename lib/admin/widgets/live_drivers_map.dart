@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../models/driver_model.dart';
@@ -79,7 +80,21 @@ class _DriverMarkerTracker {
 }
 
 class LiveDriversMap extends StatefulWidget {
-  const LiveDriversMap({super.key});
+  /// true = el mapa está ampliado (lo controla el panel que lo contiene).
+  final bool expanded;
+
+  /// Alterna entre ampliado y normal. Si es null, no se muestra el botón.
+  final VoidCallback? onToggleExpanded;
+
+  /// Alto del mapa. El panel lo agranda cuando [expanded] es true.
+  final double height;
+
+  const LiveDriversMap({
+    super.key,
+    this.expanded = false,
+    this.onToggleExpanded,
+    this.height = 350,
+  });
 
   @override
   State<LiveDriversMap> createState() => _LiveDriversMapState();
@@ -93,6 +108,9 @@ class _LiveDriversMapState extends State<LiveDriversMap> {
   final Map<String, _DriverMarkerTracker> _trackers = {};
   Driver? _selectedDriver;
   bool _firstFitBounds = true;
+
+  // Nivel de tamaño del icono según el zoom actual del mapa.
+  int _iconLevel = MarkerIcons.defaultLevel;
 
   static const CameraPosition _fallbackPosition = CameraPosition(
     target: LatLng(-5.8942, -76.1142), // Yurimaguas
@@ -114,13 +132,66 @@ class _LiveDriversMapState extends State<LiveDriversMap> {
     _animTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
       _tick();
     });
+
+    // Esc restaura el mapa ampliado (a nivel de teclado global, sin foco propio).
+    HardwareKeyboard.instance.addHandler(_onKey);
+  }
+
+  @override
+  void didUpdateWidget(covariant LiveDriversMap oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.expanded != widget.expanded) {
+      // El contenedor cambió de tamaño: se avisa al mapa para que recalcule.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _notifyResize());
+    }
   }
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onKey);
     _driversSub?.cancel();
     _animTimer?.cancel();
     super.dispose();
+  }
+
+  bool _onKey(KeyEvent event) {
+    if (widget.expanded &&
+        event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.escape &&
+        widget.onToggleExpanded != null) {
+      widget.onToggleExpanded!();
+      return true;
+    }
+    return false;
+  }
+
+  /// Fuerza al mapa a recalcular su tamaño tras ampliar/restaurar sin perder
+  /// cámara ni zoom (desplazamiento de 0 px).
+  Future<void> _notifyResize() async {
+    if (!mounted || !_mapController.isCompleted) return;
+    try {
+      final controller = await _mapController.future;
+      await controller.moveCamera(CameraUpdate.scrollBy(0, 0));
+    } catch (_) {
+      // El mapa pudo cerrarse durante el cambio; no hay nada que recalcular.
+    }
+  }
+
+  /// Al terminar de mover/zoomear el mapa se elige el nivel de tamaño del
+  /// icono. Los bitmaps ya están generados (caché), así que aquí solo se
+  /// cambia de nivel y solo se redibuja si el nivel realmente cambió.
+  Future<void> _onCameraIdle() async {
+    if (!_mapController.isCompleted) return;
+    try {
+      final controller = await _mapController.future;
+      final zoom = await controller.getZoomLevel();
+      final level = MarkerIcons.levelForZoom(zoom);
+      if (mounted && level != _iconLevel) {
+        setState(() => _iconLevel = level);
+      }
+    } catch (_) {
+      // Si el mapa ya no existe, se conserva el nivel actual.
+    }
   }
 
   void _updateDrivers(List<Driver> drivers) {
@@ -275,7 +346,7 @@ class _LiveDriversMapState extends State<LiveDriversMap> {
   }
 
   Set<Marker> _buildMarkers() {
-    final icon = MarkerIcons.mototaxiIcon;
+    final icon = MarkerIcons.iconForLevel(_iconLevel);
     if (icon == null) return {};
 
     return _trackers.values.map((t) {
@@ -302,7 +373,7 @@ class _LiveDriversMapState extends State<LiveDriversMap> {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 350,
+      height: widget.height,
       width: double.infinity,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
@@ -321,6 +392,7 @@ class _LiveDriversMapState extends State<LiveDriversMap> {
                   _fitBounds();
                 }
               },
+              onCameraIdle: _onCameraIdle,
               onTap: (_) {
                 if (_selectedDriver != null) {
                   setState(() => _selectedDriver = null);
@@ -340,6 +412,27 @@ class _LiveDriversMapState extends State<LiveDriversMap> {
                 child: const Text('Conectado en vivo', style: TextStyle(fontWeight: FontWeight.bold)),
               ),
             ),
+            if (widget.onToggleExpanded != null)
+              Positioned(
+                top: 10,
+                right: 10,
+                child: Material(
+                  color: Colors.white.withValues(alpha: 0.95),
+                  elevation: 2,
+                  borderRadius: BorderRadius.circular(8),
+                  child: IconButton(
+                    tooltip: widget.expanded
+                        ? 'Restaurar tamaño (Esc)'
+                        : 'Ampliar mapa',
+                    icon: Icon(
+                      widget.expanded
+                          ? Icons.fullscreen_exit
+                          : Icons.fullscreen,
+                    ),
+                    onPressed: widget.onToggleExpanded,
+                  ),
+                ),
+              ),
             if (_selectedDriver != null)
               Positioned(
                 bottom: 20,

@@ -45,10 +45,19 @@ class _AdminShellState extends State<AdminShell> {
   bool _isLoadingRole = true;
   AdminRole? _actualRole;
 
+  /// true cuando el mapa de conductores del Panel está ampliado.
+  final ValueNotifier<bool> mapExpanded = ValueNotifier<bool>(false);
+
   @override
   void initState() {
     super.initState();
     _verifyRole();
+  }
+
+  @override
+  void dispose() {
+    mapExpanded.dispose();
+    super.dispose();
   }
 
   Future<void> _verifyRole() async {
@@ -197,6 +206,7 @@ class _AdminShellState extends State<AdminShell> {
         selected: isSelected,
         selectedTileColor: Colors.white.withValues(alpha: 0.06),
         onTap: () {
+          mapExpanded.value = false;
           setState(() => _currentView = title);
           if (closeDrawer) {
             Navigator.pop(context);
@@ -472,252 +482,292 @@ class _DashboardModule extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fs = FirestoreService.instance;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(28),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _Header('Panel de control', 'Visión general en tiempo real'),
-          const SizedBox(height: 24),
+    // El mapa queda siempre en la misma posición del árbol: al ampliar solo se
+    // ocultan (Offstage) los demás bloques y se agranda su alto, así el
+    // GoogleMap no se recrea y conserva cámara, zoom y marcadores.
+    return ValueListenableBuilder<bool>(
+      valueListenable: parentState.mapExpanded,
+      builder: (context, expanded, _) {
+        return LayoutBuilder(
+          builder: (context, viewport) {
+            // 56 = padding vertical del scroll, 40 = padding de la tarjeta.
+            double mapHeight = 350;
+            if (expanded && viewport.hasBoundedHeight) {
+              final available = viewport.maxHeight - 56 - 40 - 2;
+              mapHeight = available < 300 ? 300 : available;
+            }
+            return SingleChildScrollView(
+              physics: expanded ? const NeverScrollableScrollPhysics() : null,
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Offstage(
+                    offstage: expanded,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const _Header('Panel de control', 'Visión general en tiempo real'),
+                        const SizedBox(height: 24),
 
-          StreamBuilder<List<Driver>>(
-            stream: fs.allDrivers(),
-            builder: (context, dsnap) {
-              final drivers = dsnap.data ?? [];
-              final online = drivers.where((d) => d.isAvailable).length;
+                        StreamBuilder<List<Driver>>(
+                          stream: fs.allDrivers(),
+                          builder: (context, dsnap) {
+                            final drivers = dsnap.data ?? [];
+                            final online = drivers.where((d) => d.isAvailable).length;
 
-              return StreamBuilder<List<Trip>>(
-                stream: fs.allActiveTrips(),
-                builder: (context, tsnap) {
-                  final trips = tsnap.data ?? [];
+                            return StreamBuilder<List<Trip>>(
+                              stream: fs.allActiveTrips(),
+                              builder: (context, tsnap) {
+                                final trips = tsnap.data ?? [];
 
-                  final dineroEnCurso = trips.fold<double>(
-                    0.0,
-                    (total, t) => total + t.fareAmount,
-                  );
+                                final dineroEnCurso = trips.fold<double>(
+                                  0.0,
+                                  (total, t) => total + t.fareAmount,
+                                );
 
-                  final stats = <_Kpi>[
-                    _Kpi(
-                      'Viajes Activos',
-                      '${trips.length}',
-                      Icons.route,
-                      Colors.blue,
-                    ),
-                    _Kpi(
-                      'Conductores Libres',
-                      '$online',
-                      Icons.two_wheeler,
-                      Colors.green,
-                    ),
-                    _Kpi(
-                      'Total Conductores',
-                      '${drivers.length}',
-                      Icons.people,
-                      Colors.orange,
-                    ),
-                    if (canSeeMoney)
-                      _Kpi(
-                        'S/ en Curso',
-                        'S/ ${dineroEnCurso.toStringAsFixed(2)}',
-                        Icons.attach_money,
-                        Colors.purple,
-                      ),
-                  ];
+                                final stats = <_Kpi>[
+                                  _Kpi(
+                                    'Viajes Activos',
+                                    '${trips.length}',
+                                    Icons.route,
+                                    Colors.blue,
+                                  ),
+                                  _Kpi(
+                                    'Conductores Libres',
+                                    '$online',
+                                    Icons.two_wheeler,
+                                    Colors.green,
+                                  ),
+                                  _Kpi(
+                                    'Total Conductores',
+                                    '${drivers.length}',
+                                    Icons.people,
+                                    Colors.orange,
+                                  ),
+                                  if (canSeeMoney)
+                                    _Kpi(
+                                      'S/ en Curso',
+                                      'S/ ${dineroEnCurso.toStringAsFixed(2)}',
+                                      Icons.attach_money,
+                                      Colors.purple,
+                                    ),
+                                ];
 
-                  return LayoutBuilder(
-                    builder: (context, constraints) {
-                      const spacing = 16.0;
-                      final n = stats.length;
-                      final maxW = constraints.maxWidth;
+                                return LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    const spacing = 16.0;
+                                    final n = stats.length;
+                                    final maxW = constraints.maxWidth;
 
-                      final cols = maxW >= 900 ? n : (maxW >= 380 ? 2 : 1);
-                      final cardW = ((maxW - spacing * (cols - 1)) / cols)
-                          .floorToDouble();
+                                    final cols = maxW >= 900 ? n : (maxW >= 380 ? 2 : 1);
+                                    final cardW = ((maxW - spacing * (cols - 1)) / cols)
+                                        .floorToDouble();
 
-                      return Wrap(
-                        spacing: spacing,
-                        runSpacing: spacing,
-                        children: [
-                          for (var i = 0; i < n; i++)
-                            _stat(
-                              stats[i].label,
-                              stats[i].value,
-                              stats[i].icon,
-                              stats[i].color,
+                                    return Wrap(
+                                      spacing: spacing,
+                                      runSpacing: spacing,
+                                      children: [
+                                        for (var i = 0; i < n; i++)
+                                          _stat(
+                                            stats[i].label,
+                                            stats[i].value,
+                                            stats[i].icon,
+                                            stats[i].color,
 
-                              width: (cols > 1 && i == n - 1 && n % cols == 1)
-                                  ? maxW
-                                  : cardW,
-                            ),
-                        ],
-                      );
-                    },
-                  );
-                },
-              );
-            },
-          ),
-
-          const SizedBox(height: 24),
-          const Text(
-            'Solicitudes Pendientes',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: MijanoTheme.ink,
-            ),
-          ),
-          const SizedBox(height: 12),
-          _card(
-            child: StreamBuilder<List<Driver>>(
-              stream: fs.pendingDrivers(),
-              builder: (context, snap) {
-                if (snap.connectionState == ConnectionState.waiting) {
-                  return const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-                final pendingDrivers = snap.data ?? [];
-                if (pendingDrivers.isEmpty) {
-                  return const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(
-                      child: Text(
-                        'No hay solicitudes pendientes de nuevos conductores',
-                        style: TextStyle(color: Colors.black54),
-                      ),
-                    ),
-                  );
-                }
-                return Column(
-                  children: [
-                    for (final d in pendingDrivers)
-                      _pendingItem(context, fs, d),
-                  ],
-                );
-              },
-            ),
-          ),
-
-          const SizedBox(height: 24),
-          _card(
-            child: const LiveDriversMap(),
-          ),
-
-          const SizedBox(height: 24),
-          const Text(
-            'Viajes en curso',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: MijanoTheme.ink,
-            ),
-          ),
-          const SizedBox(height: 12),
-          _card(
-            child: StreamBuilder<List<Trip>>(
-              stream: fs.allActiveTrips(),
-              builder: (context, snap) {
-                if (snap.connectionState == ConnectionState.waiting) {
-                  return const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-                final trips = snap.data ?? [];
-                if (trips.isEmpty) {
-                  return const Padding(
-                    padding: EdgeInsets.all(32),
-                    child: Center(
-                      child: Column(
-                        children: [
-                          Icon(Icons.inbox, size: 40, color: Colors.black26),
-                          SizedBox(height: 8),
-                          Text(
-                            'No hay viajes en curso',
-                            style: TextStyle(color: Colors.black54),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }
-                return Column(
-                  children: [
-                    for (final t in trips)
-                      ListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
+                                            width: (cols > 1 && i == n - 1 && n % cols == 1)
+                                                ? maxW
+                                                : cardW,
+                                          ),
+                                      ],
+                                    );
+                                  },
+                                );
+                              },
+                            );
+                          },
                         ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        hoverColor: Colors.grey.shade50,
-                        leading: Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: _statusColor(
-                              t.status,
-                            ).withValues(alpha: 0.1),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.two_wheeler,
-                            color: _statusColor(t.status),
-                            size: 24,
+
+                        const SizedBox(height: 24),
+                        const Text(
+                          'Solicitudes Pendientes',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: MijanoTheme.ink,
                           ),
                         ),
-                        title: Text(
-                          '${t.originAddress ?? "Origen"} → ${t.destinationAddress ?? "Destino"}',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        subtitle: Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                            '${t.passengerName ?? "Pasajero"} · ${_statusEs(t.status)}',
+                        const SizedBox(height: 12),
+                        _card(
+                          child: StreamBuilder<List<Driver>>(
+                            stream: fs.pendingDrivers(),
+                            builder: (context, snap) {
+                              if (snap.connectionState == ConnectionState.waiting) {
+                                return const Padding(
+                                  padding: EdgeInsets.all(24),
+                                  child: Center(child: CircularProgressIndicator()),
+                                );
+                              }
+                              final pendingDrivers = snap.data ?? [];
+                              if (pendingDrivers.isEmpty) {
+                                return const Padding(
+                                  padding: EdgeInsets.all(24),
+                                  child: Center(
+                                    child: Text(
+                                      'No hay solicitudes pendientes de nuevos conductores',
+                                      style: TextStyle(color: Colors.black54),
+                                    ),
+                                  ),
+                                );
+                              }
+                              return Column(
+                                children: [
+                                  for (final d in pendingDrivers)
+                                    _pendingItem(context, fs, d),
+                                ],
+                              );
+                            },
                           ),
                         ),
-                        trailing: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            if (canSeeMoney)
-                              Text(
-                                'S/ ${t.fareAmount.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 16,
-                                  color: MijanoTheme.ink,
-                                ),
-                              )
-                            else
-                              const Text(
-                                '—',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 16,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                            const Text(
-                              'Efectivo',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.black54,
-                              ),
-                            ),
-                          ],
+
+                      ],
+                    ),
+                  ),
+                  if (!expanded) const SizedBox(height: 24),
+                  _card(
+                    child: LiveDriversMap(
+                      expanded: expanded,
+                      height: mapHeight,
+                      onToggleExpanded: () =>
+                          parentState.mapExpanded.value = !expanded,
+                    ),
+                  ),
+                  Offstage(
+                    offstage: expanded,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+
+                        const SizedBox(height: 24),
+                        const Text(
+                          'Viajes en curso',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: MijanoTheme.ink,
+                          ),
                         ),
-                      ),
-                  ],
-                );
-              },
-            ),
-          ),
-        ],
-      ),
+                        const SizedBox(height: 12),
+                        _card(
+                          child: StreamBuilder<List<Trip>>(
+                            stream: fs.allActiveTrips(),
+                            builder: (context, snap) {
+                              if (snap.connectionState == ConnectionState.waiting) {
+                                return const Padding(
+                                  padding: EdgeInsets.all(24),
+                                  child: Center(child: CircularProgressIndicator()),
+                                );
+                              }
+                              final trips = snap.data ?? [];
+                              if (trips.isEmpty) {
+                                return const Padding(
+                                  padding: EdgeInsets.all(32),
+                                  child: Center(
+                                    child: Column(
+                                      children: [
+                                        Icon(Icons.inbox, size: 40, color: Colors.black26),
+                                        SizedBox(height: 8),
+                                        Text(
+                                          'No hay viajes en curso',
+                                          style: TextStyle(color: Colors.black54),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }
+                              return Column(
+                                children: [
+                                  for (final t in trips)
+                                    ListTile(
+                                      contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 8,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      hoverColor: Colors.grey.shade50,
+                                      leading: Container(
+                                        padding: const EdgeInsets.all(10),
+                                        decoration: BoxDecoration(
+                                          color: _statusColor(
+                                            t.status,
+                                          ).withValues(alpha: 0.1),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Icon(
+                                          Icons.two_wheeler,
+                                          color: _statusColor(t.status),
+                                          size: 24,
+                                        ),
+                                      ),
+                                      title: Text(
+                                        '${t.originAddress ?? "Origen"} → ${t.destinationAddress ?? "Destino"}',
+                                        style: const TextStyle(fontWeight: FontWeight.bold),
+                                      ),
+                                      subtitle: Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Text(
+                                          '${t.passengerName ?? "Pasajero"} · ${_statusEs(t.status)}',
+                                        ),
+                                      ),
+                                      trailing: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        crossAxisAlignment: CrossAxisAlignment.end,
+                                        children: [
+                                          if (canSeeMoney)
+                                            Text(
+                                              'S/ ${t.fareAmount.toStringAsFixed(2)}',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w900,
+                                                fontSize: 16,
+                                                color: MijanoTheme.ink,
+                                              ),
+                                            )
+                                          else
+                                            const Text(
+                                              '—',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w900,
+                                                fontSize: 16,
+                                                color: Colors.grey,
+                                              ),
+                                            ),
+                                          const Text(
+                                            'Efectivo',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.black54,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                ],
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
