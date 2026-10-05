@@ -925,8 +925,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         snapshot.data!.data() as Map<String, dynamic>;
                     final String status = tripData['status'] ?? 'pending';
 
-                    // Si el conductor acepta o el viaje está en curso, muestra ActiveTripScreen
-                    if (status == 'accepted' || status == 'in_progress') {
+                    // Mantener el viaje visible durante todos sus estados activos.
+                    if (status == 'accepted' ||
+                      status == 'arrived' ||
+                      status == 'active' ||
+                      status == 'in_progress' ||
+                      status == 'completed') {
                       return ActiveTripScreen(
                         tripId: _activeTripId!,
                         tripData: tripData,
