@@ -497,11 +497,29 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                           const SizedBox(width: 10),
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: (_driver == null || _driver!.phone.isEmpty)
-                                  ? null
-                                  : () {
-                                      _makePhoneCall(_driver!.phone);
-                                    },
+                              onPressed: () {
+                                print('--- BOTÓN LLAMAR PRESIONADO ---');
+                                print('_driver object: $_driver');
+                                print('_driver?.phone: ${_driver?.phone}');
+                                print('widget.tripData["driverPhone"]: ${widget.tripData['driverPhone']}');
+
+                                final phone = _driver?.phone ?? 
+                                              widget.tripData['driverPhone'] ?? 
+                                              '';
+                                
+                                print('Teléfono resultante para llamar: "$phone"');
+
+                                if (phone.isEmpty) {
+                                  print('-> El teléfono está vacío o nulo.');
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('El teléfono del conductor está vacío')),
+                                  );
+                                  return;
+                                }
+
+                                print('-> Ejecutando llamada a: $phone');
+                                _makePhoneCall(phone);
+                              },
                               icon: const Icon(Icons.call),
                               label: const Text('Llamar'),
                             ),
