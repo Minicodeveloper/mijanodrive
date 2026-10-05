@@ -3,11 +3,13 @@ import '../../theme.dart';
 import '../../models/driver_model.dart';
 import '../../services/firestore_service.dart';
 import 'shared_admin_widgets.dart';
+import 'profile_dialogs.dart';
 
 class DriversModule extends StatefulWidget {
   final Future<void> Function(BuildContext, Driver, String, String, StateSetter)? onUpdateStatus;
+  final bool canSeeMoney;
 
-  const DriversModule({super.key, this.onUpdateStatus});
+  const DriversModule({super.key, this.onUpdateStatus, required this.canSeeMoney});
 
   @override
   State<DriversModule> createState() => _DriversModuleState();
@@ -39,7 +41,7 @@ class _DriversModuleState extends State<DriversModule> {
             }
             final drivers = snap.data ?? [];
             final pendientes = drivers.where((d) => d.status == 'pending').toList();
-            final activos = drivers.where((d) => d.status == 'approved').toList();
+            final activos = drivers.where((d) => d.status == 'approved' && !d.isBlocked).toList();
             final inactivos = drivers.where((d) => d.status == 'rejected' || d.isBlocked).toList();
 
             List<Driver> filtered = drivers;
@@ -117,19 +119,22 @@ class _DriversModuleState extends State<DriversModule> {
         ),
         const Divider(height: 1),
         for (final d in list) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Row(children: [
-              Expanded(flex: 3, child: _identity(d)),
-              Expanded(flex: 2, child: _vehicle(d)),
-              Expanded(
-                flex: 3,
-                child: Text(d.email.isNotEmpty ? d.email : 'Sin correo',
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-              ),
-              Expanded(flex: 2, child: Align(alignment: Alignment.centerLeft, child: _buildStatusBadge(d.status))),
-              SizedBox(width: 56, child: _actions(d)),
-            ]),
+          InkWell(
+            onTap: () => _openProfile(d),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(children: [
+                Expanded(flex: 3, child: _identity(d)),
+                Expanded(flex: 2, child: _vehicle(d)),
+                Expanded(
+                  flex: 3,
+                  child: Text(d.email.isNotEmpty ? d.email : 'Sin correo',
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                ),
+                Expanded(flex: 2, child: Align(alignment: Alignment.centerLeft, child: _buildStatusBadge(_statusOf(d)))),
+                SizedBox(width: 56, child: _actions(d)),
+              ]),
+            ),
           ),
           const Divider(height: 1),
         ],
@@ -148,8 +153,13 @@ class _DriversModuleState extends State<DriversModule> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(children: [
-                  Expanded(child: _identity(list[i])),
-                  _buildStatusBadge(list[i].status),
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => _openProfile(list[i]),
+                      child: _identity(list[i]),
+                    ),
+                  ),
+                  _buildStatusBadge(_statusOf(list[i])),
                   _actions(list[i]),
                 ]),
                 const SizedBox(height: 6),
@@ -228,19 +238,64 @@ class _DriversModuleState extends State<DriversModule> {
     );
   }
 
+  void _openProfile(Driver d) =>
+      DriverProfileDialog.show(context, d.uid, onUpdateStatus: widget.onUpdateStatus, canSeeMoney: widget.canSeeMoney);
+
+  /// 'blocked' tiene prioridad sobre el estado de aprobación.
+  String _statusOf(Driver d) => d.isBlocked ? 'blocked' : d.status;
+
+  Future<void> _run(Future<void> Function() action, String okMsg) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await action();
+      messenger.showSnackBar(SnackBar(content: Text(okMsg)));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('No se pudo completar la acción: $e')));
+    }
+  }
+
   Widget _actions(Driver d) {
     return PopupMenuButton<String>(
       padding: EdgeInsets.zero,
       onSelected: (value) async {
-        if (value == 'approve') {
-          await fs.approveDriver(d.uid, true);
-        } else if (value == 'reject') {
-          await fs.approveDriver(d.uid, false);
+        switch (value) {
+          case 'profile':
+            _openProfile(d);
+            break;
+          case 'approve':
+            await _run(() => fs.approveDriver(d.uid, true), '${d.name} aprobado');
+            break;
+          case 'reject':
+            final ok = await adminConfirm(context,
+                title: 'Rechazar conductor',
+                body: '¿Rechazar a ${d.name}? No podrá operar hasta ser aprobado de nuevo.',
+                action: 'Rechazar',
+                danger: true);
+            if (!ok || !mounted) return;
+            await _run(() => fs.approveDriver(d.uid, false), '${d.name} rechazado');
+            break;
+          case 'block':
+            final ok = await adminConfirm(context,
+                title: 'Bloquear conductor',
+                body: '${d.name} no podrá iniciar sesión mientras esté bloqueado.',
+                action: 'Bloquear',
+                danger: true);
+            if (!ok || !mounted) return;
+            await _run(() => fs.setAccountBlocked(d.uid, true), '${d.name} bloqueado');
+            break;
+          case 'unblock':
+            await _run(() => fs.setAccountBlocked(d.uid, false), '${d.name} desbloqueado');
+            break;
         }
       },
-      itemBuilder: (context) => const [
-        PopupMenuItem(value: 'approve', child: Text('Aprobar')),
-        PopupMenuItem(value: 'reject', child: Text('Rechazar / Desactivar')),
+      itemBuilder: (context) => [
+        const PopupMenuItem(value: 'profile', child: Text('Ver perfil')),
+        if (d.status != 'approved') const PopupMenuItem(value: 'approve', child: Text('Aprobar')),
+        if (d.status != 'rejected') const PopupMenuItem(value: 'reject', child: Text('Rechazar')),
+        PopupMenuItem(
+          value: d.isBlocked ? 'unblock' : 'block',
+          child: Text(d.isBlocked ? 'Desbloquear' : 'Bloquear acceso'),
+        ),
       ],
     );
   }
@@ -256,6 +311,10 @@ class _DriversModuleState extends State<DriversModule> {
       case 'rejected':
         color = Colors.red;
         text = 'Rechazado';
+        break;
+      case 'blocked':
+        color = Colors.red.shade800;
+        text = 'Bloqueado';
         break;
       default:
         color = Colors.orange;

@@ -9,6 +9,11 @@ class Trip {
   final String passengerId;
   final String? passengerName; 
   final String? driverId;
+  final String? driverName;
+  final String? driverPlate;
+  final String? driverVehicleModel;
+  final String? driverVehicleBrand;
+  final String? driverVehicleColor;
   final GeoPoint origin;
   final GeoPoint destination;
   final String? originAddress;
@@ -27,6 +32,11 @@ class Trip {
     required this.passengerId,
     this.passengerName, 
     this.driverId,
+    this.driverName,
+    this.driverPlate,
+    this.driverVehicleModel,
+    this.driverVehicleBrand,
+    this.driverVehicleColor,
     required this.origin,
     required this.destination,
     this.originAddress,
@@ -46,6 +56,11 @@ class Trip {
       'passengerId': passengerId,
       'passengerName': passengerName, 
       'driverId': driverId,
+      if (driverName != null) 'driverName': driverName,
+      if (driverPlate != null) 'driverPlate': driverPlate,
+      if (driverVehicleModel != null) 'driverVehicleModel': driverVehicleModel,
+      if (driverVehicleBrand != null) 'driverVehicleBrand': driverVehicleBrand,
+      if (driverVehicleColor != null) 'driverVehicleColor': driverVehicleColor,
       'origin': origin,
       'destination': destination,
       'originAddress': originAddress,
@@ -67,6 +82,11 @@ class Trip {
       passengerId: map['passengerId'] ?? '',
       passengerName: map['passengerName'], 
       driverId: map['driverId'],
+      driverName: map['driverName'],
+      driverPlate: map['driverPlate'],
+      driverVehicleModel: map['driverVehicleModel'],
+      driverVehicleBrand: map['driverVehicleBrand'],
+      driverVehicleColor: map['driverVehicleColor'],
       origin: map['origin'] ?? GeoPoint(0, 0),
       destination: map['destination'] ?? GeoPoint(0, 0),
       originAddress: map['originAddress'],
@@ -117,6 +137,11 @@ class Trip {
     String? passengerId,
     String? passengerName, 
     String? driverId,
+    String? driverName,
+    String? driverPlate,
+    String? driverVehicleModel,
+    String? driverVehicleBrand,
+    String? driverVehicleColor,
     GeoPoint? origin,
     GeoPoint? destination,
     String? originAddress,
@@ -135,6 +160,11 @@ class Trip {
       passengerId: passengerId ?? this.passengerId,
       passengerName: passengerName ?? this.passengerName, 
       driverId: driverId ?? this.driverId,
+      driverName: driverName ?? this.driverName,
+      driverPlate: driverPlate ?? this.driverPlate,
+      driverVehicleModel: driverVehicleModel ?? this.driverVehicleModel,
+      driverVehicleBrand: driverVehicleBrand ?? this.driverVehicleBrand,
+      driverVehicleColor: driverVehicleColor ?? this.driverVehicleColor,
       origin: origin ?? this.origin,
       destination: destination ?? this.destination,
       originAddress: originAddress ?? this.originAddress,

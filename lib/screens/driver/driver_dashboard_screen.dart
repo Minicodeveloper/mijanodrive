@@ -108,9 +108,17 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
   Future<void> _accept(Trip trip) async {
     try {
+      final user = _auth.currentUser;
       await _fs.updateTrip(trip.id, {
         'driverId': _uid,
         'status': 'accepted',
+        if (user != null) ...{
+          'driverName': user.name,
+          'driverPlate': user.vehiclePlate,
+          'driverVehicleBrand': user.vehicleBrand,
+          'driverVehicleModel': user.vehicleModel,
+          'driverVehicleColor': user.vehicleColor,
+        }
       });
 
       if (!mounted) return;
@@ -311,12 +319,17 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   Future<void> _sos() async {
     try {
       final pos = await LocationService.instance.current();
+      final user = _auth.currentUser;
 
       await _fs.createSosAlert(
         driverId: _uid,
         latitude: pos.latitude,
         longitude: pos.longitude,
         city: _city,
+        name: user?.name,
+        phone: user?.phone,
+        plate: user?.vehiclePlate ?? 'Pendiente', // Preparado para cuando se generen
+        reportedBy: 'driver',
       );
 
       if (!mounted) return;

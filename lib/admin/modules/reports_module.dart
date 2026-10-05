@@ -5,7 +5,8 @@ import 'shared_admin_widgets.dart';
 import '../../theme.dart';
 
 class ReportsModule extends StatefulWidget {
-  const ReportsModule({super.key});
+  final bool canSeeMoney;
+  const ReportsModule({super.key, required this.canSeeMoney});
 
   @override
   State<ReportsModule> createState() => _ReportsModuleState();
@@ -197,10 +198,7 @@ class _ChatMonitorState extends State<_ChatMonitor> {
   final fs = FirestoreService.instance;
 
   final List<String> _quickReplies = [
-    'Hola, ¿en qué podemos ayudarte con tu viaje?',
-    'Por favor, mantén la calma, ya estamos revisando tu caso.',
-    'El conductor va en camino hacia tu ubicación.',
-    'Gracias por reportarlo, lo verificaremos de inmediato.'
+    'Hola, ¿en qué podemos ayudarte con tu viaje?'
   ];
 
   void _send(String text) {
@@ -277,7 +275,7 @@ class _ChatMonitorState extends State<_ChatMonitor> {
         ),
         Container(
           padding: const EdgeInsets.all(12),
-          color: const Color(0xFF121212),
+          color: const Color(0xFF959595),
           child: Row(
             children: [
               Expanded(

@@ -6,8 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'firebase_options.dart';
 import 'theme.dart';
-import 'admin/admin_app.dart';
-import 'admin/register_admin_screen.dart';
+import 'admin/admin_app.dart' as admin;
 
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/register_screen.dart';
@@ -62,9 +61,6 @@ class MijanoDriveApp extends StatelessWidget {
       case '/register':
         final initialRole = args['initialRole'] ?? 'passenger';
         page = RegisterScreen(initialRole: initialRole);
-        break;
-      case '/register-admin':
-        page = const RegisterAdminScreen();
         break;
       case '/role-select':
         page = const RoleSelectScreen();
@@ -125,8 +121,8 @@ class MijanoDriveApp extends StatelessWidget {
         page = const DriverMainLayout();
         break;
       case '/admin': 
-        final adminRole = args['role'] ?? AdminRole.superAdmin;
-        page = AdminApp(role: adminRole);
+        // El rol se resuelve dentro de AdminShell buscando en Firestore, no por params
+        page = const admin.AdminApp();
         break;
       default:
         page = LoginScreen() as Widget;

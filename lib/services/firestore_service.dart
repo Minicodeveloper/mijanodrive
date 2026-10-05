@@ -47,24 +47,10 @@ class FirestoreService {
 
   Future<Driver?> getDriver(String uid) async {
     try {
-      
-      final userDoc = await _db.collection('users').doc(uid).get();
-      
-      
-      final driverDoc = await _db.collection('drivers').doc(uid).get();
-
-      if (!userDoc.exists && !driverDoc.exists) return null;
-
-      
-      final Map<String, dynamic> combinedData = {
-        if (userDoc.exists && userDoc.data() != null) ...userDoc.data()!,
-        if (driverDoc.exists && driverDoc.data() != null) ...driverDoc.data()!,
-      };
-
-      
-      return Driver.fromMap(combinedData, uid);
-    } catch (e) {
-      print('Error al obtener conductor combinado: $e');
+      final doc = await _db.collection('drivers').doc(uid).get();
+      if (!doc.exists) return null;
+      return Driver.fromFirestore(doc);
+    } catch (_) {
       return null;
     }
   }
@@ -102,13 +88,6 @@ class FirestoreService {
       .where('status', isEqualTo: 'pending')
       .snapshots()
       .map((snapshot) {
-        
-        print('🔍 Total de viajes pendientes encontrados en Firestore: ${snapshot.docs.length}');
-        
-        for (var doc in snapshot.docs) {
-          print('📄 Viaje ID: ${doc.id} \vert{} Datos:${doc.data()}');
-        }
-
         return snapshot.docs.map((doc) => Trip.fromFirestore(doc)).toList();
       });
 }
@@ -200,10 +179,20 @@ class FirestoreService {
       .snapshots()
       .map((q) => q.docs.map((d) => Driver.fromFirestore(d)).toList());
 
-  Future<void> approveDriver(String uid, bool approved) => _db
-      .collection('users')
-      .doc(uid)
-      .set({'isApproved': approved, 'status': approved ? 'approved' : 'rejected'}, SetOptions(merge: true));
+  /// Actualiza la cuenta en `users` (login / estado de la cuenta) y, si existe,
+  /// en `drivers` (listado del panel), para que ambas colecciones no se
+  /// desincronicen. Sirve también para pasajeros: ahí `drivers/{uid}` no existe.
+  Future<void> _updateAccountDocs(String uid, Map<String, dynamic> data) async {
+    await _db.collection('users').doc(uid).set(data, SetOptions(merge: true));
+    final driverRef = _db.collection('drivers').doc(uid);
+    final snap = await driverRef.get();
+    if (snap.exists) await driverRef.update(data);
+  }
+
+  Future<void> approveDriver(String uid, bool approved) => _updateAccountDocs(uid, {
+        'isApproved': approved,
+        'status': approved ? 'approved' : 'rejected',
+      });
 
   Future<void> updateDriverStatus(String uid, {bool? isApproved, bool? isBlocked, bool? isRejected}) {
     final Map<String, dynamic> data = {};
@@ -216,8 +205,63 @@ class FirestoreService {
       data['isRejected'] = isRejected;
       if (isRejected) data['status'] = 'rejected';
     }
-    return _db.collection('users').doc(uid).set(data, SetOptions(merge: true));
+    return _updateAccountDocs(uid, data);
   }
+
+  // =====================================================
+  //  PERMISOS: cuentas del panel, conductores y pasajeros
+  // =====================================================
+
+  /// Roles guardados en `users.role` que pueden entrar al panel.
+  /// 'admin' / 'superAdmin' = SuperAdmin (dueños) · 'operator' = Gerente.
+  static const List<String> staffRoles = ['admin', 'superAdmin', 'operator'];
+
+  /// Cuentas del panel (SuperAdmin y Gerente).
+  Stream<List<Map<String, dynamic>>> staffAccounts() => _db
+      .collection('users')
+      .where('role', whereIn: staffRoles)
+      .snapshots()
+      .map((q) => q.docs.map((d) => {'uid': d.id, ...d.data()}).toList());
+
+  /// Documento `users/{uid}` en vivo (null si no existe).
+  Stream<Map<String, dynamic>?> userDoc(String uid) => _db
+      .collection('users')
+      .doc(uid)
+      .snapshots()
+      .map((d) => d.exists ? {'uid': d.id, ...?d.data()} : null);
+
+  /// Conductor en vivo desde `drivers/{uid}` (null si no existe).
+  Stream<Driver?> driverStream(String uid) => _db
+      .collection('drivers')
+      .doc(uid)
+      .snapshots()
+      .map((d) => d.exists ? Driver.fromFirestore(d) : null);
+
+  /// Perfil de una cuenta del panel recién creada en Firebase Auth.
+  Future<void> saveStaffProfile({
+    required String uid,
+    required String name,
+    required String email,
+    required String role,
+    String? createdBy,
+  }) =>
+      _db.collection('users').doc(uid).set({
+        'uid': uid,
+        'name': name,
+        'email': email,
+        'role': role,
+        'status': 'approved',
+        'isBlocked': false,
+        'createdAt': FieldValue.serverTimestamp(),
+        if (createdBy != null) 'createdBy': createdBy,
+      });
+
+  Future<void> setStaffRole(String uid, String role) =>
+      _db.collection('users').doc(uid).set({'role': role}, SetOptions(merge: true));
+
+  /// Bloquea / desbloquea cualquier cuenta (staff, conductor o pasajero).
+  Future<void> setAccountBlocked(String uid, bool blocked) =>
+      _updateAccountDocs(uid, {'isBlocked': blocked});
 
   /// Notificar al conductor
   Future<void> notifyDriver(String driverId, String title, String body) async {
@@ -439,16 +483,34 @@ class FirestoreService {
       .map((d) => {'id': d.id, ...d.data()})
       .toList());
 
-  Future<void> resolveAlert(String id) => _db
+  /// Alertas S.O.S. resueltas (historial).
+  Stream<List<Map<String, dynamic>>> resolvedAlerts() => _db
+      .collection('alerts')
+      .where('status', isEqualTo: 'resolved')
+      .snapshots()
+      .map((q) => q.docs
+      .map((d) => {'id': d.id, ...d.data()})
+      .toList());
+
+  Future<void> resolveAlert(String id, {String? notes, String? resolvedBy}) => _db
       .collection('alerts')
       .doc(id)
-      .set({'status': 'resolved'}, SetOptions(merge: true));
+      .set({
+        'status': 'resolved',
+        if (notes != null) 'resolutionNotes': notes,
+        if (resolvedBy != null) 'resolvedBy': resolvedBy,
+        'resolvedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
 
   Future<void> createSosAlert({
     required String driverId,
     required double latitude,
     required double longitude,
     required String city,
+    String? phone,
+    String? name,
+    String? plate,
+    String reportedBy = 'driver', // 'driver' o 'passenger'
   }) =>
       _db.collection('alerts').add({
         'type': 'sos',
@@ -456,6 +518,10 @@ class FirestoreService {
         'latitude': latitude,
         'longitude': longitude,
         'city': city,
+        'phone': phone,
+        'name': name,
+        'plate': plate,
+        'reportedBy': reportedBy,
         'status': 'open',
         'createdAt': FieldValue.serverTimestamp(),
       });

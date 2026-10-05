@@ -1,17 +1,19 @@
 import 'package:flutter/material.dart';
 import '../../theme.dart';
 import '../../services/firestore_service.dart';
+import 'profile_dialogs.dart';
 import 'shared_admin_widgets.dart';
 
 class UsersModule extends StatefulWidget {
-  const UsersModule({super.key});
+  final bool canSeeMoney;
+  const UsersModule({super.key, required this.canSeeMoney});
 
   @override
   State<UsersModule> createState() => _UsersModuleState();
 }
 
 class _UsersModuleState extends State<UsersModule> {
-  int _currentTab = 0; // 0: Todos
+  int _currentTab = 0; // 0: Todos, 1: Activos, 2: Bloqueados
   final _searchCtrl = TextEditingController();
   String _query = '';
   final fs = FirestoreService.instance;
@@ -21,6 +23,14 @@ class _UsersModuleState extends State<UsersModule> {
     _searchCtrl.dispose();
     super.dispose();
   }
+
+  /// `users` también guarda conductores y cuentas del panel: aquí solo pasajeros.
+  bool _isPassenger(Map<String, dynamic> u) {
+    final r = (u['role'] ?? 'passenger').toString().toLowerCase();
+    return r == 'passenger' || r == 'pasajero';
+  }
+
+  bool _isBlocked(Map<String, dynamic> u) => u['isBlocked'] == true;
 
   @override
   Widget build(BuildContext context) {
@@ -34,16 +44,26 @@ class _UsersModuleState extends State<UsersModule> {
             if (snap.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
             }
+            if (snap.hasError) {
+              return Text('No se pudo cargar la lista: ${snap.error}',
+                  style: TextStyle(color: Colors.red.shade700));
+            }
 
-            final allUsers = snap.data ?? [];
+            final allUsers = (snap.data ?? []).where(_isPassenger).toList();
+            final activos = allUsers.where((u) => !_isBlocked(u)).toList();
+            final bloqueados = allUsers.where(_isBlocked).toList();
+
             List<Map<String, dynamic>> filtered = allUsers;
+            if (_currentTab == 1) filtered = activos;
+            if (_currentTab == 2) filtered = bloqueados;
 
             if (_query.isNotEmpty) {
               final q = _query.toLowerCase();
               filtered = filtered
                   .where((u) =>
-              (u['name']?.toString().toLowerCase() ?? '').contains(q) ||
-                  (u['phone']?.toString() ?? '').contains(_query))
+                      (u['name']?.toString().toLowerCase() ?? '').contains(q) ||
+                      (u['email']?.toString().toLowerCase() ?? '').contains(q) ||
+                      (u['phone']?.toString() ?? '').contains(_query))
                   .toList();
             }
 
@@ -53,16 +73,20 @@ class _UsersModuleState extends State<UsersModule> {
                 const AdminHeader('Gestión de Clientes', 'Supervisión y control de usuarios pasajeros'),
                 AdminStatsGrid(items: [
                   AdminStat('Total Clientes', '${allUsers.length}', Icons.people, Colors.blueGrey),
-                  const AdminStat('Pendientes', '0', Icons.access_time, Colors.orange),
-                  const AdminStat('Con Viajes', '0', Icons.location_on, Colors.green),
+                  AdminStat('Activos', '${activos.length}', Icons.check_circle, Colors.green),
+                  AdminStat('Bloqueados', '${bloqueados.length}', Icons.block, Colors.red),
                 ]),
                 const SizedBox(height: 24),
                 AdminFilterBar(
-                  tabs: ['Todos (${allUsers.length})'],
+                  tabs: [
+                    'Todos (${allUsers.length})',
+                    'Activos (${activos.length})',
+                    'Bloqueados (${bloqueados.length})',
+                  ],
                   selected: _currentTab,
                   onSelected: (i) => setState(() => _currentTab = i),
                   searchCtrl: _searchCtrl,
-                  searchHint: 'Buscar por nombre o teléfono...',
+                  searchHint: 'Buscar por nombre, correo o teléfono...',
                   onSearch: (v) => setState(() => _query = v),
                 ),
                 const SizedBox(height: 16),
@@ -70,9 +94,9 @@ class _UsersModuleState extends State<UsersModule> {
                   padding: EdgeInsets.all(compact ? 12 : 20),
                   child: filtered.isEmpty
                       ? const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(child: Text('No hay clientes para mostrar.')),
-                  )
+                          padding: EdgeInsets.all(24),
+                          child: Center(child: Text('No hay clientes para mostrar.')),
+                        )
                       : (compact ? _compactList(filtered) : _wideTable(filtered)),
                 ),
               ],
@@ -93,7 +117,63 @@ class _UsersModuleState extends State<UsersModule> {
     return p.isEmpty ? 'Sin teléfono' : p;
   }
 
-  String _status(Map<String, dynamic> u) => u['isBlocked'] == true ? 'Bloqueado' : 'Activo';
+  String _city(Map<String, dynamic> u) {
+    final c = (u['city'] ?? '').toString();
+    return c.isEmpty ? '—' : c;
+  }
+
+  String _status(Map<String, dynamic> u) => _isBlocked(u) ? 'Bloqueado' : 'Activo';
+
+  void _openProfile(Map<String, dynamic> u) =>
+      PassengerProfileDialog.show(context, u['uid'].toString(), canSeeMoney: widget.canSeeMoney);
+
+  Future<void> _onAction(String action, Map<String, dynamic> u) async {
+    final uid = u['uid'].toString();
+    final name = _name(u);
+    final messenger = ScaffoldMessenger.of(context);
+
+    Future<void> run(Future<void> Function() fn, String ok) async {
+      try {
+        await fn();
+        messenger.showSnackBar(SnackBar(content: Text(ok)));
+      } catch (e) {
+        messenger.showSnackBar(SnackBar(content: Text('No se pudo completar la acción: $e')));
+      }
+    }
+
+    switch (action) {
+      case 'profile':
+        _openProfile(u);
+        break;
+      case 'block':
+        final ok = await adminConfirm(context,
+            title: 'Bloquear pasajero',
+            body: '$name no podrá iniciar sesión mientras esté bloqueado.',
+            action: 'Bloquear',
+            danger: true);
+        if (!ok) return;
+        await run(() => fs.setAccountBlocked(uid, true), '$name bloqueado');
+        break;
+      case 'unblock':
+        await run(() => fs.setAccountBlocked(uid, false), '$name desbloqueado');
+        break;
+    }
+  }
+
+  Widget _actions(Map<String, dynamic> u) {
+    final blocked = _isBlocked(u);
+    return PopupMenuButton<String>(
+      padding: EdgeInsets.zero,
+      onSelected: (v) => _onAction(v, u),
+      itemBuilder: (_) => [
+        const PopupMenuItem(value: 'profile', child: Text('Ver perfil')),
+        PopupMenuItem(
+          value: blocked ? 'unblock' : 'block',
+          child: Text(blocked ? 'Desbloquear' : 'Bloquear'),
+        ),
+      ],
+    );
+  }
 
   // ---------- Vista ancha ----------
   Widget _wideTable(List<Map<String, dynamic>> list) {
@@ -105,7 +185,7 @@ class _UsersModuleState extends State<UsersModule> {
           child: Row(children: [
             Expanded(flex: 4, child: Text('Cliente', style: head)),
             Expanded(flex: 2, child: Text('Teléfono', style: head)),
-            Expanded(flex: 2, child: Text('Viajes', style: head)),
+            Expanded(flex: 2, child: Text('Ciudad', style: head)),
             Expanded(flex: 2, child: Text('Estado', style: head)),
             Expanded(flex: 2, child: Text('Registro', style: head)),
             SizedBox(width: 56, child: Text('Acciones', style: head)),
@@ -113,19 +193,19 @@ class _UsersModuleState extends State<UsersModule> {
         ),
         const Divider(height: 1),
         for (final u in list) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Row(children: [
-              Expanded(flex: 4, child: _identity(u)),
-              Expanded(flex: 2, child: Text(_phone(u), maxLines: 1, overflow: TextOverflow.ellipsis)),
-              const Expanded(flex: 2, child: Text('0 viajes')),
-              Expanded(flex: 2, child: Align(alignment: Alignment.centerLeft, child: _buildStatusBadge(_status(u)))),
-              const Expanded(flex: 2, child: Text('Reciente')),
-              SizedBox(
-                width: 56,
-                child: IconButton(icon: const Icon(Icons.more_horiz), onPressed: () {}),
-              ),
-            ]),
+          InkWell(
+            onTap: () => _openProfile(u),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(children: [
+                Expanded(flex: 4, child: _identity(u)),
+                Expanded(flex: 2, child: Text(_phone(u), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                Expanded(flex: 2, child: Text(_city(u), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                Expanded(flex: 2, child: Align(alignment: Alignment.centerLeft, child: _buildStatusBadge(_status(u)))),
+                Expanded(flex: 2, child: Text(formatAdminDate(u['createdAt']))),
+                SizedBox(width: 56, child: _actions(u)),
+              ]),
+            ),
           ),
           const Divider(height: 1),
         ],
@@ -138,30 +218,29 @@ class _UsersModuleState extends State<UsersModule> {
     return Column(
       children: [
         for (int i = 0; i < list.length; i++) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(children: [
-                  Expanded(child: _identity(list[i])),
-                  _buildStatusBadge(_status(list[i])),
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.more_horiz),
-                    onPressed: () {},
+          InkWell(
+            onTap: () => _openProfile(list[i]),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    Expanded(child: _identity(list[i])),
+                    _buildStatusBadge(_status(list[i])),
+                    _actions(list[i]),
+                  ]),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 40),
+                    child: Text(
+                      '${_phone(list[i])} · ${_city(list[i])} · ${formatAdminDate(list[i]['createdAt'])}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12, color: Colors.black87),
+                    ),
                   ),
-                ]),
-                Padding(
-                  padding: const EdgeInsets.only(left: 40),
-                  child: Text(
-                    '${_phone(list[i])} · 0 viajes · Reciente',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12, color: Colors.black87),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           if (i < list.length - 1) const Divider(height: 1),
@@ -188,7 +267,7 @@ class _UsersModuleState extends State<UsersModule> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontWeight: FontWeight.bold)),
-            Text(u['email'] ?? 'Sin correo',
+            Text((u['email'] ?? 'Sin correo').toString(),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 10, color: Colors.black54)),
@@ -199,29 +278,13 @@ class _UsersModuleState extends State<UsersModule> {
   }
 
   Widget _buildStatusBadge(String status) {
-    Color color;
-    String text;
     switch (status.toLowerCase()) {
       case 'activo':
-        color = Colors.green;
-        text = 'Activo';
-        break;
+        return const AdminBadge('Activo', Colors.green);
       case 'bloqueado':
-        color = Colors.red;
-        text = 'Bloqueado';
-        break;
+        return AdminBadge('Bloqueado', Colors.red.shade800);
       default:
-        color = Colors.orange;
-        text = 'Pendiente';
+        return const AdminBadge('Pendiente', Colors.orange);
     }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color),
-      ),
-      child: Text(text, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
-    );
   }
 }

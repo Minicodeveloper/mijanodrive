@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../utils/role_helper.dart';
 
 enum UserRole { passenger, driver, admin, operator }
 
@@ -73,10 +74,18 @@ class User {
 
   factory User.fromMap(Map<String, dynamic> map) {
     UserRole parsedRole = UserRole.passenger;
-    final r = map['role'];
-    if (r == 'driver') parsedRole = UserRole.driver;
-    else if (r == 'admin' || r == 'superAdmin') parsedRole = UserRole.admin;
-    else if (r == 'operator') parsedRole = UserRole.operator;
+    final r = map['role'] as String?;
+    
+    if (r != null) {
+      final normalized = RoleHelper.normalizeRole(r);
+      if (normalized == 'driver') {
+        parsedRole = UserRole.driver;
+      } else if (RoleHelper.isSuperAdmin(r)) {
+        parsedRole = UserRole.admin;
+      } else if (RoleHelper.isManager(r)) {
+        parsedRole = UserRole.operator;
+      }
+    }
 
     return User(
       uid: map['uid'] ?? '',

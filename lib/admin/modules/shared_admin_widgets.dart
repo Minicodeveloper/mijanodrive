@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
 import 'package:flutter/material.dart';
 import '../../theme.dart';
 import '../../models/trip_model.dart';
@@ -225,4 +226,69 @@ String getTripStatusEs(TripStatus s) {
     case TripStatus.cancelled:
       return 'Cancelado';
   }
+}
+
+// ---------- Insignia de estado reutilizable ----------
+class AdminBadge extends StatelessWidget {
+  final String text;
+  final Color color;
+  const AdminBadge(this.text, this.color, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color),
+      ),
+      child: Text(text,
+          style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
+    );
+  }
+}
+
+/// dd/MM/yyyy a partir de un Timestamp o DateTime ("—" si no hay dato).
+String formatAdminDate(dynamic v) {
+  DateTime? d;
+  if (v is Timestamp) d = v.toDate();
+  if (v is DateTime) d = v;
+  if (d == null) return '—';
+  final l = d.toLocal();
+  return '${l.day.toString().padLeft(2, '0')}/${l.month.toString().padLeft(2, '0')}/${l.year}';
+}
+
+/// Diálogo de confirmación para acciones sensibles (bloquear, cambiar rol, etc.).
+Future<bool> adminConfirm(
+  BuildContext context, {
+  required String title,
+  required String body,
+  String action = 'Confirmar',
+  bool danger = false,
+}) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (c) => AlertDialog(
+      title: Text(title),
+      content: Text(body),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(c, false),
+          child: const Text('Cancelar'),
+        ),
+        ElevatedButton(
+          style: danger
+              ? ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.shade700,
+                  foregroundColor: Colors.white,
+                )
+              : null,
+          onPressed: () => Navigator.pop(c, true),
+          child: Text(action),
+        ),
+      ],
+    ),
+  );
+  return ok == true;
 }

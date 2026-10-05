@@ -1,0 +1,249 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =====================================================================
+    // FUNCIONES AUXILIARES
+    // =====================================================================
+
+    // Verifica si el usuario ha iniciado sesión
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // Construye la ruta al documento del usuario
+    function userDoc() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    // Verifica si el documento de usuario existe antes de leerlo
+    function hasUserDoc() {
+      return exists(userDoc());
+    }
+
+    // Obtiene los datos del documento del usuario de forma segura
+    function getUserData() {
+      return get(userDoc()).data;
+    }
+
+    // Obtiene el rol normalizado, manejando documentos que aún no existen
+    function getRole() {
+      return hasUserDoc() ? getUserData().get('role', '').lower() : '';
+    }
+
+    // Verifica los niveles de acceso del Staff
+    function isSuperAdmin() {
+      return isAuth() && getRole() in ['admin', 'superadmin'];
+    }
+
+    function isManager() {
+      return isAuth() && getRole() in ['operator', 'operador', 'gerente'];
+    }
+
+    function isStaff() {
+      return isSuperAdmin() || isManager();
+    }
+
+    function isAppUser() {
+      return isAuth() && getRole() in ['passenger', 'pasajero', 'driver'];
+    }
+
+    // Verifica que un conductor esté totalmente aprobado (y exista)
+    function isApprovedDriver() {
+      return hasUserDoc()
+             && getRole() == 'driver'
+             && (getUserData().get('status', '') == 'approved' || getUserData().get('isApproved', false) == true);
+    }
+
+    // =====================================================================
+    // REGLAS POR COLECCIÓN
+    // =====================================================================
+
+    // 1. USUARIOS (USERS)
+    match /users/{userId} {
+      allow read: if isStaff() || request.auth.uid == userId;
+
+      allow create: if isSuperAdmin() || (
+        request.auth.uid == userId
+        && request.resource.data.get('role', '').lower() in ['passenger', 'pasajero', 'driver']
+        && (
+          (request.resource.data.get('role', '').lower() == 'driver'
+           && request.resource.data.get('status', '') == 'pending'
+           && request.resource.data.get('isApproved', false) == false)
+          ||
+          (request.resource.data.get('role', '').lower() in ['passenger', 'pasajero']
+           && request.resource.data.get('status', 'approved') == 'approved'
+           && request.resource.data.get('isBlocked', false) == false)
+        )
+      );
+
+      allow update: if isSuperAdmin() || (
+        // El gerente puede editar a clientes sin cambiarles el rol, solo campos de moderación
+        isManager()
+        && resource.data.get('role', '').lower() in ['passenger', 'pasajero', 'driver']
+        && request.resource.data.get('role', '') == resource.data.get('role', '')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isBlocked','isApproved','isRejected','isReported','status','documents'])
+      ) || (
+        // El propio usuario se edita
+        request.auth.uid == userId
+        // Bloqueo de escalada de privilegios
+        && request.resource.data.get('isBlocked', false) == resource.data.get('isBlocked', false)
+        && request.resource.data.get('isApproved', false) == resource.data.get('isApproved', false)
+        && request.resource.data.get('isRejected', false) == resource.data.get('isRejected', false)
+        && request.resource.data.get('isReported', false) == resource.data.get('isReported', false)
+        && (
+          // CASO A: Actualiza su perfil sin cambiar de rol (el saveUser normal)
+          (request.resource.data.get('role', '') == resource.data.get('role', '')
+           && request.resource.data.get('status', 'approved') == resource.data.get('status', 'approved'))
+          ||
+          // CASO B: Cambia su rol en el ProfileSetupScreen (ej: de passenger a driver)
+          (
+            request.resource.data.get('role', '').lower() in ['passenger', 'pasajero', 'driver']
+            && (
+              (request.resource.data.get('role', '').lower() == 'driver'
+               && request.resource.data.get('status', '') == 'pending'
+               && request.resource.data.get('isApproved', false) == false)
+              ||
+              (request.resource.data.get('role', '').lower() in ['passenger', 'pasajero']
+               && request.resource.data.get('status', 'approved') == 'approved')
+            )
+          )
+        )
+      );
+
+      allow delete: if isSuperAdmin();
+    }
+
+    // 2. CONDUCTORES (DRIVERS) - Copia pública / GPS
+    match /drivers/{driverId} {
+      allow read: if isAuth();
+
+      // La primera vez que el conductor se sincrónica a sí mismo en drivers (set con merge)
+      allow create: if isStaff() || (
+        request.auth.uid == driverId
+        // Valida los campos protegidos SOLO si vienen en el payload
+        && (!('isBlocked' in request.resource.data) || request.resource.data.isBlocked == get(/databases/$(database)/documents/users/$(driverId)).data.get('isBlocked', false))
+        && (!('isApproved' in request.resource.data) || request.resource.data.isApproved == get(/databases/$(database)/documents/users/$(driverId)).data.get('isApproved', false))
+        && (!('status' in request.resource.data) || request.resource.data.status == get(/databases/$(database)/documents/users/$(driverId)).data.get('status', 'pending'))
+      );
+
+      // Cuando actualiza su GPS, disponibilidad, etc.
+      allow update: if isStaff() || (
+        request.auth.uid == driverId
+        // Impide que el propio conductor modifique sus campos de acceso
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isBlocked', 'isApproved', 'status'])
+      );
+
+      allow delete: if isSuperAdmin();
+    }
+
+    // 3. VIAJES Y RESERVAS (TRIPS & RESERVATIONS)
+    match /trips/{tripId} {
+      allow read: if isStaff()
+                  || resource.data.get('passengerId', '') == request.auth.uid
+                  || resource.data.get('driverId', '') == request.auth.uid
+                  || (resource.data.get('status', '') == 'pending' && isApprovedDriver());
+
+      allow create: if request.auth.uid == request.resource.data.get('passengerId', '');
+
+      allow update: if isStaff() || (
+        // Bloqueo: Nadie puede alterar los IDs del pasajero o la tarifa. Se usa un default 0 por seguridad.
+        request.resource.data.get('passengerId', '') == resource.data.get('passengerId', '')
+        && request.resource.data.get('fareAmount', 0) == resource.data.get('fareAmount', 0)
+        && (
+          // El pasajero puede cancelar/actualizar
+          request.auth.uid == resource.data.get('passengerId', '')
+          ||
+          // El conductor lo acepta por primera vez (se requiere estar APROBADO)
+          (resource.data.get('status', '') == 'pending'
+           && request.resource.data.get('driverId', '') == request.auth.uid
+           && isApprovedDriver())
+          ||
+          // El conductor asignado reporta avance o llegada
+          (resource.data.get('driverId', '') == request.auth.uid
+           && request.resource.data.get('driverId', '') == resource.data.get('driverId', ''))
+        )
+      );
+      allow delete: if isSuperAdmin();
+
+      // Chat interno del viaje
+      match /messages/{msgId} {
+        allow read, write: if isStaff()
+                           || get(/databases/$(database)/documents/trips/$(tripId)).data.get('passengerId', '') == request.auth.uid
+                           || get(/databases/$(database)/documents/trips/$(tripId)).data.get('driverId', '') == request.auth.uid;
+      }
+    }
+
+    match /reservations/{resId} {
+      allow read: if isStaff()
+                  || resource.data.get('passengerId', '') == request.auth.uid
+                  || resource.data.get('driverId', '') == request.auth.uid
+                  || (resource.data.get('status', '') == 'pending' && isApprovedDriver());
+      allow create: if request.auth.uid == request.resource.data.get('passengerId', '');
+      allow update: if isStaff() || (
+        request.resource.data.get('passengerId', '') == resource.data.get('passengerId', '')
+        && request.resource.data.get('fareAmount', 0) == resource.data.get('fareAmount', 0)
+        && (
+             request.auth.uid == resource.data.get('passengerId', '')
+          || (resource.data.get('status', '') == 'pending'
+              && request.resource.data.get('driverId', '') == request.auth.uid
+              && isApprovedDriver())
+          || (resource.data.get('driverId', '') == request.auth.uid
+              && request.resource.data.get('driverId', '') == resource.data.get('driverId', ''))
+        )
+      );
+      allow delete: if isSuperAdmin();
+    }
+
+    // 4. DINERO (WALLETS & TRANSACTIONS)
+    match /wallets/{walletId} {
+      allow read: if isSuperAdmin() || request.auth.uid == walletId;
+      // Solo el dueño puede crear su propia billetera e inicializada en 0/0.0
+      allow create: if isSuperAdmin() || (request.auth.uid == walletId && (request.resource.data.balance == 0 || request.resource.data.balance == 0.0));
+      allow update, delete: if isSuperAdmin();
+    }
+
+    match /transactions/{txId} {
+      allow read: if isSuperAdmin() || resource.data.get('walletId', '') == request.auth.uid;
+      allow write: if isSuperAdmin();
+    }
+
+    // 5. CONFIGURACIÓN (SETTINGS & CITIES)
+    match /settings/{docId} {
+      // El gerente nunca lee settings (para evitar acceso a pricing).
+      allow read: if isSuperAdmin() || (isAuth() && !isManager() && docId == 'pricing');
+      allow write: if isSuperAdmin();
+    }
+
+    match /cities/{cityId} {
+      // Usado para ver la tarifa urbana en search_trip_screen.
+      allow read: if isAuth() && !isManager();
+      allow write: if isSuperAdmin();
+    }
+
+    // 6. COMUNICACIÓN Y MODERACIÓN (SOPORTE, REPORTES, S.O.S., NOTIFICACIONES)
+    match /support_chats/{chatId} {
+      allow read, write: if isStaff() || request.auth.uid == chatId;
+      match /messages/{msgId} {
+        allow read, write: if isStaff() || request.auth.uid == chatId;
+      }
+    }
+
+    match /reports/{reportId} {
+      allow create: if isAuth();
+      allow read, update: if isStaff();
+      allow delete: if isSuperAdmin();
+    }
+
+    match /alerts/{alertId} {
+      allow create: if isAuth() && request.resource.data.get('status', '') == 'open';
+      allow read, update: if isStaff();
+      allow delete: if isSuperAdmin();
+    }
+
+    match /notifications/{notifId} {
+      allow read: if isStaff() || resource.data.get('userId', '') == request.auth.uid;
+      allow write: if isStaff();
+    }
+  }
+}

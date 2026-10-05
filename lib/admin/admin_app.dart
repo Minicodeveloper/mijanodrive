@@ -23,7 +23,7 @@ enum AdminRole {
 class AdminApp extends StatelessWidget {
   final AdminRole role;
 
-  const AdminApp({super.key, this.role = AdminRole.superAdmin});
+  const AdminApp({super.key, this.role = AdminRole.operator});
 
   @override
   Widget build(BuildContext context) {
@@ -45,6 +45,71 @@ class AdminShell extends StatefulWidget {
 
 class _AdminShellState extends State<AdminShell> {
   String _currentView = 'Panel';
+  bool _isLoadingRole = true;
+  AdminRole? _actualRole;
+
+  @override
+  void initState() {
+    super.initState();
+    _verifyRole();
+  }
+
+  Future<void> _verifyRole() async {
+    final user = fb.FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      _kickOut('No hay sesión activa.');
+      return;
+    }
+
+    DocumentSnapshot<Map<String, dynamic>> doc;
+    try {
+      doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    } catch (e) {
+      _kickOut('Error al verificar permisos: $e');
+      return;
+    }
+
+    if (!doc.exists) {
+      _kickOut('Usuario no encontrado en la base de datos.');
+      return;
+    }
+
+    final data = doc.data();
+    if (data?['isBlocked'] == true) {
+      _kickOut('Tu cuenta ha sido bloqueada.');
+      return;
+    }
+
+    final roleStr = data?['role'] as String?;
+    if (roleStr == null) {
+      _kickOut('No tienes rol asignado.');
+      return;
+    }
+
+    final normalized = roleStr.trim().toLowerCase();
+    if (normalized == 'admin' || normalized == 'superadmin') {
+      setState(() {
+        _actualRole = AdminRole.superAdmin;
+        _isLoadingRole = false;
+      });
+    } else if (normalized == 'operator' || normalized == 'operador' || normalized == 'gerente') {
+      setState(() {
+        _actualRole = AdminRole.operator;
+        _isLoadingRole = false;
+      });
+    } else {
+      _kickOut('Acceso denegado: no eres personal autorizado.');
+    }
+  }
+
+  void _kickOut([String? message]) {
+    if (message != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    }
+    final navigator = Navigator.of(context, rootNavigator: true);
+    fb.FirebaseAuth.instance.signOut();
+    navigator.pushNamedAndRemoveUntil('/login', (_) => false);
+  }
 
   Future<void> _actualizarEstadoDocumento(BuildContext context, Driver driver, String campoEstado, String nuevoEstado, StateSetter setStateDialog) async {
     try {
@@ -72,6 +137,13 @@ class _AdminShellState extends State<AdminShell> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoadingRole) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final role = _actualRole ?? widget.role;
     final wide = MediaQuery.of(context).size.width > 900;
     return Scaffold(
       appBar: wide
@@ -80,14 +152,14 @@ class _AdminShellState extends State<AdminShell> {
         title: const Text('Mijano Drive · Panel'),
         backgroundColor: MijanoTheme.sol,
       ),
-      drawer: wide ? null : Drawer(child: _sidebar(closeDrawer: true)),
+      drawer: wide ? null : Drawer(child: _sidebar(role, closeDrawer: true)),
       body: Row(
         children: [
-          if (wide) SizedBox(width: 250, child: _sidebar()),
+          if (wide) SizedBox(width: 250, child: _sidebar(role)),
           Expanded(
             child: Container(
               color: const Color(0xFFF6F6F4),
-              child: _body(),
+              child: _body(role),
             ),
           ),
         ],
@@ -124,7 +196,7 @@ class _AdminShellState extends State<AdminShell> {
     );
   }
 
-  Widget _sidebar({bool closeDrawer = false}) {
+  Widget _sidebar(AdminRole role, {bool closeDrawer = false}) {
     return Container(
       color: MijanoTheme.ink,
       child: Column(
@@ -158,7 +230,7 @@ class _AdminShellState extends State<AdminShell> {
                       _buildNavItem(Icons.dashboard, 'Panel', closeDrawer: closeDrawer),
                       _buildNavItem(Icons.people, 'Pasajeros', closeDrawer: closeDrawer),
                       _buildNavItem(Icons.two_wheeler, 'Conductores', closeDrawer: closeDrawer),
-                      if (widget.role == AdminRole.superAdmin)
+                      if (role == AdminRole.superAdmin)
                         _buildNavItem(Icons.attach_money, 'Tarifas', closeDrawer: closeDrawer),
                     ],
                   ),
@@ -173,7 +245,7 @@ class _AdminShellState extends State<AdminShell> {
                     children: [
                       _buildNavItem(Icons.chat, 'Soporte', closeDrawer: closeDrawer),
                       _buildNavItem(Icons.emergency, 'Alertas S.O.S.', closeDrawer: closeDrawer),
-                      if (widget.role == AdminRole.superAdmin)
+                      if (role == AdminRole.superAdmin)
                         _buildNavItem(Icons.security, 'Permisos', closeDrawer: closeDrawer),
                     ],
                   ),
@@ -184,7 +256,7 @@ class _AdminShellState extends State<AdminShell> {
           Padding(
             padding: const EdgeInsets.all(16),
             child: Text(
-              'Rol: ${widget.role == AdminRole.superAdmin ? 'SuperAdmin' : 'Operador'}',
+              'Rol: ${role == AdminRole.superAdmin ? 'SuperAdmin' : 'Operador'}',
               style: const TextStyle(
                 color: Colors.white38,
                 fontSize: 12,
@@ -220,17 +292,42 @@ class _AdminShellState extends State<AdminShell> {
     );
   }
 
-  Widget _body() {
+  Widget _body(AdminRole role) {
+    final bool canSeeMoney = role == AdminRole.superAdmin;
+
     switch (_currentView) {
-      case 'Panel': return _DashboardModule(role: widget.role, parentState: this);
-      case 'Pasajeros': return const UsersModule();
-      case 'Conductores': return DriversModule(onUpdateStatus: _actualizarEstadoDocumento);
-      case 'Tarifas': return const TariffsModule();
-      case 'Soporte': return const ReportsModule();
-      case 'Alertas S.O.S.': return const AlertsModule();
-      case 'Permisos': return const SecurityModule();
+      case 'Panel': return _DashboardModule(role: role, parentState: this, canSeeMoney: canSeeMoney);
+      case 'Pasajeros': return UsersModule(canSeeMoney: canSeeMoney);
+      case 'Conductores': return DriversModule(onUpdateStatus: _actualizarEstadoDocumento, canSeeMoney: canSeeMoney);
+      case 'Tarifas':
+        if (role != AdminRole.superAdmin) return const _AccessDenied();
+        return const TariffsModule();
+      case 'Soporte': return ReportsModule(canSeeMoney: canSeeMoney);
+      case 'Alertas S.O.S.': return AlertsModule(canSeeMoney: canSeeMoney);
+      case 'Permisos':
+        if (role != AdminRole.superAdmin) return const _AccessDenied();
+        return const SecurityModule();
       default: return const Center(child: Text('Módulo no encontrado'));
     }
+  }
+}
+
+class _AccessDenied extends StatelessWidget {
+  const _AccessDenied();
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.security, size: 64, color: Colors.grey),
+          SizedBox(height: 16),
+          Text('Acceso Denegado', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black54)),
+          SizedBox(height: 8),
+          Text('No tienes permisos suficientes para ver este módulo', style: TextStyle(color: Colors.black45)),
+        ],
+      ),
+    );
   }
 }
 
@@ -277,7 +374,8 @@ class _Kpi {
 class _DashboardModule extends StatelessWidget {
   final AdminRole role;
   final _AdminShellState parentState;
-  const _DashboardModule({required this.role, required this.parentState});
+  final bool canSeeMoney;
+  const _DashboardModule({required this.role, required this.parentState, required this.canSeeMoney});
 
   @override
   Widget build(BuildContext context) {
@@ -308,7 +406,7 @@ class _DashboardModule extends StatelessWidget {
                     _Kpi('Viajes Activos', '${trips.length}', Icons.route, Colors.blue),
                     _Kpi('Conductores Libres', '$online', Icons.two_wheeler, Colors.green),
                     _Kpi('Total Conductores', '${drivers.length}', Icons.people, Colors.orange),
-                    if (role == AdminRole.superAdmin)
+                    if (canSeeMoney)
                       _Kpi('S/ en Curso', 'S/ ${dineroEnCurso.toStringAsFixed(2)}', Icons.attach_money, Colors.purple),
                   ];
 
@@ -487,8 +585,11 @@ class _DashboardModule extends StatelessWidget {
                           mainAxisAlignment: MainAxisAlignment.center,
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            Text('S/ ${t.fareAmount.toStringAsFixed(2)}',
-                                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: MijanoTheme.ink)),
+                            if (canSeeMoney)
+                              Text('S/ ${t.fareAmount.toStringAsFixed(2)}',
+                                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: MijanoTheme.ink))
+                            else
+                              const Text('—', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: Colors.grey)),
                             const Text('Efectivo', style: TextStyle(fontSize: 12, color: Colors.black54)),
                           ],
                         ),

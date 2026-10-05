@@ -10,7 +10,8 @@ import '../admin_app.dart' show AdminRole;
 
 class DashboardModule extends StatelessWidget {
   final AdminRole role;
-  const DashboardModule({super.key, required this.role});
+  final bool canSeeMoney;
+  const DashboardModule({super.key, required this.role, required this.canSeeMoney});
 
   @override
   Widget build(BuildContext context) {
@@ -50,7 +51,7 @@ class DashboardModule extends StatelessWidget {
                             _stat('Viajes Activos', '${trips.length}', Icons.route, Colors.blue, width: w),
                             _stat('Libres', '$online', Icons.two_wheeler, Colors.green, width: w),
                             _stat('Total', '${drivers.length}', Icons.people, Colors.orange, width: w),
-                            if (role == AdminRole.superAdmin)
+                            if (canSeeMoney)
                               _stat('S/ en Curso', 'S/ ${dineroEnCurso.toStringAsFixed(2)}', Icons.attach_money, Colors.purple, width: w),
                           ],
                         );
@@ -63,7 +64,7 @@ class DashboardModule extends StatelessWidget {
                           Expanded(child: _stat('Libres', '$online', Icons.two_wheeler, Colors.green)),
                           const SizedBox(width: 16),
                           Expanded(child: _stat('Total Conductores', '${drivers.length}', Icons.people, Colors.orange)),
-                          if (role == AdminRole.superAdmin) ...[
+                          if (canSeeMoney) ...[
                             const SizedBox(width: 16),
                             Expanded(child: _stat('S/ en Curso', 'S/ ${dineroEnCurso.toStringAsFixed(2)}', Icons.attach_money, Colors.purple)),
                           ]
@@ -308,8 +309,11 @@ class DashboardModule extends StatelessWidget {
                           mainAxisAlignment: MainAxisAlignment.center,
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            Text('S/ ${t.fareAmount.toStringAsFixed(2)}',
-                                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: MijanoTheme.ink)),
+                            if (canSeeMoney)
+                              Text('S/ ${t.fareAmount.toStringAsFixed(2)}',
+                                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: MijanoTheme.ink))
+                            else
+                              const Text('—', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: Colors.grey)),
                             const Text('Efectivo', style: TextStyle(fontSize: 12, color: Colors.black54)),
                           ],
                         ),

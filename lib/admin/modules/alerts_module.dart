@@ -9,9 +9,11 @@ import 'shared_admin_widgets.dart';
 
 /// Centro de alertas S.O.S.
 /// Escucha las alertas abiertas en tiempo real (conductores y pasajeros),
-/// muestra hora, ubicación y permite ver el mapa, el detalle y atenderlas.
+/// muestra hora, ubicación, botones de contacto a autoridades/usuarios
+/// y mantiene un historial (Términos y Condiciones - Seg. 5).
 class AlertsModule extends StatefulWidget {
-  const AlertsModule({super.key});
+  final bool canSeeMoney;
+  const AlertsModule({super.key, required this.canSeeMoney});
 
   @override
   State<AlertsModule> createState() => _AlertsModuleState();
@@ -20,7 +22,10 @@ class AlertsModule extends StatefulWidget {
 class _AlertsModuleState extends State<AlertsModule> {
   final FirestoreService _fs = FirestoreService.instance;
   late final Stream<List<Map<String, dynamic>>> _alerts = _fs.openAlerts();
+  late final Stream<List<Map<String, dynamic>>> _resolvedAlerts = _fs.resolvedAlerts();
+  
   Timer? _ticker;
+  int _currentTab = 0; // 0 = Activas, 1 = Historial
 
   @override
   void initState() {
@@ -73,8 +78,7 @@ class _AlertsModuleState extends State<AlertsModule> {
   String _who(Map<String, dynamic> a) =>
       a['reportedBy'] == 'passenger' ? 'Pasajero' : 'Conductor';
 
-  /// Coordenadas de la alerta. La app guarda `latitude`/`longitude`;
-  /// se acepta también `lat`/`lng` por compatibilidad.
+  /// Coordenadas de la alerta.
   ({double lat, double lng})? _coords(Map<String, dynamic> a) {
     final lat = _num(a['latitude'] ?? a['lat']);
     final lng = _num(a['longitude'] ?? a['lng']);
@@ -102,24 +106,76 @@ class _AlertsModuleState extends State<AlertsModule> {
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
+  Future<void> _callPhone(String phone) async {
+    final uri = Uri.parse('tel:$phone');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo abrir el marcador telefónico.')),
+      );
+    }
+  }
+
   Future<void> _attend(Map<String, dynamic> a) async {
+    final TextEditingController notesCtrl = TextEditingController();
+    
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Atender alerta'),
-        content: const Text(
-            '¿Confirmas que esta emergencia ya fue atendida? Saldrá de la lista de activas.'),
+        title: const Text('Atender alerta (Resolución)'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '¿Confirmas que esta emergencia ya fue atendida? \n'
+              'Saldrá de la lista de activas y pasará al historial (Auditoría).',
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: notesCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Notas de resolución (Obligatorio)',
+                border: OutlineInputBorder(),
+                hintText: 'Ej. Falsa alarma, se envió 105, resuelto por llamada.',
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancelar')),
           ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Sí, atendida')),
+              onPressed: () {
+                if (notesCtrl.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    const SnackBar(content: Text('Debes ingresar una nota de resolución')),
+                  );
+                  return;
+                }
+                Navigator.pop(ctx, true);
+              },
+              child: const Text('Guardar y Atender')),
         ],
       ),
     );
-    if (ok == true) await _fs.resolveAlert(a['id']);
+
+    if (ok == true) {
+      await _fs.resolveAlert(
+        a['id'], 
+        notes: notesCtrl.text.trim(), 
+        resolvedBy: 'Admin (Soporte)' // Aquí iría el ID del admin real
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Alerta guardada en el historial.')),
+        );
+      }
+    }
   }
 
   void _showDetail(Map<String, dynamic> a) {
@@ -155,10 +211,21 @@ class _AlertsModuleState extends State<AlertsModule> {
           ),
         ),
         actions: [
+          if (a['driverId'] != null || a['userId'] != null)
+            TextButton.icon(
+              icon: const Icon(Icons.person_outline, size: 18),
+              label: const Text('Ver perfil'),
+              onPressed: () {
+                // TODO: Navegar a la vista de perfil del usuario/conductor
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('Vista de perfil en desarrollo...'))
+                );
+              },
+            ),
           if (_mapsUri(a) != null)
             TextButton.icon(
               icon: const Icon(Icons.copy, size: 18),
-              label: const Text('Copiar coordenadas'),
+              label: const Text('Copiar GPS'),
               onPressed: () async {
                 final c = _coords(a);
                 await Clipboard.setData(
@@ -184,6 +251,9 @@ class _AlertsModuleState extends State<AlertsModule> {
         latitude: -5.8942,
         longitude: -76.1142,
         city: 'Yurimaguas',
+        phone: '999888777', // Simulación de info de identidad
+        name: 'Juan Perez (Simulación)',
+        plate: '1234-AB',
       );
     } catch (e) {
       if (!mounted) return;
@@ -195,10 +265,10 @@ class _AlertsModuleState extends State<AlertsModule> {
 
   // ---------------------------------------------------------------- UI
 
-  Widget _activeChip(String text) => Container(
+  Widget _statusChip(String text, bool isResolved) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
     decoration: BoxDecoration(
-      color: MijanoTheme.signal,
+      color: isResolved ? Colors.grey[600] : MijanoTheme.signal,
       borderRadius: BorderRadius.circular(20),
     ),
     child: Text(text,
@@ -206,16 +276,23 @@ class _AlertsModuleState extends State<AlertsModule> {
             color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
   );
 
-  Widget _alertTile(Map<String, dynamic> a) {
+  Widget _alertTile(Map<String, dynamic> a, {bool isResolved = false}) {
     final created = _toDate(a['createdAt']);
     final c = _coords(a);
     final hasGps = c != null;
 
+    final name = a['name'] as String?;
+    final phone = a['phone'] as String?;
+    final plate = a['plate'] as String?;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: MijanoTheme.signal.withOpacity(0.06),
-        border: Border(left: BorderSide(color: MijanoTheme.signal, width: 4)),
+        color: isResolved ? Colors.grey.withOpacity(0.06) : MijanoTheme.signal.withOpacity(0.06),
+        border: Border(left: BorderSide(
+          color: isResolved ? Colors.grey : MijanoTheme.signal, 
+          width: 4
+        )),
       ),
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -224,9 +301,9 @@ class _AlertsModuleState extends State<AlertsModule> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const CircleAvatar(
-                backgroundColor: MijanoTheme.signal,
-                child: Icon(Icons.emergency, color: Colors.white),
+              CircleAvatar(
+                backgroundColor: isResolved ? Colors.grey : MijanoTheme.signal,
+                child: const Icon(Icons.emergency, color: Colors.white),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -238,28 +315,51 @@ class _AlertsModuleState extends State<AlertsModule> {
                           style: const TextStyle(
                               fontSize: 16, fontWeight: FontWeight.w700)),
                       const SizedBox(width: 8),
-                      _activeChip('ACTIVA'),
+                      _statusChip(isResolved ? 'ATENDIDA' : 'ACTIVA', isResolved),
                     ]),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 8),
+                    
+                    // Fila de datos críticos (según cláusula de T&C)
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 4,
+                      children: [
+                        if (name != null) Text('👤 $name', style: const TextStyle(fontWeight: FontWeight.w600)),
+                        if (phone != null) Text('📞 $phone', style: const TextStyle(fontWeight: FontWeight.w600)),
+                        if (plate != null) Text('🛵 Placa: $plate', style: const TextStyle(fontWeight: FontWeight.w600)),
+                        if (name == null && phone == null) 
+                          const Text('⚠️ Datos de identidad no adjuntos en alerta', style: TextStyle(color: Colors.orange)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+
                     Text(created != null
-                        ? '${_fmt(created)} · ${_ago(created)}'
-                        : 'Hora no registrada'),
+                        ? '🕒 ${_fmt(created)} · ${_ago(created)}'
+                        : '🕒 Hora no registrada'),
                     const SizedBox(height: 2),
                     Text(c != null
-                        ? 'GPS: ${c.lat.toStringAsFixed(5)}, ${c.lng.toStringAsFixed(5)}'
-                        : 'Sin ubicación GPS'),
+                        ? '📍 GPS: ${c.lat.toStringAsFixed(5)}, ${c.lng.toStringAsFixed(5)}'
+                        : '📍 Sin ubicación GPS'),
                     if (a['city'] != null) ...[
                       const SizedBox(height: 2),
-                      Text('Ciudad: ${a['city']}'),
+                      Text('🏙️ Ciudad: ${a['city']}'),
                     ],
-                    if (a['driverId'] != null) ...[
-                      const SizedBox(height: 2),
-                      Text('Conductor ID: ${a['driverId']}'),
-                    ],
-                    const SizedBox(height: 2),
-                    Text('ID: ${a['id']}',
-                        style: const TextStyle(
-                            fontSize: 12, color: Colors.black45)),
+                    
+                    if (isResolved && a['resolutionNotes'] != null) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          'Resolución: ${a['resolutionNotes']}',
+                          style: const TextStyle(fontStyle: FontStyle.italic),
+                        ),
+                      ),
+                    ]
                   ],
                 ),
               ),
@@ -272,6 +372,22 @@ class _AlertsModuleState extends State<AlertsModule> {
               spacing: 8,
               runSpacing: 8,
               children: [
+                if (!isResolved)
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.blue[800],
+                      side: BorderSide(color: Colors.blue[800]!),
+                    ),
+                    onPressed: () => _callPhone('105'),
+                    icon: const Icon(Icons.local_police, size: 18),
+                    label: const Text('Llamar 105 (Policía)'),
+                  ),
+                if (!isResolved && phone != null)
+                  OutlinedButton.icon(
+                    onPressed: () => _callPhone(phone),
+                    icon: const Icon(Icons.phone, size: 18),
+                    label: Text('Llamar ${_who(a).toLowerCase()}'),
+                  ),
                 OutlinedButton.icon(
                   onPressed: hasGps ? () => _openMap(a) : null,
                   icon: const Icon(Icons.map_outlined, size: 18),
@@ -282,15 +398,86 @@ class _AlertsModuleState extends State<AlertsModule> {
                   icon: const Icon(Icons.info_outline, size: 18),
                   label: const Text('Detalle'),
                 ),
-                ElevatedButton(
-                  onPressed: () => _attend(a),
-                  child: const Text('Atender'),
-                ),
+                if (!isResolved)
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: MijanoTheme.signal,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () => _attend(a),
+                    icon: const Icon(Icons.check_circle_outline, size: 18),
+                    label: const Text('Atender Alerta'),
+                  ),
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildAlertsList(Stream<List<Map<String, dynamic>>> stream, {bool isResolved = false}) {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: stream,
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return const Padding(
+            padding: EdgeInsets.all(24),
+            child: Row(children: [
+              Icon(Icons.error_outline, color: Colors.red),
+              SizedBox(width: 10),
+              Expanded(child: Text('No se pudieron cargar las alertas.')),
+            ]),
+          );
+        }
+        if (!snap.hasData) {
+          return const Padding(
+            padding: EdgeInsets.all(24),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        // Más recientes primero.
+        final alerts = [...snap.data!];
+        alerts.sort((x, y) {
+          final dx = _toDate(x['createdAt']);
+          final dy = _toDate(y['createdAt']);
+          if (dx == null && dy == null) return 0;
+          if (dx == null) return 1;
+          if (dy == null) return -1;
+          return dy.compareTo(dx);
+        });
+
+        if (alerts.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.all(24),
+            child: Row(children: [
+              Icon(Icons.check_circle, color: isResolved ? Colors.grey : Colors.green),
+              const SizedBox(width: 10),
+              Text(isResolved ? 'No hay alertas en el historial.' : 'Sin emergencias activas en este momento.'),
+            ]),
+          );
+        }
+
+        return Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  '${alerts.length} ${isResolved ? 'alertas resueltas' : 'emergencias activas'}',
+                  style: TextStyle(
+                      color: isResolved ? Colors.grey[800] : MijanoTheme.signal,
+                      fontWeight: FontWeight.w700),
+                ),
+              ),
+              for (final a in alerts) _alertTile(a, isResolved: isResolved),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -302,7 +489,8 @@ class _AlertsModuleState extends State<AlertsModule> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const AdminHeader('Centro de alertas S.O.S.',
-              'Emergencias reportadas por conductores y pasajeros'),
+              'Gestión de emergencias y protocolo de seguridad'),
+          
           if (kDebugMode)
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
@@ -315,69 +503,42 @@ class _AlertsModuleState extends State<AlertsModule> {
                 ),
               ),
             ),
+            
           adminCard(
-            child: StreamBuilder<List<Map<String, dynamic>>>(
-              stream: _alerts,
-              builder: (context, snap) {
-                if (snap.hasError) {
-                  return const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Row(children: [
-                      Icon(Icons.error_outline, color: Colors.red),
-                      SizedBox(width: 10),
-                      Expanded(
-                          child: Text('No se pudieron cargar las alertas.')),
-                    ]),
-                  );
-                }
-                if (!snap.hasData) {
-                  return const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-
-                // Más recientes primero.
-                final alerts = [...snap.data!];
-                alerts.sort((x, y) {
-                  final dx = _toDate(x['createdAt']);
-                  final dy = _toDate(y['createdAt']);
-                  if (dx == null && dy == null) return 0;
-                  if (dx == null) return 1;
-                  if (dy == null) return -1;
-                  return dy.compareTo(dx);
-                });
-
-                if (alerts.isEmpty) {
-                  return const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Row(children: [
-                      Icon(Icons.check_circle, color: Colors.green),
-                      SizedBox(width: 10),
-                      Text('Sin emergencias activas'),
-                    ]),
-                  );
-                }
-
-                return Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Pestañas / Selector de vistas
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Row(
                     children: [
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Text(
-                          '${alerts.length} ${alerts.length == 1 ? 'emergencia activa' : 'emergencias activas'}',
-                          style: const TextStyle(
-                              color: MijanoTheme.signal,
-                              fontWeight: FontWeight.w700),
-                        ),
+                      ChoiceChip(
+                        label: const Text('Alertas Activas', style: TextStyle(fontWeight: FontWeight.bold)),
+                        selected: _currentTab == 0,
+                        selectedColor: MijanoTheme.signal.withOpacity(0.2),
+                        onSelected: (val) {
+                          if (val) setState(() => _currentTab = 0);
+                        },
                       ),
-                      for (final a in alerts) _alertTile(a),
+                      const SizedBox(width: 12),
+                      ChoiceChip(
+                        label: const Text('Historial (Atendidas)', style: TextStyle(fontWeight: FontWeight.bold)),
+                        selected: _currentTab == 1,
+                        onSelected: (val) {
+                          if (val) setState(() => _currentTab = 1);
+                        },
+                      ),
                     ],
                   ),
-                );
-              },
+                ),
+                const Divider(height: 1),
+                
+                // Vista dependiente del tab seleccionado
+                _currentTab == 0
+                    ? _buildAlertsList(_alerts, isResolved: false)
+                    : _buildAlertsList(_resolvedAlerts, isResolved: true),
+              ],
             ),
           ),
         ],

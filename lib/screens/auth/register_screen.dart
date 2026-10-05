@@ -6,6 +6,7 @@ import 'package:mijano_drive_app/models/user_model.dart';
 import 'package:mijano_drive_app/services/auth_service.dart';
 import 'package:mijano_drive_app/services/document_service.dart';
 import 'package:mijano_drive_app/screens/driver/pending_account_screen.dart';
+import 'package:mijano_drive_app/utils/validators.dart';
 
 class RegisterScreen extends StatefulWidget {
   final String initialRole; 
@@ -21,7 +22,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   int _currentStep = 0;
   final PageController _pageController = PageController();
 
-  
+  final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _emailController = TextEditingController();
@@ -155,39 +156,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   // Validaciones del Paso 1
   bool _validateStep1() {
-    final name = _nameController.text.trim();
-    final phone = _phoneController.text.trim();
-    final email = _emailController.text.trim();
-    final password = _passwordController.text.trim();
-    final dni = _dniController.text.trim();
-    final city = _cityController.text.trim();
-
-    if (name.isEmpty || phone.isEmpty || email.isEmpty || password.isEmpty || dni.isEmpty || city.isEmpty) {
-      _showSnackBar('Por favor completa todos los campos');
+    if (!_formKey.currentState!.validate()) {
       return false;
     }
-
-    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-    if (!emailRegex.hasMatch(email)) {
-      _showSnackBar('Por favor ingresa un correo electrónico válido');
-      return false;
-    }
-
-    if (password.length < 6) {
-      _showSnackBar('La contraseña debe tener al menos 6 caracteres');
-      return false;
-    }
-
-    if (dni.length != 8 || int.tryParse(dni) == null) {
-      _showSnackBar('El DNI debe tener exactamente 8 dígitos numéricos');
-      return false;
-    }
-
-    if (phone.length != 9 || int.tryParse(phone) == null) {
-      _showSnackBar('El teléfono debe tener exactamente 9 dígitos');
-      return false;
-    }
-
     return true;
   }
 
@@ -304,7 +275,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 smsCode: smsCode,
                 name: _nameController.text.trim(),
                 email: _emailController.text.trim(),
-                password: _passwordController.text.trim(),
+                password: _passwordController.text, // No trim (Paso 6)
                 phone: _phoneController.text.trim(),
                 dni: _dniController.text.trim(),
                 city: _cityController.text.trim(),
@@ -444,9 +415,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Widget _buildStep1Personal() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
           Center(
             child: Stack(
               children: [
@@ -484,39 +457,45 @@ class _RegisterScreenState extends State<RegisterScreen> {
           const SizedBox(height: 20),
           const Text('Completa tu información personal', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 20),
-          TextField(
+          TextFormField(
             controller: _nameController,
+            validator: Validators.validateName,
             decoration: const InputDecoration(labelText: 'Nombre completo', prefixIcon: Icon(Icons.person_outline), border: OutlineInputBorder()),
           ),
           const SizedBox(height: 15),
-          TextField(
+          TextFormField(
             controller: _phoneController,
             keyboardType: TextInputType.phone,
+            validator: (v) => v == null || v.isEmpty ? 'El teléfono es obligatorio' : null,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(9)],
             decoration: const InputDecoration(labelText: 'Número de teléfono', prefixIcon: Icon(Icons.phone_outlined), border: OutlineInputBorder()),
           ),
           const SizedBox(height: 15),
-          TextField(
+          TextFormField(
             controller: _emailController,
             keyboardType: TextInputType.emailAddress,
+            validator: Validators.validateEmail,
             decoration: const InputDecoration(labelText: 'Correo electrónico', prefixIcon: Icon(Icons.email_outlined), border: OutlineInputBorder()),
           ),
           const SizedBox(height: 15),
-          TextField(
+          TextFormField(
             controller: _passwordController,
             obscureText: true,
+            validator: Validators.validatePassword,
             decoration: const InputDecoration(labelText: 'Contraseña', prefixIcon: Icon(Icons.lock_outline), border: OutlineInputBorder()),
           ),
           const SizedBox(height: 15),
-          TextField(
+          TextFormField(
             controller: _dniController,
             keyboardType: TextInputType.number,
+            validator: (v) => v == null || v.length != 8 ? 'Ingresa 8 dígitos' : null,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(8)],
             decoration: const InputDecoration(labelText: 'DNI', prefixIcon: Icon(Icons.badge_outlined), border: OutlineInputBorder()),
           ),
           const SizedBox(height: 15),
-          TextField(
+          TextFormField(
             controller: _cityController,
+            validator: (v) => v == null || v.isEmpty ? 'Ciudad es obligatoria' : null,
             decoration: const InputDecoration(labelText: 'Ciudad', prefixIcon: Icon(Icons.location_city_outlined), border: OutlineInputBorder()),
           ),
           const SizedBox(height: 30),
@@ -532,6 +511,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 : Text(widget.initialRole == 'driver' ? 'Siguiente' : 'Registrarse', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black)),
           ),
         ],
+      ),
       ),
     );
   }

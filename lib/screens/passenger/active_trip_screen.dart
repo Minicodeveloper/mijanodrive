@@ -74,11 +74,17 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     setState(() => _isSendingSos = true);
     try {
       final pos = await LocationService.instance.current();
+      final user = AuthService.instance.currentUser;
+      
       await FirestoreService.instance.createSosAlert(
-        driverId: AuthService.instance.currentUser?.uid ?? '',
+        driverId: _driver?.uid ?? 'Sin asignar', // Podría aún no tener conductor
         latitude: pos.latitude,
         longitude: pos.longitude,
-        city: AuthService.instance.currentUser?.city ?? 'Tarapoto',
+        city: user?.city ?? 'Tarapoto',
+        name: user?.name,
+        phone: user?.phone,
+        plate: _driver?.plate, // La placa del conductor si ya existe
+        reportedBy: 'passenger',
       );
       if (mounted) {
         setState(() {
@@ -466,9 +472,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  _driver != null
-                                      ? (_driver!.name.isNotEmpty ? _driver!.name : 'Conductor Asignado')
-                                      : 'Buscando conductor...',
+                                  (trip?.driverName != null && trip!.driverName!.isNotEmpty)
+                                      ? trip.driverName!
+                                      : 'Conductor asignado',
                                   style: const TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
@@ -477,7 +483,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                                 const SizedBox(height: 5),
                                 Row(
                                   children: [
-                                    if (_driver != null) ...[
+                                    if (trip?.driverPlate != null) ...[
                                       Container(
                                         padding: const EdgeInsets.symmetric(
                                           horizontal: 8,
@@ -485,12 +491,10 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                                         ),
                                         decoration: BoxDecoration(
                                           color: MijanoTheme.sol,
-                                          borderRadius: BorderRadius.circular(
-                                            4,
-                                          ),
+                                          borderRadius: BorderRadius.circular(4),
                                         ),
                                         child: Text(
-                                          _driver!.plate,
+                                          trip!.driverPlate!,
                                           style: const TextStyle(
                                             fontSize: 11,
                                             fontWeight: FontWeight.bold,
@@ -499,17 +503,17 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                                         ),
                                       ),
                                       const SizedBox(width: 10),
-                                      Icon(
-                                        Icons.location_city,
-                                        size: 14,
-                                        color: Colors.grey[600],
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        _driver!.city,
-                                        style: const TextStyle(fontSize: 12),
-                                      ),
-                                    ] else
+                                    ],
+                                    if (trip?.driverVehicleModel != null)
+                                      Expanded(
+                                        child: Text(
+                                          trip!.driverVehicleModel!,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(fontSize: 12),
+                                        ),
+                                      )
+                                    else if (trip?.driverId == null)
                                       Text(
                                         'Sin asignar',
                                         style: TextStyle(

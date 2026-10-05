@@ -1,8 +1,9 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:mijano_drive_app/services/auth_service.dart';
 import 'package:mijano_drive_app/models/user_model.dart';
 import 'package:mijano_drive_app/screens/driver/pending_account_screen.dart';
+
+import 'package:mijano_drive_app/utils/validators.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -12,6 +13,7 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
@@ -26,15 +28,12 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
-    final email = _emailController.text.trim();
-    final password = _passwordController.text.trim();
-
-    if (email.isEmpty || password.isEmpty) {
-      _snack('Por favor completa todos los campos');
-      return;
-    }
-
+    if (!_formKey.currentState!.validate()) return;
+    
     setState(() => _isLoading = true);
+
+    final email = _emailController.text.trim();
+    final password = _passwordController.text; // Sin trim() por regla de negocio
 
     final (ok, msg, role, status) = await _auth.login(email, password);
 
@@ -44,20 +43,7 @@ class _LoginScreenState extends State<LoginScreen> {
     _snack(msg);
 
     if (ok) {
-      if (role == UserRole.admin) {
-        Navigator.of(context).pushNamedAndRemoveUntil('/admin', (r) => false);
-      } else if (role == UserRole.driver) {
-        if (status == 'approved') {
-          Navigator.of(context).pushNamedAndRemoveUntil('/driver', (r) => false);
-        } else {
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (context) => const PendingAccountScreen()),
-                (r) => false,
-          );
-        }
-      } else {
-        Navigator.of(context).pushNamedAndRemoveUntil('/home', (r) => false);
-      }
+      _routeAfterAuth();
     }
   }
 
@@ -78,9 +64,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _routeAfterAuth() {
     final user = _auth.currentUser;
-    if (user == null || user.name == null || user.name!.isEmpty) {
+    if (user == null || user.name == null || user.name!.trim().isEmpty) {
       Navigator.of(context).pushReplacementNamed('/profile-setup');
-    } else if (user.role == UserRole.admin) {
+    } else if (user.role == UserRole.admin || user.role == UserRole.operator) {
+      // Ambos roles de staff se enrutan a '/admin'
       Navigator.of(context).pushNamedAndRemoveUntil('/admin', (r) => false);
     } else if (user.role == UserRole.driver) {
       if (user.status == 'approved') {
@@ -94,66 +81,6 @@ class _LoginScreenState extends State<LoginScreen> {
     } else {
       Navigator.of(context).pushNamedAndRemoveUntil('/home', (r) => false);
     }
-  }
-
-  void _mostrarModalClaveAdmin(BuildContext context) {
-    final TextEditingController pinController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Acceso Restringido'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Ingrese la clave maestra de administrador para continuar:'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: pinController,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Clave Secreta',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF9D408)),
-            onPressed: () async {
-              const String claveMaestra = 'MijanoDriveAdmin2026*';
-              // Navigator de la pantalla (no del diálogo, que se cierra antes del await)
-              final navigator = Navigator.of(this.context);
-
-              if (pinController.text == claveMaestra) {
-                Navigator.pop(context); // Cierra el diálogo
-                // Buscar si hay administradores, de no haber crea uno.
-                final db = FirebaseFirestore.instance;
-                final snapshot = await db.collection('admins').limit(1).get();
-                if (!mounted) return;
-                if (snapshot.docs.isEmpty) {
-                  navigator.pushNamed('/register-admin');
-                  _snack('Modo registro de primer administrador activado.');
-                } else {
-                  // Intenta un inicio de sesión directo para el administrador general
-                  navigator.pushNamedAndRemoveUntil('/admin', (r) => false);
-                  _snack('Accediendo como administrador.');
-                }
-              } else {
-                Navigator.pop(context);
-                _snack('Clave incorrecta. Acceso denegado.');
-              }
-            },
-            child: const Text('Verificar', style: TextStyle(color: Colors.black)),
-          ),
-        ],
-      ),
-    );
   }
 
   void _snack(String m) => ScaffoldMessenger.of(context)
@@ -175,14 +102,11 @@ class _LoginScreenState extends State<LoginScreen> {
             children: [
               SizedBox(height: MediaQuery.of(context).size.height * 0.1),
 
-              Center(
-                child: GestureDetector(
-                  onLongPress: () => _mostrarModalClaveAdmin(context),
-                  child: const Icon(
-                    Icons.two_wheeler,
-                    size: 80,
-                    color: Color(0xFFF9D408),
-                  ),
+              const Center(
+                child: Icon(
+                  Icons.two_wheeler,
+                  size: 80,
+                  color: Color(0xFFF9D408),
                 ),
               ),
 
@@ -199,30 +123,39 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 40),
 
               // Email input
-              TextField(
-                controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: InputDecoration(
-                  hintText: 'correo@ejemplo.com',
-                  labelText: 'Correo electrónico',
-                  prefixIcon: const Icon(Icons.email_outlined),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
+              Form(
+                key: _formKey,
+                child: Column(
+                  children: [
+                    TextFormField(
+                      controller: _emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      validator: Validators.validateEmail,
+                      decoration: InputDecoration(
+                        hintText: 'correo@ejemplo.com',
+                        labelText: 'Correo electrónico',
+                        prefixIcon: const Icon(Icons.email_outlined),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
 
-              TextField(
-                controller: _passwordController,
-                obscureText: true,
-                decoration: InputDecoration(
-                  hintText: '******',
-                  labelText: 'Contraseña',
-                  prefixIcon: const Icon(Icons.lock_outline),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
+                    TextFormField(
+                      controller: _passwordController,
+                      obscureText: true,
+                      validator: Validators.validatePassword,
+                      decoration: InputDecoration(
+                        hintText: '******',
+                        labelText: 'Contraseña',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 30),

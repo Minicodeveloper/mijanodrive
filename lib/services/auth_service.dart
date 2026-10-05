@@ -52,7 +52,7 @@ class AuthService {
     try {
       fb.UserCredential credential = await _fbAuth.signInWithEmailAndPassword(
         email: email.trim(),
-        password: password.trim(),
+        password: password, // No recortar contraseña (Paso 6)
       );
 
       final uid = credential.user!.uid;
@@ -60,6 +60,13 @@ class AuthService {
       
       if (userDoc.exists) {
         final data = userDoc.data() as Map<String, dynamic>;
+
+        // Cuenta bloqueada desde el panel (Permisos / Conductores / Pasajeros).
+        if (data['isBlocked'] == true) {
+          await _fbAuth.signOut();
+          return (false, 'Tu cuenta ha sido bloqueada. Comunícate con el soporte de Mijano Drive.', null, null);
+        }
+
         currentUser = User.fromMap(data);
         
         String? status = data['status'] ?? (currentUser!.role == UserRole.driver ? 'pending' : 'approved');
@@ -72,6 +79,10 @@ class AuthService {
       String message = 'Error al iniciar sesión';
       if (e.code == 'user-not-found' || e.code == 'wrong-password' || e.code == 'invalid-credential') {
         message = 'Correo o contraseña incorrectos.';
+      } else if (e.code == 'too-many-requests') {
+        message = 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.';
+      } else if (e.code == 'network-request-failed') {
+        message = 'Sin conexión. Revisa tu internet.';
       } else if (e.code == 'invalid-email') {
         message = 'El formato del correo electrónico es inválido.';
       } else if (e.code == 'user-disabled') {
@@ -260,7 +271,7 @@ class AuthService {
     try {
       fb.UserCredential userCredential = await _fbAuth.createUserWithEmailAndPassword(
         email: email.trim(),
-        password: password.trim(),
+        password: password, // No recortar contraseña (Paso 6)
       );
 
       final uid = userCredential.user!.uid;
@@ -315,6 +326,8 @@ class AuthService {
         message = 'El correo electrónico ya se encuentra registrado.';
       } else if (e.code == 'invalid-email') {
         message = 'El formato del correo electrónico es inválido.';
+      } else if (e.code == 'network-request-failed') {
+        message = 'Sin conexión. Revisa tu internet.';
       }
       return (false, message);
     } catch (e) {
