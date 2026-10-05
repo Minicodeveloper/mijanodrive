@@ -121,7 +121,7 @@ class MijanoDriveApp extends StatelessWidget {
         page = const DriverMainLayout();
         break;
       case '/admin': 
-        // El rol se resuelve dentro de AdminShell buscando en Firestore, no por params
+        
         page = const admin.AdminApp();
         break;
       default:
@@ -207,7 +207,7 @@ class _SplashScreenState extends State<SplashScreen>
 
   Future<void> _go() async {
     await Future.delayed(const Duration(milliseconds: 3000));
-    if (mounted) Navigator.of(context).pushReplacementNamed(kIsWeb ? '/login' : '/role-select');
+    if (mounted) Navigator.of(context).pushReplacementNamed('/login');
   }
 
   @override
