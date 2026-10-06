@@ -51,9 +51,6 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
   // Ancho (px lógicos) del mototaxi en el mapa del pasajero.
   static const double _driverMarkerWidth = 36;
 
-  // Cargar la imagen del mototaxi como icono del mapa. Se declara el tamaño
-  // lógico explícito: fromAssetImage ignoraba el size y dibujaba el PNG
-  // (480x630) a tamaño real, por eso salía gigante.
   Future<void> _loadCustomMarker() async {
     final icon = await MarkerIcons.mototaxiWithWidth(_driverMarkerWidth);
     if (!mounted || icon == null) return;
@@ -221,7 +218,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
         Marker(
           markerId: const MarkerId('driver_marker'),
           position: driverLatLng,
-          // AQUÍ SE USA LA IMAGEN DEL MOTOTAXI EN VEZ DEL GLOBO CLÁSICO
+          
           icon: _mototaxiIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
           infoWindow: InfoWindow(
             title: _driver?.name ?? 'Conductor',
@@ -573,18 +570,30 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                             child: OutlinedButton.icon(
                               onPressed: () {
                                 final phone = _driver?.phone ?? 
-                                              widget.tripData['driverPhone'] ?? 
-                                              '';
+                                  widget.tripData['driverPhone'] ?? 
+                                  '';
+      
+                                // --- DEPURACIÓN / PRINTS ---
+                                print('=== DEBUG LLAMADA ===');
+                                print('_driver actual: $_driver');
+                                print('_driver?.phone: ${_driver?.phone}');
+                                print('tripData[\'driverPhone\']: ${widget.tripData['driverPhone']}');
+                                print('Teléfono final obtenido: "$phone"');
+                                print('=====================');
+
                                 if (phone.isEmpty) {
+                                  print('Error: El número de teléfono está vacío, no se puede realizar la llamada.');
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(content: Text('El teléfono del conductor está vacío')),
                                   );
-                                  return;
-                                }
-                                _makePhoneCall(phone);
-                              },
-                              icon: const Icon(Icons.call),
-                              label: const Text('Llamar'),
+                                return;
+                              }
+      
+                              print('Intentando llamar al número: $phone');
+                              _makePhoneCall(phone);
+                            },
+                            icon: const Icon(Icons.call),
+                            label: const Text('Llamar'),
                             ),
                           ),
                           const SizedBox(width: 10),

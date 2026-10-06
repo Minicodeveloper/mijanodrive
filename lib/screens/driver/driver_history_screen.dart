@@ -15,7 +15,6 @@ class DriverHistoryScreen extends StatelessWidget {
 
     return Scaffold(
       body: StreamBuilder<List<Trip>>(
-        
         stream: fs.completedTripsForDriver(driverId),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -28,7 +27,7 @@ class DriverHistoryScreen extends StatelessWidget {
             );
           }
 
-          final trips = snapshot.data ?? [];
+          final trips = List<Trip>.from(snapshot.data ?? []);
 
           if (trips.isEmpty) {
             return Center(
@@ -49,6 +48,15 @@ class DriverHistoryScreen extends StatelessWidget {
               ),
             );
           }
+
+          // ========================================================
+          // ORDENAR LOCALMENTE: Del más reciente al más antiguo
+          // ========================================================
+          trips.sort((a, b) {
+            final dateA = a.createdAt ?? DateTime(2000); 
+            final dateB = b.createdAt ?? DateTime(2000);
+            return dateB.compareTo(dateA); 
+          });
 
           return ListView.separated(
             padding: const EdgeInsets.all(16),

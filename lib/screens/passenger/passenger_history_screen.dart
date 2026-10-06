@@ -1,37 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../theme.dart';
+import '../../services/auth_service.dart';
 
 class PassengerHistoryScreen extends StatelessWidget {
   const PassengerHistoryScreen({super.key});
 
-  // Lista de viajes declarada correctamente fuera del método build
-  final List<Map<String, String>> _pastTrips = const [
-    {
-      'date': '26 Sep 2026, 04:15 PM',
-      'origin': 'Jr. Ramirez Hurtado 120',
-      'destination': 'Aeropuerto Cad. FAP Guillermo del Castillo Paredes',
-      'fare': 'S/ 15.00',
-      'status': 'Completado',
-      'driverName': 'Carlos Mendoza',
-      'vehicle': 'Hyundai Accent (Placa: ABC-123)',
-      'paymentMethod': 'Efectivo',
-      'tripId': 'TRIP-84920',
-    },
-    {
-      'date': '24 Sep 2026, 09:30 AM',
-      'origin': 'Plaza de Armas de Tarapoto',
-      'destination': 'Universidad Nacional de San Martín',
-      'fare': 'S/ 8.00',
-      'status': 'Completado',
-      'driverName': 'Luis Paredes',
-      'vehicle': 'Toyota Yaris (Placa: XYZ-789)',
-      'paymentMethod': 'Yape / Plin',
-      'tripId': 'TRIP-84112',
-    },
-  ];
-
   @override
   Widget build(BuildContext context) {
+    final currentUserId = AuthService.instance.currentUser?.uid ?? '';
+
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -45,110 +23,202 @@ class PassengerHistoryScreen extends StatelessWidget {
         elevation: 0,
         iconTheme: const IconThemeData(color: MijanoTheme.ink),
       ),
-      body: _pastTrips.isEmpty
+      body: currentUserId.isEmpty
           ? const Center(
               child: Text(
-                'No tienes viajes registrados aún.',
+                'Inicia sesión para ver tu historial.',
                 style: TextStyle(fontSize: 16, color: Colors.grey),
               ),
             )
-          : ListView.builder(
-              itemCount: _pastTrips.length,
-              padding: const EdgeInsets.all(16),
-              itemBuilder: (context, index) {
-                final trip = _pastTrips[index];
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 16),
-                  elevation: 2,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => PassengerTripDetailScreen(tripData: trip),
-                        ),
-                      );
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                trip['date']!,
-                                style: const TextStyle(
-                                  color: Colors.grey,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              Text(
-                                trip['fare']!,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                  color: Colors.black87,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const Divider(height: 20),
-                          Row(
-                            children: [
-                              const Icon(Icons.location_on, size: 18, color: Colors.redAccent),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Origen: ${trip['origin']}',
-                                  style: const TextStyle(fontSize: 14),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              const Icon(Icons.flag, size: 18, color: Colors.green),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Destino: ${trip['destination']}',
-                                  style: const TextStyle(fontSize: 14),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          const Align(
-                            alignment: Alignment.centerRight,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  'Ver detalles',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.blueAccent,
-                                  ),
-                                ),
-                                SizedBox(width: 4),
-                                Icon(Icons.arrow_forward_ios, size: 12, color: Colors.blueAccent),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
+          : StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('trips')
+                  .where('passengerId', isEqualTo: currentUserId)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      'No tienes viajes registrados aún.',
+                      style: TextStyle(fontSize: 16, color: Colors.grey),
                     ),
-                  ),
+                  );
+                }
+
+                // 1. Filtrar localmente los viajes que estén completados
+                final docs = snapshot.data!.docs.where((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final status = data['status']?.toString().toLowerCase() ?? '';
+                  return status == 'completed' || status.contains('completed') || status.contains('completado');
+                }).toList();
+
+                if (docs.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      'No tienes viajes completados todavía.',
+                      style: TextStyle(fontSize: 16, color: Colors.grey),
+                    ),
+                  );
+                }
+
+                // 2. Ordenar los documentos de forma descendente (del más reciente al más antiguo)
+                docs.sort((a, b) {
+                  final dataA = a.data() as Map<String, dynamic>;
+                  final dataB = b.data() as Map<String, dynamic>;
+                  
+                  final dateA = dataA['createdAt'] ?? dataA['timestamp'];
+                  final dateB = dataB['createdAt'] ?? dataB['timestamp'];
+
+                  if (dateA is Timestamp && dateB is Timestamp) {
+                    return dateB.compareTo(dateA); // Del más nuevo al más antiguo
+                  }
+                  return 0;
+                });
+
+                return ListView.builder(
+                  itemCount: docs.length,
+                  padding: const EdgeInsets.all(16),
+                  itemBuilder: (context, index) {
+                    final data = docs[index].data() as Map<String, dynamic>;
+                    final tripId = docs[index].id;
+
+                    // Extracción y formateo seguro de la fecha
+                    final rawDate = data['createdAt'] ?? data['timestamp'];
+                    String dateStr = 'Fecha reciente';
+                    if (rawDate != null && rawDate is Timestamp) {
+                      final dt = rawDate.toDate();
+                      dateStr = '${dt.day}/${dt.month}/${dt.year}, ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+                    } else if (rawDate != null) {
+                      dateStr = rawDate.toString();
+                    }
+
+                    // Direcciones exactas de Firestore
+                    final origin = data['originAddress'] ?? 'Origen desconocido';
+                    final destination = data['destinationAddress'] ?? 'Destino desconocido';
+                    
+                    // Tarifa
+                    final rawFare = data['fareAmount'] ?? 0.0;
+                    final fareValue = double.tryParse(rawFare.toString()) ?? 0.0;
+                    final fareStr = 'S/ ${fareValue.toStringAsFixed(2)}';
+
+                    // Datos del conductor y vehículo basados en tu estructura
+                    final driverName = data['driverName'] ?? 'Conductor asignado';
+                    final vehicleBrand = data['driverVehicleBrand'] ?? '';
+                    final vehicleModel = data['driverVehicleModel'] ?? 'Vehículo';
+                    final driverPlate = data['driverPlate'] ?? 'N/A';
+                    final vehicle = '$vehicleBrand $vehicleModel (Placa: $driverPlate)';
+                    final paymentMethod = data['paymentMethod'] ?? 'Efectivo';
+
+                    final tripMap = {
+                      'tripId': tripId,
+                      'date': dateStr,
+                      'origin': origin,
+                      'destination': destination,
+                      'fare': fareStr,
+                      'status': 'Completado',
+                      'driverName': driverName,
+                      'vehicle': vehicle,
+                      'paymentMethod': paymentMethod,
+                    };
+
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => PassengerTripDetailScreen(tripData: tripMap),
+                            ),
+                          );
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    dateStr,
+                                    style: const TextStyle(
+                                      color: Colors.grey,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  Text(
+                                    fareStr,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const Divider(height: 20),
+                              Row(
+                                children: [
+                                  const Icon(Icons.location_on, size: 18, color: Colors.redAccent),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Origen: $origin',
+                                      style: const TextStyle(fontSize: 14),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  const Icon(Icons.flag, size: 18, color: Colors.green),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Destino: $destination',
+                                      style: const TextStyle(fontSize: 14),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              const Align(
+                                alignment: Alignment.centerRight,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'Ver detalles',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.blueAccent,
+                                      ),
+                                    ),
+                                    SizedBox(width: 4),
+                                    Icon(Icons.arrow_forward_ios, size: 12, color: Colors.blueAccent),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
                 );
               },
             ),
@@ -156,7 +226,7 @@ class PassengerHistoryScreen extends StatelessWidget {
   }
 }
 
-/// Pantalla de detalles incrustada en el mismo archivo
+/// Pantalla de detalles del viaje para el pasajero
 class PassengerTripDetailScreen extends StatelessWidget {
   final Map tripData;
 
