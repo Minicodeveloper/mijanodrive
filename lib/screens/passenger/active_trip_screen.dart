@@ -568,7 +568,6 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                           ),
                           const SizedBox(width: 10),
                           Expanded(
-<<<<<<< HEAD
   child: OutlinedButton.icon(
     onPressed: () async {
       // 1. Intentar buscar si ya lo tenemos en tripData
@@ -608,27 +607,6 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     label: const Text('Llamar'),
   ),
 ),
-=======
-                            child: OutlinedButton.icon(
-                              onPressed: () {
-                                final phone = _driver?.phone ?? 
-                                  widget.tripData['driverPhone'] ?? 
-                                  '';
-      
-                                if (phone.isEmpty) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('El teléfono del conductor está vacío')),
-                                  );
-                                  return;
-                                }
-      
-                                _makePhoneCall(phone);
-                              },
-                              icon: const Icon(Icons.call),
-                              label: const Text('Llamar'),
-                            ),
-                          ),
->>>>>>> 30b925912e37a96c946dc954513a902bd0abe1a0
                           const SizedBox(width: 10),
                           Expanded(
                             child: ElevatedButton.icon(
