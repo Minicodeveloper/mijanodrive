@@ -120,6 +120,33 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
     }
   }
 
+  Future<void> _openGoogleMapsNavigation(LatLng destination) async {
+    final navigationUri = Uri.parse(
+      'google.navigation:q=${destination.latitude},${destination.longitude}&mode=d',
+    );
+    final webMapsUri = Uri.https('www.google.com', '/maps/dir/', {
+      'api': '1',
+      'destination': '${destination.latitude},${destination.longitude}',
+      'travelmode': 'driving',
+    });
+
+    try {
+      // ignore: deprecated_member_use
+      final canOpenNavigation = await canLaunchUrl(navigationUri);
+      final uri = canOpenNavigation ? navigationUri : webMapsUri;
+      // ignore: deprecated_member_use
+      final launched = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched && mounted) {
+        _showMessage('No se pudo abrir Google Maps');
+      }
+    } catch (e) {
+      if (mounted) _showMessage('Error al abrir el mapa: $e');
+    }
+  }
+
   Future<void> _sendSos() async {
     if (_sendingSos || _sosSent) return;
     setState(() => _sendingSos = true);
@@ -321,6 +348,13 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
         final status = _optimisticStatus ?? trip.status;
         _scheduleRouteUpdate(trip, status);
         final origin = LatLng(trip.origin.latitude, trip.origin.longitude);
+        final navigationDestination = status == TripStatus.active
+            ? LatLng(trip.destination.latitude, trip.destination.longitude)
+            : LatLng(trip.origin.latitude, trip.origin.longitude);
+        final canNavigate =
+            status == TripStatus.accepted ||
+            status == TripStatus.arrived ||
+            status == TripStatus.active;
 
         return Scaffold(
           body: Stack(
@@ -407,11 +441,30 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
                             ),
                           ),
                           const SizedBox(height: 4),
-                          Text(
-                            trip.originAddress ?? 'Punto de recojo',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.black54),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  status == TripStatus.active
+                                      ? trip.destinationAddress ?? 'Destino'
+                                      : trip.originAddress ?? 'Punto de recojo',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(color: Colors.black54),
+                                ),
+                              ),
+                              if (canNavigate)
+                                IconButton(
+                                  onPressed: () => _openGoogleMapsNavigation(
+                                    navigationDestination,
+                                  ),
+                                  icon: const Icon(
+                                    Icons.navigation,
+                                    color: Colors.blue,
+                                  ),
+                                  tooltip: 'Navegar en Google Maps',
+                                ),
+                            ],
                           ),
                           const SizedBox(height: 8),
                           Text(
