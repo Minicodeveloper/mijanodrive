@@ -64,8 +64,17 @@ class _ReportsModuleState extends State<ReportsModule> {
                 itemCount: trips.length,
                 itemBuilder: (ctx, i) {
                   final t = trips[i];
-                  final pName = userCache[t.passengerId]?['name'] ?? 'Usuario eliminado';
-                  final dName = t.driverId != null ? (userCache[t.driverId]?['name'] ?? 'Conductor') : 'Sin asignar';
+                  
+                  final pName = t.passengerName ?? userCache[t.passengerId]?['name'] ?? 'Usuario eliminado';
+                  final pPhoto = userCache[t.passengerId]?['photoUrl'];
+                  
+                  final driverId = t.driverId;
+                  final dMap = driverId != null ? (userCache[driverId] ?? {}) : {};
+                  final dName = driverId != null ? (t.driverName ?? dMap['name'] ?? 'Conductor') : 'Sin asignar';
+                  final dPhoto = driverId != null ? dMap['photoUrl'] : null;
+                  final dPlate = driverId != null ? (t.driverPlate ?? dMap['vehiclePlate'] ?? dMap['plate'] ?? 'Sin placa') : '';
+
+                  final String title = 'Pasajero $pName ↔ Conductor $dName${dPlate.isNotEmpty ? ' · placa $dPlate' : ''}';
 
                   return Container(
                     margin: const EdgeInsets.only(bottom: 16),
@@ -75,17 +84,35 @@ class _ReportsModuleState extends State<ReportsModule> {
                     ),
                     child: ExpansionTile(
                       shape: const RoundedRectangleBorder(side: BorderSide.none),
-                      leading: CircleAvatar(
-                        backgroundColor: MijanoTheme.cream,
-                        child: const Icon(Icons.chat_bubble_outline, color: MijanoTheme.ink),
+                      leading: SizedBox(
+                        width: 56,
+                        height: 40,
+                        child: Stack(
+                          children: [
+                            Positioned(
+                              left: 0,
+                              child: UserAvatar(photoUrl: pPhoto, name: pName, radius: 20),
+                            ),
+                            Positioned(
+                              right: 0,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white, width: 2),
+                                ),
+                                child: UserAvatar(photoUrl: dPhoto, name: dName, radius: 18),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      title: Text('Viaje: ${t.originAddress} → ${t.destinationAddress}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text('Pasajero: $pName · Cond: $dName · Estado: ${t.status.name}', style: const TextStyle(fontSize: 12)),
+                      title: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: Text('Ruta: ${t.originAddress} → ${t.destinationAddress} · Estado: ${getTripStatusEs(t.status)}', style: const TextStyle(fontSize: 12)),
                       children: [
                         Container(
-                          height: 300,
+                          height: 400,
                           color: const Color(0xFF1E1E1E),
-                          child: _ChatMonitor(tripId: t.id),
+                          child: _ChatMonitor(trip: t, userCache: userCache),
                         )
                       ],
                     ),
@@ -212,8 +239,9 @@ class _ReportsModuleState extends State<ReportsModule> {
 
 
 class _ChatMonitor extends StatefulWidget {
-  final String tripId;
-  const _ChatMonitor({required this.tripId});
+  final Trip trip;
+  final Map<String, Map<String, dynamic>> userCache;
+  const _ChatMonitor({required this.trip, required this.userCache});
 
   @override
   State<_ChatMonitor> createState() => _ChatMonitorState();
@@ -229,17 +257,104 @@ class _ChatMonitorState extends State<_ChatMonitor> {
 
   void _send(String text) {
     if (text.trim().isEmpty) return;
-    fs.sendSupportMessage(widget.tripId, text.trim());
+    fs.sendSupportMessage(widget.trip.id, text.trim());
     _msgCtrl.clear();
+  }
+
+  Widget _buildTripHeader() {
+    final t = widget.trip;
+    final driverId = t.driverId;
+    final dMap = driverId != null ? (widget.userCache[driverId] ?? {}) : {};
+    final pName = t.passengerName ?? widget.userCache[t.passengerId]?['name'] ?? 'Usuario eliminado';
+    final pPhoto = widget.userCache[t.passengerId]?['photoUrl'];
+    
+    final dName = driverId != null ? (t.driverName ?? dMap['name'] ?? 'Conductor') : 'Sin asignar';
+    final dPhoto = driverId != null ? dMap['photoUrl'] : null;
+    final dPlate = driverId != null ? (t.driverPlate ?? dMap['vehiclePlate'] ?? dMap['plate'] ?? 'Sin placa') : '';
+    final dModel = driverId != null ? (t.driverVehicleModel ?? dMap['vehicleModel'] ?? dMap['vehicleBrand'] ?? '') : '';
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: const BoxDecoration(
+        color: Color(0xFF2C2C2C),
+        border: Border(bottom: BorderSide(color: Colors.black26)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            t.driverId == null 
+              ? 'El pasajero $pName está esperando un conductor.'
+              : 'El pasajero $pName está hablando con el conductor $dName (placa $dPlate, $dModel).',
+            style: const TextStyle(color: Colors.white70, fontSize: 13),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _participantCard(pName, 'Pasajero', pPhoto, null),
+              if (t.driverId != null) ...[
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16),
+                  child: Icon(Icons.swap_horiz, color: Colors.white54),
+                ),
+                _participantCard(dName, 'Conductor', dPhoto, '$dPlate - $dModel'),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _participantCard(String name, String role, String? photo, String? extra) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.black26,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            UserAvatar(photoUrl: photo, name: name, radius: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                  Text(role, style: TextStyle(color: role == 'Pasajero' ? Colors.blue.shade300 : Colors.green.shade300, fontSize: 11)),
+                  if (extra != null && extra.length > 3)
+                    Text(extra, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white54, fontSize: 10)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final t = widget.trip;
+    final driverId = t.driverId;
+    final dMap = driverId != null ? (widget.userCache[driverId] ?? {}) : {};
+    final pName = t.passengerName ?? widget.userCache[t.passengerId]?['name'] ?? 'Usuario eliminado';
+    final pPhoto = widget.userCache[t.passengerId]?['photoUrl'];
+    
+    final dName = driverId != null ? (t.driverName ?? dMap['name'] ?? 'Conductor') : 'Sin asignar';
+    final dPhoto = driverId != null ? dMap['photoUrl'] : null;
+    final dPlate = driverId != null ? (t.driverPlate ?? dMap['vehiclePlate'] ?? dMap['plate'] ?? '') : '';
+
     return Column(
       children: [
+        _buildTripHeader(),
         Expanded(
           child: StreamBuilder<List<Map<String, dynamic>>>(
-            stream: fs.chatMessagesForTrip(widget.tripId),
+            stream: fs.chatMessagesForTrip(widget.trip.id),
             builder: (context, snap) {
               final msgs = snap.data ?? [];
               if (msgs.isEmpty) {
@@ -250,25 +365,75 @@ class _ChatMonitorState extends State<_ChatMonitor> {
                 itemCount: msgs.length,
                 itemBuilder: (ctx, i) {
                   final m = msgs[i];
-                  final isSupport = m['senderId'] == 'support';
+                  final senderId = m['senderId']?.toString() ?? '';
+                  final isSupport = senderId == 'support';
+                  
+                  bool isPassenger = senderId == t.passengerId;
+                  bool isDriver = senderId == t.driverId;
+                  
+                  String displayName = isSupport ? 'Soporte (Central)' : (m['senderName']?.toString() ?? 'Usuario');
+                  String? avatarUrl;
+                  String roleLabel = '';
+                  
+                  if (isPassenger) {
+                    displayName = pName;
+                    avatarUrl = pPhoto;
+                    roleLabel = 'Pasajero';
+                  } else if (isDriver) {
+                    displayName = dName;
+                    avatarUrl = dPhoto;
+                    roleLabel = dPlate.isNotEmpty ? 'Conductor ($dPlate)' : 'Conductor';
+                  }
 
                   return Align(
                     alignment: isSupport ? Alignment.centerRight : Alignment.centerLeft,
                     child: Container(
                       margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(12),
                       constraints: const BoxConstraints(maxWidth: 400),
-                      decoration: BoxDecoration(
-                        color: isSupport ? Colors.blueGrey.shade800 : const Color(0xFF2C2C2C),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Column(
+                      child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: isSupport ? MainAxisAlignment.end : MainAxisAlignment.start,
                         children: [
-                          Text(isSupport ? 'Soporte/Admin' : (m['senderName']?.toString() ?? 'Usuario'),
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: isSupport ? Colors.white : Colors.white70)),
-                          const SizedBox(height: 4),
-                          Text(m['text'] ?? '', style: const TextStyle(color: Colors.white)),
+                          if (!isSupport) ...[
+                            UserAvatar(photoUrl: avatarUrl, name: displayName, radius: 14),
+                            const SizedBox(width: 8),
+                          ],
+                          Flexible(
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: isSupport ? Colors.blueGrey.shade800 : const Color(0xFF3A3A3A),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        roleLabel.isNotEmpty ? '$roleLabel · ' : '', 
+                                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: isPassenger ? Colors.blue.shade300 : Colors.green.shade300)
+                                      ),
+                                      Flexible(
+                                        child: Text(displayName,
+                                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.white70),
+                                            maxLines: 1, overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(m['text'] ?? '', style: const TextStyle(color: Colors.white)),
+                                ],
+                              ),
+                            ),
+                          ),
+                          if (isSupport) ...[
+                            const SizedBox(width: 8),
+                            UserAvatar(photoUrl: null, name: 'Soporte', radius: 14),
+                          ],
                         ],
                       ),
                     ),
@@ -477,29 +642,34 @@ class _AdminSupportViewState extends State<AdminSupportView> {
             role = role.toLowerCase();
             final name = chat['name']?.toString() ?? widget.userCache[userId]?['name']?.toString() ?? 'Sin nombre';
 
+            final photoUrl = widget.userCache[userId]?['photoUrl'];
+
             return Material(
               color: isSelected ? MijanoTheme.sol.withValues(alpha: 0.25) : Colors.transparent,
               child: ListTile(
-                leading: Stack(
-                  children: [
-                    const CircleAvatar(
-                      backgroundColor: MijanoTheme.sol,
-                      child: Icon(Icons.support_agent, color: MijanoTheme.ink),
-                    ),
-                    if (isUnread)
-                      Positioned(
-                        right: 0,
-                        top: 0,
-                        child: Container(
-                          width: 12,
-                          height: 12,
-                          decoration: const BoxDecoration(
-                            color: Colors.red,
-                            shape: BoxShape.circle,
+                leading: SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      UserAvatar(photoUrl: photoUrl, name: name, radius: 24),
+                      if (isUnread)
+                        Positioned(
+                          right: -2,
+                          top: -2,
+                          child: Container(
+                            width: 14,
+                            height: 14,
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 2),
+                            ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
                 title: Row(
                   children: [
@@ -542,10 +712,20 @@ class _AdminSupportViewState extends State<AdminSupportView> {
 
   // ---------- Conversación ----------
   Widget _buildConversation(bool compact) {
+    final userData = selectedUserId != null ? widget.userCache[selectedUserId] : null;
+    final photoUrl = userData?['photoUrl'];
+    final rawRole = userData?['role']?.toString().toLowerCase() ?? '';
+    final isDriver = rawRole == 'driver' || rawRole == 'conductor';
+    final roleText = isDriver ? 'Conductor' : 'Pasajero';
+    final roleColor = isDriver ? Colors.orange : Colors.blue;
+    final plate = userData?['vehiclePlate'] ?? userData?['plate'];
+    final vehicle = userData?['vehicleModel'] ?? userData?['vehicleBrand'];
+    final extraInfo = isDriver && plate != null ? ' · $plate${vehicle != null ? ' ($vehicle)' : ''}' : '';
+
     return Column(
       children: [
         Container(
-          padding: EdgeInsets.symmetric(horizontal: compact ? 4 : 16, vertical: compact ? 8 : 16),
+          padding: EdgeInsets.symmetric(horizontal: compact ? 4 : 16, vertical: compact ? 8 : 12),
           decoration: const BoxDecoration(
             color: MijanoTheme.cream,
             border: Border(bottom: BorderSide(color: Colors.black12)),
@@ -559,22 +739,41 @@ class _AdminSupportViewState extends State<AdminSupportView> {
                     selectedUserId = null;
                     selectedUserName = null;
                   }),
-                )
-              else
-                const Padding(
-                  padding: EdgeInsets.only(right: 12),
-                  child: Icon(Icons.person, color: MijanoTheme.ink),
                 ),
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: UserAvatar(photoUrl: photoUrl, name: selectedUserName ?? 'Usuario', radius: 20),
+              ),
               Expanded(
-                child: Text(
-                  'Soporte con: ${selectedUserName ?? ''}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                    color: MijanoTheme.ink,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Soporte con: ${selectedUserName ?? ''}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        color: MijanoTheme.ink,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        AdminBadge(roleText, roleColor),
+                        if (extraInfo.isNotEmpty)
+                          Flexible(
+                            child: Text(
+                              extraInfo,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12, color: Colors.black54, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -608,32 +807,47 @@ class _AdminSupportViewState extends State<AdminSupportView> {
                       alignment: isAdmin ? Alignment.centerRight : Alignment.centerLeft,
                       child: Container(
                         margin: const EdgeInsets.symmetric(vertical: 5),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         constraints: BoxConstraints(maxWidth: bubbleMax),
-                        decoration: BoxDecoration(
-                          color: isAdmin ? MijanoTheme.sol.withValues(alpha: 0.3) : Colors.white,
-                          border: Border.all(
-                            color: isAdmin ? MijanoTheme.ink : Colors.black26,
-                            width: 1.5,
-                          ),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Column(
+                        child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: isAdmin ? MainAxisAlignment.end : MainAxisAlignment.start,
                           children: [
-                            Text(
-                              isAdmin ? 'Soporte (Central)' : senderName,
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: isAdmin ? MijanoTheme.ink : Colors.black54,
+                            if (!isAdmin) ...[
+                              UserAvatar(photoUrl: photoUrl, name: senderName, radius: 14),
+                              const SizedBox(width: 8),
+                            ],
+                            Flexible(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: isAdmin ? MijanoTheme.sol.withValues(alpha: 0.3) : Colors.white,
+                                  border: Border.all(
+                                    color: isAdmin ? MijanoTheme.ink : Colors.black26,
+                                    width: 1.5,
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      isAdmin ? 'Soporte (Central)' : senderName,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: isAdmin ? MijanoTheme.ink : Colors.black54,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      text,
+                                      style: const TextStyle(fontSize: 14, color: MijanoTheme.ink),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              text,
-                              style: const TextStyle(fontSize: 14, color: MijanoTheme.ink),
                             ),
                           ],
                         ),

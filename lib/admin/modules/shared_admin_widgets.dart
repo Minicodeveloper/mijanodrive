@@ -295,3 +295,49 @@ Future<bool> adminConfirm(
   );
   return ok == true;
 }
+
+/// Avatar de usuario reutilizable para el panel de administración
+class UserAvatar extends StatelessWidget {
+  final String? photoUrl;
+  final String name;
+  final double radius;
+
+  const UserAvatar({
+    super.key,
+    required this.photoUrl,
+    required this.name,
+    this.radius = 20,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (photoUrl != null && photoUrl!.isNotEmpty) {
+      return ClipOval(
+        child: Image.network(
+          photoUrl!,
+          width: radius * 2,
+          height: radius * 2,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) => _buildFallback(),
+        ),
+      );
+    }
+    return _buildFallback();
+  }
+
+  Widget _buildFallback() {
+    final String initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: MijanoTheme.sol,
+      child: Text(
+        initial,
+        style: TextStyle(
+          color: MijanoTheme.ink,
+          fontWeight: FontWeight.bold,
+          fontSize: radius,
+        ),
+      ),
+    );
+  }
+}
