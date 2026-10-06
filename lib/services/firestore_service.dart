@@ -164,6 +164,25 @@ class FirestoreService {
 
   Stream<List<Driver>>? _allDriversStream;
 
+  Driver? _mergeDriverData(Map<String, dynamic> uData, Map<String, dynamic> dData, String uid) {
+    final role = RoleHelper.normalizeRole(uData['role']);
+    if (role != 'driver') return null;
+
+    final merged = <String, dynamic>{
+        ...uData,
+        'currentLatitude': dData['currentLatitude'],
+        'currentLongitude': dData['currentLongitude'],
+        'locationUpdatedAt': dData['locationUpdatedAt'],
+        'isAvailable': dData['isAvailable'] ?? uData['isAvailable'] ?? false,
+    };
+    
+    try {
+      return Driver.fromMap(merged, uid);
+    } catch (e) {
+      return null;
+    }
+  }
+
   /// Todos los conductores (aprobados + pendientes) combinando 'users' y 'drivers'.
   Stream<List<Driver>> allDrivers() {
     if (_allDriversStream != null) return _allDriversStream!;
@@ -180,26 +199,12 @@ class FirestoreService {
       final result = <Driver>[];
 
       for (final u in usersData) {
-        final role = RoleHelper.normalizeRole(u['role']);
-        if (role == 'driver') {
-          final uid = u['uid'] ?? u['id'];
-          if (uid == null) continue;
-          final dData = driversMap[uid] ?? {};
-          
-          final merged = <String, dynamic>{
-             ...u,
-             // Mantenemos lat/lng y disponibilidad actualizadas de drivers
-             'currentLatitude': dData['currentLatitude'],
-             'currentLongitude': dData['currentLongitude'],
-             'locationUpdatedAt': dData['locationUpdatedAt'],
-             'isAvailable': dData['isAvailable'] ?? u['isAvailable'] ?? false,
-          };
-          
-          try {
-            result.add(Driver.fromMap(merged, uid));
-          } catch (e) {
-            // Tolerar doc malformado o fallos y omitirlo
-          }
+        final uid = u['uid'] ?? u['id'];
+        if (uid == null) continue;
+        final dData = driversMap[uid] ?? {};
+        final driver = _mergeDriverData(u, dData, uid);
+        if (driver != null) {
+          result.add(driver);
         }
       }
       controller.add(result);
@@ -323,12 +328,51 @@ class FirestoreService {
       .snapshots()
       .map((d) => d.exists ? {'uid': d.id, ...?d.data()} : null);
 
-  /// Conductor en vivo desde `drivers/{uid}` (null si no existe).
-  Stream<Driver?> driverStream(String uid) => _db
-      .collection('drivers')
-      .doc(uid)
-      .snapshots()
-      .map((d) => d.exists ? Driver.fromFirestore(d) : null);
+  /// Conductor en vivo combinando `users/{uid}` y `drivers/{uid}`.
+  Stream<Driver?> driverStream(String uid) {
+    late StreamController<Driver?> controller;
+    StreamSubscription? userSub;
+    StreamSubscription? driverSub;
+
+    Map<String, dynamic>? uData;
+    Map<String, dynamic>? dData;
+
+    void emit() {
+      if (uData == null) {
+        controller.add(null);
+        return;
+      }
+      final driver = _mergeDriverData(uData!, dData ?? {}, uid);
+      controller.add(driver);
+    }
+
+    controller = StreamController<Driver?>.broadcast(
+      onListen: () {
+        userSub = _db.collection('users').doc(uid).snapshots().listen((snap) {
+          if (snap.exists) {
+            uData = {'uid': snap.id, 'id': snap.id, ...?snap.data()};
+          } else {
+            uData = null;
+          }
+          emit();
+        });
+        driverSub = _db.collection('drivers').doc(uid).snapshots().listen((snap) {
+          if (snap.exists) {
+            dData = snap.data();
+          } else {
+            dData = null;
+          }
+          emit();
+        });
+      },
+      onCancel: () {
+        userSub?.cancel();
+        driverSub?.cancel();
+      }
+    );
+
+    return controller.stream;
+  }
 
   /// Perfil de una cuenta del panel recién creada en Firebase Auth.
   Future<void> saveStaffProfile({

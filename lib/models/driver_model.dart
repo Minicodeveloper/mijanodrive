@@ -75,8 +75,25 @@ class Driver {
   factory Driver.fromMap(Map<String, dynamic> map, String uid) {
     // 1. Manejo seguro de 'documents' que puede ser List o Map
     Map<String, dynamic> parsedDocs = {};
+    
+    void addDoc(String key, dynamic value) {
+      if (value is Map) {
+        parsedDocs[key] = value['url'];
+        parsedDocs['${key}Status'] = value['status'];
+      } else if (value is String) {
+        parsedDocs[key] = value;
+      }
+    }
+
     if (map['documents'] is Map) {
-      parsedDocs = Map<String, dynamic>.from(map['documents']);
+      final docsMap = map['documents'] as Map;
+      for (final entry in docsMap.entries) {
+        if (!entry.key.toString().endsWith('Status')) {
+           addDoc(entry.key.toString(), entry.value);
+        } else {
+           parsedDocs[entry.key.toString()] = entry.value;
+        }
+      }
     } else if (map['documents'] is List) {
       final list = map['documents'] as List;
       for (var item in list) {
@@ -92,7 +109,6 @@ class Driver {
             parsedDocs['soatPhoto'] = item['url'];
             parsedDocs['soatPhotoStatus'] = item['status'];
           } else {
-            // Fallback genérico
             parsedDocs[id.toString()] = item['url'];
             parsedDocs['${id}Status'] = item['status'];
           }
