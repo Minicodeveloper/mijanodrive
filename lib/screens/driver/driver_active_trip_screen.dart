@@ -13,6 +13,7 @@ import '../../services/firestore_service.dart';
 import '../../services/location_service.dart';
 import '../../theme.dart';
 import '../../config/app_config.dart';
+import '../../utils/marker_icons.dart';
 import 'driver_trip_chat_screen.dart';
 
 class DriverActiveMapScreen extends StatefulWidget {
@@ -27,6 +28,7 @@ class DriverActiveMapScreen extends StatefulWidget {
 class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
   Position? _driverPosition;
   User? _passenger;
+  BitmapDescriptor? _mototaxiIcon;
   StreamSubscription<Position>? _locationSubscription;
   final Set<Polyline> _polylines = {};
   bool _sendingSos = false;
@@ -48,7 +50,14 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
   void initState() {
     super.initState();
     _loadPassenger();
+    _loadCustomMarker();
     _startLocationTracking();
+  }
+
+  Future<void> _loadCustomMarker() async {
+    final icon = await MarkerIcons.mototaxiWithWidth(36);
+    if (!mounted || icon == null) return;
+    setState(() => _mototaxiIcon = icon);
   }
 
   @override
@@ -69,7 +78,7 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
       final position = await LocationService.instance.current();
       if (!mounted) return;
       setState(() => _driverPosition = position);
-      
+
       _publishLocation(position);
 
       _locationSubscription = LocationService.instance.stream().listen((
@@ -141,10 +150,7 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
     final markers = <Marker>{
       Marker(
         markerId: const MarkerId('origin'),
-        position: LatLng(
-          trip.origin.latitude,
-          trip.origin.longitude,
-        ),
+        position: LatLng(trip.origin.latitude, trip.origin.longitude),
         infoWindow: InfoWindow(
           title: 'Recoger pasajero',
           snippet: trip.originAddress ?? 'Origen',
@@ -153,10 +159,7 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
       ),
       Marker(
         markerId: const MarkerId('destination'),
-        position: LatLng(
-          trip.destination.latitude,
-          trip.destination.longitude,
-        ),
+        position: LatLng(trip.destination.latitude, trip.destination.longitude),
         infoWindow: InfoWindow(
           title: 'Destino',
           snippet: trip.destinationAddress ?? 'Destino',
@@ -170,9 +173,10 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
           markerId: const MarkerId('driver'),
           position: LatLng(position.latitude, position.longitude),
           infoWindow: const InfoWindow(title: 'Tu ubicación'),
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-            BitmapDescriptor.hueAzure,
-          ),
+          icon:
+              _mototaxiIcon ??
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+          anchor: const Offset(0.5, 0.5),
         ),
       );
     }
@@ -319,206 +323,208 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
         final origin = LatLng(trip.origin.latitude, trip.origin.longitude);
 
         return Scaffold(
-      body: Stack(
-        children: [
-          GoogleMap(
-            initialCameraPosition: CameraPosition(target: origin, zoom: 14),
-            onMapCreated: (controller) {
-              final destination = LatLng(
-                trip.destination.latitude,
-                trip.destination.longitude,
-              );
-              if (origin.latitude != destination.latitude ||
-                  origin.longitude != destination.longitude) {
-                controller.moveCamera(
-                  CameraUpdate.newLatLngBounds(
-                    LatLngBounds(
-                      southwest: LatLng(
-                        origin.latitude < destination.latitude
-                            ? origin.latitude
-                            : destination.latitude,
-                        origin.longitude < destination.longitude
-                            ? origin.longitude
-                            : destination.longitude,
+          body: Stack(
+            children: [
+              GoogleMap(
+                initialCameraPosition: CameraPosition(target: origin, zoom: 14),
+                onMapCreated: (controller) {
+                  final destination = LatLng(
+                    trip.destination.latitude,
+                    trip.destination.longitude,
+                  );
+                  if (origin.latitude != destination.latitude ||
+                      origin.longitude != destination.longitude) {
+                    controller.moveCamera(
+                      CameraUpdate.newLatLngBounds(
+                        LatLngBounds(
+                          southwest: LatLng(
+                            origin.latitude < destination.latitude
+                                ? origin.latitude
+                                : destination.latitude,
+                            origin.longitude < destination.longitude
+                                ? origin.longitude
+                                : destination.longitude,
+                          ),
+                          northeast: LatLng(
+                            origin.latitude > destination.latitude
+                                ? origin.latitude
+                                : destination.latitude,
+                            origin.longitude > destination.longitude
+                                ? origin.longitude
+                                : destination.longitude,
+                          ),
+                        ),
+                        72,
                       ),
-                      northeast: LatLng(
-                        origin.latitude > destination.latitude
-                            ? origin.latitude
-                            : destination.latitude,
-                        origin.longitude > destination.longitude
-                            ? origin.longitude
-                            : destination.longitude,
+                    );
+                  }
+                },
+                markers: _markers(trip),
+                polylines: _polylines,
+                myLocationEnabled: _driverPosition != null,
+                myLocationButtonEnabled: true,
+                zoomControlsEnabled: false,
+              ),
+              SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    child: Material(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      elevation: 3,
+                      child: IconButton(
+                        tooltip: 'Volver',
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.arrow_back),
                       ),
                     ),
-                    72,
-                  ),
-                );
-              }
-            },
-            markers: _markers(trip),
-            polylines: _polylines,
-            myLocationEnabled: _driverPosition != null,
-            myLocationButtonEnabled: true,
-            zoomControlsEnabled: false,
-          ),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: Material(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  elevation: 3,
-                  child: IconButton(
-                    tooltip: 'Volver',
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.arrow_back),
                   ),
                 ),
               ),
-            ),
-          ),
-          Positioned(
-            left: 16,
-            right: 16,
-            bottom: 16,
-            child: SafeArea(
-              top: false,
-              child: Material(
-                color: Colors.white,
-                elevation: 8,
-                borderRadius: BorderRadius.circular(14),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _passenger?.name ?? 'Pasajero',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        trip.originAddress ?? 'Punto de recojo',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Colors.black54),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _statusLabel(status),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: MijanoTheme.ink,
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      Row(
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 16,
+                child: SafeArea(
+                  top: false,
+                  child: Material(
+                    color: Colors.white,
+                    elevation: 8,
+                    borderRadius: BorderRadius.circular(14),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () => Navigator.of(context).push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) => DriverTripChatScreen(
-                                    tripId: trip.id,
-                                    senderId: _driverId,
-                                    senderName: _driverName,
-                                    conversationTitle:
-                                        _passenger?.name ?? 'Pasajero',
+                          Text(
+                            _passenger?.name ?? 'Pasajero',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            trip.originAddress ?? 'Punto de recojo',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.black54),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            _statusLabel(status),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: MijanoTheme.ink,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () => Navigator.of(context).push(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) => DriverTripChatScreen(
+                                        tripId: trip.id,
+                                        senderId: _driverId,
+                                        senderName: _driverName,
+                                        conversationTitle:
+                                            _passenger?.name ?? 'Pasajero',
+                                      ),
+                                    ),
+                                  ),
+                                  icon: const Icon(Icons.chat_bubble_outline),
+                                  label: const Text('Chat'),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: _callPassenger,
+                                  icon: const Icon(Icons.call_outlined),
+                                  label: const Text('Llamar'),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: _sendingSos || _sosSent
+                                      ? null
+                                      : _sendSos,
+                                  icon: Icon(
+                                    _sosSent ? Icons.check : Icons.emergency,
+                                  ),
+                                  label: Text(_sosSent ? 'Enviado' : 'S.O.S.'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: MijanoTheme.signal,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 14,
+                                    ),
+                                    textStyle: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                    ),
                                   ),
                                 ),
                               ),
-                              icon: const Icon(Icons.chat_bubble_outline),
-                              label: const Text('Chat'),
-                            ),
+                            ],
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: _callPassenger,
-                              icon: const Icon(Icons.call_outlined),
-                              label: const Text('Llamar'),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: _sendingSos || _sosSent
+                          const SizedBox(height: 10),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              onPressed:
+                                  _updatingStatus ||
+                                      status == TripStatus.completed ||
+                                      status == TripStatus.pending ||
+                                      status == TripStatus.cancelled
                                   ? null
-                                  : _sendSos,
+                                  : () => _advanceTrip(trip, status),
                               icon: Icon(
-                                _sosSent ? Icons.check : Icons.emergency,
+                                status == TripStatus.accepted
+                                    ? Icons.location_on
+                                    : status == TripStatus.arrived
+                                    ? Icons.play_arrow
+                                    : status == TripStatus.active
+                                    ? Icons.flag
+                                    : Icons.check_circle,
                               ),
-                              label: Text(_sosSent ? 'Enviado' : 'S.O.S.'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: MijanoTheme.signal,
-                                foregroundColor: Colors.white,
+                              label: Text(
+                                _nextStatusButtonLabel(status) ??
+                                    _statusLabel(status),
+                              ),
+                              style: FilledButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 14,
                                 ),
-                                textStyle: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                ),
                               ),
                             ),
                           ),
+                          if (status == TripStatus.completed ||
+                              status == TripStatus.cancelled) ...[
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton(
+                                onPressed: () => Navigator.of(context).pop(),
+                                child: const Text('Volver al panel'),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
-                      const SizedBox(height: 10),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed:
-                              _updatingStatus ||
-                                  status == TripStatus.completed ||
-                                  status == TripStatus.pending ||
-                                  status == TripStatus.cancelled
-                              ? null
-                              : () => _advanceTrip(trip, status),
-                          icon: Icon(
-                            status == TripStatus.accepted
-                                ? Icons.location_on
-                                : status == TripStatus.arrived
-                                ? Icons.play_arrow
-                                : status == TripStatus.active
-                                ? Icons.flag
-                                : Icons.check_circle,
-                          ),
-                          label: Text(
-                            _nextStatusButtonLabel(status) ??
-                                _statusLabel(status),
-                          ),
-                          style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                          ),
-                        ),
-                      ),
-                      if (status == TripStatus.completed ||
-                          status == TripStatus.cancelled) ...[
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            child: const Text('Volver al panel'),
-                          ),
-                        ),
-                      ],
-                    ],
+                    ),
                   ),
                 ),
               ),
-            ),
+            ],
           ),
-        ],
-      ),
-    );
+        );
       },
     );
   }
