@@ -8,6 +8,7 @@ import '../../services/auth_service.dart';
 import '../../models/trip_model.dart';
 import '../../models/driver_model.dart';
 import '../../theme.dart';
+import '../../utils/marker_icons.dart';
 import '../driver/driver_trip_chat_screen.dart';
 
 class ActiveTripScreen extends StatefulWidget {
@@ -47,16 +48,20 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     _loadCustomMarker();
   }
 
-  // Cargar la imagen del mototaxi como icono del mapa
+  // Ancho (px lógicos) del mototaxi en el mapa del pasajero.
+  static const double _driverMarkerWidth = 36;
+
+  // Cargar la imagen del mototaxi como icono del mapa. Se declara el tamaño
+  // lógico explícito: fromAssetImage ignoraba el size y dibujaba el PNG
+  // (480x630) a tamaño real, por eso salía gigante.
   Future<void> _loadCustomMarker() async {
-    try {
-      _mototaxiIcon = await BitmapDescriptor.fromAssetImage(
-        const ImageConfiguration(size: Size(34, 45)), // mantiene la proporción del PNG
-        'assets/images/ic_mototaxi_marker.png', // Ruta de tu imagen en assets
-      );
-    } catch (e) {
-      debugPrint('Error al cargar el icono del mototaxi: $e');
-    }
+    final icon = await MarkerIcons.mototaxiWithWidth(_driverMarkerWidth);
+    if (!mounted || icon == null) return;
+    setState(() {
+      _mototaxiIcon = icon;
+      // Fuerza a repintar los marcadores con el icono ya cargado.
+      _lastStatus = null;
+    });
   }
 
   String _statusLabel(TripStatus status) {
