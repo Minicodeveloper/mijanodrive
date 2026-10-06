@@ -52,7 +52,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyCMhmdJobdeH1aUJ87XLw3yRnqm-ufWLGc',
-    appId: '1:335118881570:android:0a7f51b587f65f05eb4b7b',
+    appId: '1:335118881570:android:1294fc101277fd4beb4b7b',
     messagingSenderId: '335118881570',
     projectId: 'mijanodrive-peru',
     storageBucket: 'mijanodrive-peru.firebasestorage.app',
