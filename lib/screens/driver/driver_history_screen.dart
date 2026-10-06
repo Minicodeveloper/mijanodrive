@@ -53,8 +53,8 @@ class DriverHistoryScreen extends StatelessWidget {
           // ORDENAR LOCALMENTE: Del más reciente al más antiguo
           // ========================================================
           trips.sort((a, b) {
-            final dateA = a.createdAt ?? DateTime(2000); 
-            final dateB = b.createdAt ?? DateTime(2000);
+            final dateA = a.createdAt;
+            final dateB = b.createdAt;
             return dateB.compareTo(dateA); 
           });
 

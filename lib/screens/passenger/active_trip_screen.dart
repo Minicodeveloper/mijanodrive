@@ -573,27 +573,17 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                                   widget.tripData['driverPhone'] ?? 
                                   '';
       
-                                // --- DEPURACIÓN / PRINTS ---
-                                print('=== DEBUG LLAMADA ===');
-                                print('_driver actual: $_driver');
-                                print('_driver?.phone: ${_driver?.phone}');
-                                print('tripData[\'driverPhone\']: ${widget.tripData['driverPhone']}');
-                                print('Teléfono final obtenido: "$phone"');
-                                print('=====================');
-
                                 if (phone.isEmpty) {
-                                  print('Error: El número de teléfono está vacío, no se puede realizar la llamada.');
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(content: Text('El teléfono del conductor está vacío')),
                                   );
-                                return;
-                              }
+                                  return;
+                                }
       
-                              print('Intentando llamar al número: $phone');
-                              _makePhoneCall(phone);
-                            },
-                            icon: const Icon(Icons.call),
-                            label: const Text('Llamar'),
+                                _makePhoneCall(phone);
+                              },
+                              icon: const Icon(Icons.call),
+                              label: const Text('Llamar'),
                             ),
                           ),
                           const SizedBox(width: 10),
