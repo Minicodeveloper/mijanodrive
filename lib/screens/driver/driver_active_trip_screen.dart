@@ -108,7 +108,7 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
   }
 
   Future<void> _callPassenger() async {
-    final phone = _passenger?.phone.trim() ?? '';
+    final phone = widget.trip.passengerPhone?.trim() ?? '';
     if (phone.isEmpty) {
       _showMessage('El pasajero no tiene un teléfono registrado.');
       return;

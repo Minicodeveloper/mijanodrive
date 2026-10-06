@@ -8,6 +8,7 @@ class Trip {
   final String id;
   final String passengerId;
   final String? passengerName; 
+  final String? passengerPhone; 
   final String? driverId;
   final String? driverName;
   final String? driverPlate;
@@ -31,6 +32,7 @@ class Trip {
     required this.id,
     required this.passengerId,
     this.passengerName, 
+    this.passengerPhone, 
     this.driverId,
     this.driverName,
     this.driverPlate,
@@ -55,6 +57,7 @@ class Trip {
     return {
       'passengerId': passengerId,
       'passengerName': passengerName, 
+      'passengerPhone': passengerPhone, 
       'driverId': driverId,
       if (driverName != null) 'driverName': driverName,
       if (driverPlate != null) 'driverPlate': driverPlate,
@@ -81,6 +84,7 @@ class Trip {
       id: id,
       passengerId: map['passengerId'] ?? '',
       passengerName: map['passengerName'], 
+      passengerPhone: map['passengerPhone'], 
       driverId: map['driverId'],
       driverName: map['driverName'],
       driverPlate: map['driverPlate'],
@@ -137,7 +141,8 @@ class Trip {
   Trip copyWith({
     String? id,
     String? passengerId,
-    String? passengerName, 
+    String? passengerName,
+    String? passengerPhone, 
     String? driverId,
     String? driverName,
     String? driverPlate,
@@ -160,7 +165,8 @@ class Trip {
     return Trip(
       id: id ?? this.id,
       passengerId: passengerId ?? this.passengerId,
-      passengerName: passengerName ?? this.passengerName, 
+      passengerName: passengerName ?? this.passengerName,
+      passengerPhone: passengerPhone ?? this.passengerPhone, 
       driverId: driverId ?? this.driverId,
       driverName: driverName ?? this.driverName,
       driverPlate: driverPlate ?? this.driverPlate,

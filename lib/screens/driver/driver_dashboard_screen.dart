@@ -131,6 +131,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         'status': 'accepted',
         if (user != null) ...{
           'driverName': user.name,
+          'driverPhone': user.phone,
           'driverPlate': user.vehiclePlate,
           'driverVehicleBrand': user.vehicleBrand,
           'driverVehicleModel': user.vehicleModel,

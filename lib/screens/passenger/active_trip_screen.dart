@@ -10,6 +10,7 @@ import '../../models/driver_model.dart';
 import '../../theme.dart';
 import '../../utils/marker_icons.dart';
 import '../driver/driver_trip_chat_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ActiveTripScreen extends StatefulWidget {
   final String tripId;
@@ -567,35 +568,45 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                           ),
                           const SizedBox(width: 10),
                           Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () {
-                                final phone = _driver?.phone ?? 
-                                  widget.tripData['driverPhone'] ?? 
-                                  '';
-      
-                                // --- DEPURACIÓN / PRINTS ---
-                                print('=== DEBUG LLAMADA ===');
-                                print('_driver actual: $_driver');
-                                print('_driver?.phone: ${_driver?.phone}');
-                                print('tripData[\'driverPhone\']: ${widget.tripData['driverPhone']}');
-                                print('Teléfono final obtenido: "$phone"');
-                                print('=====================');
+  child: OutlinedButton.icon(
+    onPressed: () async {
+      // 1. Intentar buscar si ya lo tenemos en tripData
+      String phone = widget.tripData['driverPhone'] ?? widget.tripData['phone'] ?? '';
 
-                                if (phone.isEmpty) {
-                                  print('Error: El número de teléfono está vacío, no se puede realizar la llamada.');
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('El teléfono del conductor está vacío')),
-                                  );
-                                return;
-                              }
-      
-                              print('Intentando llamar al número: $phone');
-                              _makePhoneCall(phone);
-                            },
-                            icon: const Icon(Icons.call),
-                            label: const Text('Llamar'),
-                            ),
-                          ),
+      // 2. Si no está en tripData, buscarlo en Firestore en la colección 'users' usando el driverId
+      if (phone.isEmpty) {
+        final driverId = widget.tripData['driverId'];
+        if (driverId != null && driverId.toString().isNotEmpty) {
+          try {
+            final driverDoc = await FirebaseFirestore.instance
+                .collection('users')
+                .doc(driverId)
+                .get();
+            
+            if (driverDoc.exists) {
+              phone = driverDoc.data()?['phone'] ?? '';
+            }
+          } catch (e) {
+            print('Error al buscar el teléfono del conductor: $e');
+          }
+        }
+      }
+
+      print('Teléfono final obtenido para llamada: "$phone"');
+
+      if (phone.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('El teléfono del conductor no está disponible')),
+        );
+        return;
+      }
+
+      _makePhoneCall(phone);
+    },
+    icon: const Icon(Icons.call),
+    label: const Text('Llamar'),
+  ),
+),
                           const SizedBox(width: 10),
                           Expanded(
                             child: ElevatedButton.icon(
