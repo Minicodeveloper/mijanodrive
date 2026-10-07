@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../utils/role_helper.dart';
 
-enum UserRole { passenger, driver, admin, operator }
+enum UserRole { passenger, driver, admin, operator, support, control }
 
 class User {
   final String uid;
@@ -84,6 +84,10 @@ class User {
         parsedRole = UserRole.admin;
       } else if (RoleHelper.isManager(r)) {
         parsedRole = UserRole.operator;
+      } else if (RoleHelper.isSupport(r)) {
+        parsedRole = UserRole.support;
+      } else if (RoleHelper.isControl(r)) {
+        parsedRole = UserRole.control;
       }
     }
 

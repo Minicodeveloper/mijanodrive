@@ -378,6 +378,39 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
       ),
       body: Column(
         children: [
+          // Notificaciones (banner)
+          StreamBuilder<List<Map<String, dynamic>>>(
+            stream: _fs.userNotifications(_uid),
+            builder: (context, snapshot) {
+              final notifs = snapshot.data ?? [];
+              final unread = notifs.where((n) => n['isRead'] == false).toList();
+              if (unread.isEmpty) return const SizedBox.shrink();
+
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                color: Colors.red.shade100,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: unread.map((n) {
+                    return Row(
+                      children: [
+                        const Icon(Icons.warning, color: Colors.red, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(n['body'] ?? '', style: const TextStyle(fontSize: 12, color: Colors.black87))),
+                        IconButton(
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          icon: const Icon(Icons.check, color: Colors.green),
+                          onPressed: () => _fs.markNotificationRead(n['id']),
+                        )
+                      ],
+                    );
+                  }).toList(),
+                ),
+              );
+            },
+          ),
+
           // Estado de disponibilidad.
           Container(
             color: MijanoTheme.sol,

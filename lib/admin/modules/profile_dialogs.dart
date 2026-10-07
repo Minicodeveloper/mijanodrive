@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../models/driver_model.dart';
 import '../../services/firestore_service.dart';
 import '../../theme.dart';
+import '../utils/driver_docs.dart';
 import 'shared_admin_widgets.dart';
 
 /// Misma firma que `_actualizarEstadoDocumento` de admin_app.dart.
@@ -164,10 +165,6 @@ class DriverProfileDialog extends StatelessWidget {
           st(['licensedDocumentStatus', 'licenseStatus']), 'licensedDocumentStatus'),
       _Doc('SOAT / Revisión Técnica', s(d.soatPhotoUrl) ?? s(d.documents['soatPhoto']),
           st(['soatPhotoStatus', 'soatStatus']), 'soatPhotoStatus'),
-      _Doc('Antecedentes Policiales', s(d.documents['policeRecord']),
-          st(['policeRecordStatus']), 'policeRecordStatus'),
-      _Doc('Antecedentes Penales', s(d.documents['criminalRecord']),
-          st(['criminalRecordStatus']), 'criminalRecordStatus'),
       _Doc('Tarjeta de Propiedad', s(d.documents['propertyCardPhoto']),
           st(['propertyCardPhotoStatus']), 'propertyCardPhotoStatus'),
       _Doc('Foto del Vehículo', s(d.documents['vehiclePhoto']),
@@ -179,7 +176,13 @@ class DriverProfileDialog extends StatelessWidget {
     final fs = FirestoreService.instance;
     final state = _state(d);
     final docs = _docs(d);
-    final aprobados = docs.where((x) => x.status.toLowerCase() == 'aprobado').length;
+    
+    int aprobados = 0;
+    for (var doc in docs) {
+      if (DriverDocs.normalizeStatus(doc.status) == 'approved') {
+        aprobados++;
+      }
+    }
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -282,12 +285,21 @@ class DriverProfileDialog extends StatelessWidget {
                 },
                 child: Text(d.isBlocked ? 'Desbloquear' : 'Bloquear'),
               ),
-              if (d.status != 'approved')
-                ElevatedButton(
-                  onPressed: () => _run(
-                      context, () => fs.approveDriver(d.uid, true), 'Conductor aprobado'),
-                  child: const Text('Aprobar'),
-                ),
+              if (d.status != 'approved') ...[
+                Builder(builder: (context) {
+                  final allApp = DriverDocs.allApproved(d);
+                  return ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: allApp ? Colors.green : Colors.grey,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: allApp
+                        ? () => _run(context, () => fs.approveDriver(d.uid, true), 'Conductor aprobado')
+                        : null,
+                    child: Text(allApp ? 'Aprobar' : 'Faltan docs'),
+                  );
+                }),
+              ],
             ],
           ),
         ),

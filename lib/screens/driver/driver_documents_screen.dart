@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import '../../services/document_service.dart';
 
 class DriverDocumentsScreen extends StatefulWidget {
   const DriverDocumentsScreen({super.key});
@@ -12,12 +15,10 @@ class DriverDocumentsScreen extends StatefulWidget {
 class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
   
   final Map<String, String> _documentNames = {
-    'criminalRecord': 'Antecedentes Penales',
     'docBack': 'DNI (Reverso)',
     'docFront': 'DNI (Anverso)',
     'facePhoto': 'Foto de Rostro',
     'licensedDocument': 'Licencia de Conducir',
-    'policeRecord': 'Antecedentes Policiales',
     'propertyCardPhoto': 'Tarjeta de Propiedad',
     'soatPhoto': 'SOAT / Seguro',
     'vehiclePhoto': 'Foto del Vehículo',
@@ -34,12 +35,10 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
         
         if (data == null || !data.containsKey('documents') || data['documents'] is! Map) {
           final defaultDocumentsMap = {
-            'criminalRecord': {'url': '', 'status': 'pending'},
             'docBack': {'url': '', 'status': 'pending'},
             'docFront': {'url': '', 'status': 'pending'},
             'facePhoto': {'url': '', 'status': 'pending'},
             'licensedDocument': {'url': '', 'status': 'pending'},
-            'policeRecord': {'url': '', 'status': 'pending'},
             'propertyCardPhoto': {'url': '', 'status': 'pending'},
             'soatPhoto': {'url': '', 'status': 'pending'},
             'vehiclePhoto': {'url': '', 'status': 'pending'},
@@ -52,6 +51,40 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Error al inicializar estado de documentos')),
+        );
+      }
+    }
+  }
+
+  Future<void> _uploadDoc(String docKey) async {
+    try {
+      final picker = ImagePicker();
+      final pickedFile = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+      if (pickedFile == null) return;
+      
+      // Mostrar indicador de carga
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(child: CircularProgressIndicator(color: Color(0xFFF9D408))),
+      );
+
+      await DocumentService.instance.uploadDriverDocument(
+        documentKey: docKey,
+        imageFile: File(pickedFile.path),
+      );
+
+      if (mounted) {
+        Navigator.pop(context); // cerrar loader
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Documento subido. Está en revisión.'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // cerrar loader
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error al subir el documento.'), backgroundColor: Colors.red),
         );
       }
     }
@@ -131,9 +164,10 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
 
                         final bool hasImage = imageUrl.isNotEmpty && imageUrl.startsWith('http');
                         final bool isRejected = (status == 'rejected');
+                        final bool isPending = (!hasImage || status == 'pending');
 
                         return GestureDetector(
-                          onTap: hasImage ? () => _showImageDialog(context, imageUrl, docName) : null,
+                          onTap: isRejected || isPending ? () => _uploadDoc(key) : (hasImage ? () => _showImageDialog(context, imageUrl, docName) : null),
                           child: Container(
                             decoration: BoxDecoration(
                               color: Colors.grey[900],
@@ -141,7 +175,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                               border: Border.all(
                                 color: isRejected 
                                     ? Colors.red 
-                                    : (hasImage ? Colors.green : const Color(0xFFF9D408).withOpacity(0.5)),
+                                    : (hasImage ? Colors.green : const Color(0xFFF9D408).withValues(alpha: 0.5)),
                                 width: 1.5,
                               ),
                             ),

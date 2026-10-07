@@ -587,14 +587,13 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
               phone = driverDoc.data()?['phone'] ?? '';
             }
           } catch (e) {
-            print('Error al buscar el teléfono del conductor: $e');
+            // Error silently handled
           }
         }
       }
 
-      print('Teléfono final obtenido para llamada: "$phone"');
-
       if (phone.isEmpty) {
+        if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('El teléfono del conductor no está disponible')),
         );

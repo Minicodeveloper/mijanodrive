@@ -4,6 +4,7 @@ import '../../models/driver_model.dart';
 import '../../services/firestore_service.dart';
 import 'shared_admin_widgets.dart';
 import 'profile_dialogs.dart';
+import '../utils/driver_docs.dart';
 
 class DriversModule extends StatefulWidget {
   final Future<void> Function(BuildContext, Driver, String, String, StateSetter)? onUpdateStatus;
@@ -272,7 +273,15 @@ class _DriversModuleState extends State<DriversModule> {
                 action: 'Rechazar',
                 danger: true);
             if (!ok || !mounted) return;
-            await _run(() => fs.approveDriver(d.uid, false), '${d.name} rechazado');
+            
+            final rejected = DriverDocs.rejectedDocs(d);
+            if (rejected.isEmpty) {
+               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Debes rechazar al menos un documento antes de rechazar la solicitud.')));
+               return;
+            }
+            final body = 'Documentos rechazados: ${rejected.join(', ')}. Vuelve a subirlos para continuar con tu solicitud.';
+            await fs.notifyDriver(d.uid, 'Solicitud de Conductor Rechazada', body);
+            await _run(() => fs.updateDriverStatus(d.uid, isRejected: true), '${d.name} rechazado');
             break;
           case 'block':
             final ok = await adminConfirm(context,
@@ -288,16 +297,18 @@ class _DriversModuleState extends State<DriversModule> {
             break;
         }
       },
-      itemBuilder: (context) => [
-        const PopupMenuItem(value: 'profile', child: Text('Ver perfil')),
-        if (d.status != 'approved') const PopupMenuItem(value: 'approve', child: Text('Aprobar')),
-        if (d.status != 'rejected') const PopupMenuItem(value: 'reject', child: Text('Rechazar')),
-        PopupMenuItem(
-          value: d.isBlocked ? 'unblock' : 'block',
+      itemBuilder: (context) {
+        final allApp = DriverDocs.allApproved(d);
+        return [
+          const PopupMenuItem(value: 'profile', child: Text('Ver perfil')),
+          if (d.status != 'approved' && allApp) const PopupMenuItem(value: 'approve', child: Text('Aprobar')),
+          if (d.status != 'rejected') const PopupMenuItem(value: 'reject', child: Text('Rechazar')),
+          PopupMenuItem(
+            value: d.isBlocked ? 'unblock' : 'block',
           child: Text(d.isBlocked ? 'Desbloquear' : 'Bloquear acceso'),
         ),
-      ],
-    );
+      ];
+      });
   }
 
   Widget _buildStatusBadge(String status) {

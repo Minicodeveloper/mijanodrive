@@ -6,6 +6,7 @@ import '../models/driver_model.dart';
 import '../models/wallet_model.dart';
 import '../models/tariff_model.dart';
 import '../utils/role_helper.dart';
+import '../admin/utils/driver_docs.dart';
 
 class FirestoreService {
   static final FirestoreService instance = FirestoreService._();
@@ -246,10 +247,21 @@ class FirestoreService {
     if (snap.exists) await driverRef.update(data);
   }
 
-  Future<void> approveDriver(String uid, bool approved) => _updateAccountDocs(uid, {
+  Future<void> approveDriver(String uid, bool approved) async {
+    if (approved) {
+      final doc = await _db.collection('users').doc(uid).get();
+      if (doc.exists) {
+         final d = Driver.fromMap(doc.data()!, uid);
+         if (!DriverDocs.allApproved(d)) {
+            throw Exception('No se puede aprobar. Faltan documentos requeridos.');
+         }
+      }
+    }
+    return _updateAccountDocs(uid, {
         'isApproved': approved,
         'status': approved ? 'approved' : 'rejected',
       });
+  }
 
   Future<void> updateDriverStatus(
     String uid, {
@@ -311,8 +323,8 @@ class FirestoreService {
   // =====================================================
 
   /// Roles guardados en `users.role` que pueden entrar al panel.
-  /// 'admin' / 'superAdmin' = SuperAdmin (dueños) · 'operator' = Gerente.
-  static const List<String> staffRoles = ['admin', 'superAdmin', 'operator'];
+  /// 'admin' / 'superAdmin' = SuperAdmin (dueños) · 'operator' = Gerente · 'support' = Soporte · 'control' = Control.
+  static const List<String> staffRoles = ['admin', 'superAdmin', 'operator', 'support', 'control'];
 
   /// Cuentas del panel (SuperAdmin y Gerente).
   Stream<List<Map<String, dynamic>>> staffAccounts() => _db
@@ -410,6 +422,22 @@ class FirestoreService {
       'isRead': false,
     });
   }
+
+  /// Leer notificaciones del usuario actual
+  Stream<List<Map<String, dynamic>>> userNotifications(String uid) {
+    return _db
+        .collection('notifications')
+        .where('userId', isEqualTo: uid)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((q) => q.docs.map((d) => {'id': d.id, ...d.data()}).toList());
+  }
+
+  /// Marcar notificación como leída
+  Future<void> markNotificationRead(String notifId) => _db
+      .collection('notifications')
+      .doc(notifId)
+      .set({'isRead': true}, SetOptions(merge: true));
 
   /// Añadir transacción manual y actualizar billetera
   Future<void> addManualTransaction(

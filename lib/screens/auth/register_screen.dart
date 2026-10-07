@@ -50,11 +50,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
     3: null,
     4: null,
     5: null,
-    6: null,
-    7: null,
   };
 
-  
   final Map<int, String> _docKeyMap = {
     0: 'docFront',
     1: 'docBack',
@@ -62,8 +59,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     3: 'soatPhoto',
     4: 'propertyCardPhoto',
     5: 'licensedDocument',
-    6: 'policeRecord',
-    7: 'criminalRecord',
   };
 
   late String _selectedRole;
@@ -623,8 +618,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
       'SOAT',
       'Tarjeta Propiedad',
       'Licencia de Conducir',
-      'Antecedentes Policiales',
-      'Antecedentes Penales'
     ];
 
     int uploadedCount = _documents.values.where((v) => v != null).length;
@@ -645,7 +638,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               border: Border.all(color: Colors.grey[300]!),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Text('Documentos cargados: $uploadedCount/8', style: const TextStyle(fontWeight: FontWeight.bold)),
+            child: Text('Documentos cargados: $uploadedCount/6', style: const TextStyle(fontWeight: FontWeight.bold)),
           ),
           const SizedBox(height: 15),
           GridView.builder(

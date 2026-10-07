@@ -32,6 +32,7 @@ class DocumentService {
       // 4. Guardar esa URL dentro del mapa 'documents' en Firestore
       await FirebaseFirestore.instance.collection('users').doc(uid).update({
         'documents.$documentKey': downloadUrl,
+        'documents.${documentKey}Status': 'pending',
       });
 
     } catch (e) {

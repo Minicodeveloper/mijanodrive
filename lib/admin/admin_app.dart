@@ -11,10 +11,11 @@ import 'modules/reports_module.dart';
 import 'modules/alerts_module.dart';
 import 'modules/security_module.dart';
 import 'widgets/live_drivers_map.dart';
+import 'utils/driver_docs.dart';
 import '../widgets/mijano_icon.dart';
 import '../admin/modules/drivers_module.dart';
 
-enum AdminRole { superAdmin, operator }
+enum AdminRole { superAdmin, operator, support, control }
 
 /// Panel de administración web de Mijano Drive.
 /// Mismo Firestore, mismo tema que la app móvil. Se muestra con kIsWeb.
@@ -101,6 +102,7 @@ class _AdminShellState extends State<AdminShell> {
       setState(() {
         _actualRole = AdminRole.superAdmin;
         _isLoadingRole = false;
+        _currentView = 'Panel';
       });
     } else if (normalized == 'operator' ||
         normalized == 'operador' ||
@@ -108,9 +110,35 @@ class _AdminShellState extends State<AdminShell> {
       setState(() {
         _actualRole = AdminRole.operator;
         _isLoadingRole = false;
+        _currentView = 'Panel';
+      });
+    } else if (normalized == 'support' || normalized == 'soporte') {
+      setState(() {
+        _actualRole = AdminRole.support;
+        _isLoadingRole = false;
+        _currentView = 'Soporte';
+      });
+    } else if (normalized == 'control') {
+      setState(() {
+        _actualRole = AdminRole.control;
+        _isLoadingRole = false;
+        _currentView = 'Panel';
       });
     } else {
       _kickOut('Acceso denegado: no eres personal autorizado.');
+    }
+  }
+
+  bool canAccess(AdminRole role, String view) {
+    switch (role) {
+      case AdminRole.superAdmin:
+        return true; // Puede ver todo
+      case AdminRole.operator:
+        return view != 'Permisos';
+      case AdminRole.support:
+        return view == 'Soporte' || view == 'Alertas S.O.S.';
+      case AdminRole.control:
+        return view == 'Panel' || view == 'Pasajeros' || view == 'Conductores';
     }
   }
 
@@ -218,6 +246,14 @@ class _AdminShellState extends State<AdminShell> {
   }
 
   Widget _sidebar(AdminRole role, {bool closeDrawer = false}) {
+    final showGeneral = canAccess(role, 'Panel') || canAccess(role, 'Pasajeros') || canAccess(role, 'Conductores') || canAccess(role, 'Tarifas');
+    final showSecurity = canAccess(role, 'Soporte') || canAccess(role, 'Alertas S.O.S.') || canAccess(role, 'Permisos');
+    
+    String roleName = 'Operador';
+    if (role == AdminRole.superAdmin) roleName = 'SuperAdmin';
+    if (role == AdminRole.support) roleName = 'Soporte';
+    if (role == AdminRole.control) roleName = 'Control';
+
     return Container(
       color: MijanoTheme.ink,
       child: Column(
@@ -245,92 +281,67 @@ class _AdminShellState extends State<AdminShell> {
           Expanded(
             child: ListView(
               children: [
-                Theme(
-                  data: Theme.of(
-                    context,
-                  ).copyWith(dividerColor: Colors.transparent),
-                  child: ExpansionTile(
-                    initiallyExpanded: true,
-                    iconColor: Colors.white70,
-                    collapsedIconColor: Colors.white70,
-                    title: const Text(
-                      'GENERAL',
-                      style: TextStyle(
-                        color: Colors.white38,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                        letterSpacing: 1.2,
-                      ),
-                    ),
-                    children: [
-                      _buildNavItem(
-                        Icons.dashboard,
-                        'Panel',
-                        closeDrawer: closeDrawer,
-                      ),
-                      _buildNavItem(
-                        Icons.people,
-                        'Pasajeros',
-                        closeDrawer: closeDrawer,
-                      ),
-                      _buildNavItem(
-                        Icons.two_wheeler,
-                        'Conductores',
-                        closeDrawer: closeDrawer,
-                      ),
-                      if (role == AdminRole.superAdmin)
-                        _buildNavItem(
-                          Icons.attach_money,
-                          'Tarifas',
-                          closeDrawer: closeDrawer,
+                if (showGeneral)
+                  Theme(
+                    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                    child: ExpansionTile(
+                      initiallyExpanded: true,
+                      iconColor: Colors.white70,
+                      collapsedIconColor: Colors.white70,
+                      title: const Text(
+                        'GENERAL',
+                        style: TextStyle(
+                          color: Colors.white38,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                          letterSpacing: 1.2,
                         ),
-                    ],
-                  ),
-                ),
-                Theme(
-                  data: Theme.of(
-                    context,
-                  ).copyWith(dividerColor: Colors.transparent),
-                  child: ExpansionTile(
-                    initiallyExpanded: true,
-                    iconColor: Colors.white70,
-                    collapsedIconColor: Colors.white70,
-                    title: const Text(
-                      'SEGURIDAD',
-                      style: TextStyle(
-                        color: Colors.white38,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                        letterSpacing: 1.2,
                       ),
+                      children: [
+                        if (canAccess(role, 'Panel'))
+                          _buildNavItem(Icons.dashboard, 'Panel', closeDrawer: closeDrawer),
+                        if (canAccess(role, 'Pasajeros'))
+                          _buildNavItem(Icons.people, 'Pasajeros', closeDrawer: closeDrawer),
+                        if (canAccess(role, 'Conductores'))
+                          _buildNavItem(Icons.two_wheeler, 'Conductores', closeDrawer: closeDrawer),
+                        if (canAccess(role, 'Tarifas'))
+                          _buildNavItem(Icons.attach_money, 'Tarifas', closeDrawer: closeDrawer),
+                      ],
                     ),
-                    children: [
-                      _buildNavItem(
-                        Icons.chat,
-                        'Soporte',
-                        closeDrawer: closeDrawer,
-                      ),
-                      _buildNavItem(
-                        Icons.emergency,
-                        'Alertas S.O.S.',
-                        closeDrawer: closeDrawer,
-                      ),
-                      if (role == AdminRole.superAdmin)
-                        _buildNavItem(
-                          Icons.security,
-                          'Permisos',
-                          closeDrawer: closeDrawer,
-                        ),
-                    ],
                   ),
-                ),
+                if (showSecurity)
+                  Theme(
+                    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                    child: ExpansionTile(
+                      initiallyExpanded: true,
+                      iconColor: Colors.white70,
+                      collapsedIconColor: Colors.white70,
+                      title: const Text(
+                        'SEGURIDAD',
+                        style: TextStyle(
+                          color: Colors.white38,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                      children: [
+                        if (canAccess(role, 'Soporte'))
+                          _buildNavItem(Icons.chat, 'Soporte', closeDrawer: closeDrawer),
+                        if (canAccess(role, 'Alertas S.O.S.'))
+                          _buildNavItem(Icons.emergency, 'Alertas S.O.S.', closeDrawer: closeDrawer),
+                        if (canAccess(role, 'Permisos'))
+                          _buildNavItem(Icons.security, 'Permisos', closeDrawer: closeDrawer),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),
           Padding(
             padding: const EdgeInsets.all(16),
             child: Text(
-              'Rol: ${role == AdminRole.superAdmin ? 'SuperAdmin' : 'Operador'}',
+              'Rol: $roleName',
               style: const TextStyle(color: Colors.white38, fontSize: 12),
             ),
           ),
@@ -349,8 +360,6 @@ class _AdminShellState extends State<AdminShell> {
                 icon: const Icon(Icons.logout, size: 18),
                 label: const Text('Cerrar sesión'),
                 onPressed: () async {
-                  // AdminApp tiene su propio MaterialApp: hay que usar el navigator
-                  // RAÍZ para volver al login de la app principal (ruta '/login').
                   final navigator = Navigator.of(context, rootNavigator: true);
                   await fb.FirebaseAuth.instance.signOut();
                   navigator.pushNamedAndRemoveUntil('/login', (_) => false);
@@ -364,6 +373,10 @@ class _AdminShellState extends State<AdminShell> {
   }
 
   Widget _body(AdminRole role) {
+    if (!canAccess(role, _currentView)) {
+      return const _AccessDenied();
+    }
+
     final bool canSeeMoney = role == AdminRole.superAdmin;
 
     switch (_currentView) {
@@ -381,14 +394,12 @@ class _AdminShellState extends State<AdminShell> {
           canSeeMoney: canSeeMoney,
         );
       case 'Tarifas':
-        if (role != AdminRole.superAdmin) return const _AccessDenied();
         return const TariffsModule();
       case 'Soporte':
         return ReportsModule(canSeeMoney: canSeeMoney);
       case 'Alertas S.O.S.':
         return AlertsModule(canSeeMoney: canSeeMoney);
       case 'Permisos':
-        if (role != AdminRole.superAdmin) return const _AccessDenied();
         return const SecurityModule();
       default:
         return const Center(child: Text('Módulo no encontrado'));
@@ -817,9 +828,12 @@ class _DashboardModule extends StatelessWidget {
       ],
     );
 
+    final bool allApp = DriverDocs.allApproved(d);
+
     final actions = Wrap(
       spacing: 8,
       runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         OutlinedButton.icon(
           style: OutlinedButton.styleFrom(
@@ -829,7 +843,7 @@ class _DashboardModule extends StatelessWidget {
             ),
           ),
           icon: const Icon(Icons.visibility_outlined, size: 16),
-          label: const Text('Ver Doc'),
+          label: const Text('Revisar Documentos'),
           onPressed: () => parentState._mostrarDialogoDocumentos(context, d),
         ),
         ElevatedButton.icon(
@@ -843,13 +857,22 @@ class _DashboardModule extends StatelessWidget {
             ),
           ),
           icon: const Icon(Icons.close, size: 16),
-          label: const Text('Rechazar'),
-          onPressed: () => fs.approveDriver(d.uid, false),
+          label: const Text('Rechazar solicitud'),
+          onPressed: () async {
+             final rejected = DriverDocs.rejectedDocs(d);
+             if (rejected.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Debes rechazar al menos un documento antes de rechazar la solicitud.')));
+                return;
+             }
+             final body = 'Documentos rechazados: ${rejected.join(', ')}. Vuelve a subirlos para continuar con tu solicitud.';
+             await fs.notifyDriver(d.uid, 'Solicitud de Conductor Rechazada', body);
+             await fs.updateDriverStatus(d.uid, isRejected: true);
+          },
         ),
         ElevatedButton.icon(
           style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.green.shade50,
-            foregroundColor: Colors.green.shade700,
+            backgroundColor: allApp ? Colors.green.shade50 : Colors.grey.shade200,
+            foregroundColor: allApp ? Colors.green.shade700 : Colors.black38,
             elevation: 0,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             shape: RoundedRectangleBorder(
@@ -857,8 +880,8 @@ class _DashboardModule extends StatelessWidget {
             ),
           ),
           icon: const Icon(Icons.check, size: 16),
-          label: const Text('Aprobar'),
-          onPressed: () => fs.approveDriver(d.uid, true),
+          label: Text(allApp ? 'Aprobar' : 'Faltan docs'),
+          onPressed: allApp ? () => fs.approveDriver(d.uid, true) : null,
         ),
       ],
     );
@@ -1001,6 +1024,8 @@ extension _DocumentDialogExtension on _AdminShellState {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setStateDialog) {
+          final docsList = DriverDocs.requiredDocs.entries.toList();
+
           return AlertDialog(
             title: const Text('Documentos del Conductor'),
             content: SizedBox(
@@ -1008,225 +1033,40 @@ extension _DocumentDialogExtension on _AdminShellState {
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // 1. DNI (Frente)
-                    _buildDocItem(
-                      title: 'DNI (Frente)',
-                      url: driver.documents['docFront'],
-                      status: driver.documents['docFrontStatus'] ?? 'pendiente',
-                      onView: () =>
-                          _showFullImage(context, driver.documents['docFront']),
-                      onApprove: () => _actualizarEstadoDocumento(
-                        context,
-                        driver,
-                        'docFrontStatus',
-                        'aprobado',
-                        setStateDialog,
-                      ),
-                      onReject: () => _actualizarEstadoDocumento(
-                        context,
-                        driver,
-                        'docFrontStatus',
-                        'rechazado',
-                        setStateDialog,
-                      ),
-                    ),
-                    const Divider(height: 16),
+                  children: List.generate(docsList.length, (index) {
+                    final key = docsList[index].key;
+                    final label = docsList[index].value;
+                    final url = driver.documents[key];
+                    final rawStatus = driver.documents['${key}Status'];
+                    final status = DriverDocs.normalizeStatus(rawStatus?.toString());
 
-                    // 2. DNI (Reverso)
-                    _buildDocItem(
-                      title: 'DNI (Reverso)',
-                      url: driver.documents['docBack'],
-                      status: driver.documents['docBackStatus'] ?? 'pendiente',
-                      onView: () =>
-                          _showFullImage(context, driver.documents['docBack']),
-                      onApprove: () => _actualizarEstadoDocumento(
-                        context,
-                        driver,
-                        'docBackStatus',
-                        'aprobado',
-                        setStateDialog,
-                      ),
-                      onReject: () => _actualizarEstadoDocumento(
-                        context,
-                        driver,
-                        'docBackStatus',
-                        'rechazado',
-                        setStateDialog,
-                      ),
-                    ),
-                    const Divider(height: 16),
-
-                    // 3. Licencia de Conducir
-                    _buildDocItem(
-                      title: 'Licencia de Conducir',
-                      url:
-                          driver.licensePhotoUrl ??
-                          driver.documents['licensedDocument'],
-                      status:
-                          driver.documents['licensedDocumentStatus'] ??
-                          driver.documents['licenseStatus'] ??
-                          'pendiente',
-                      onView: () => _showFullImage(
-                        context,
-                        driver.licensePhotoUrl ??
-                            driver.documents['licensedDocument'],
-                      ),
-                      onApprove: () => _actualizarEstadoDocumento(
-                        context,
-                        driver,
-                        'licensedDocumentStatus',
-                        'aprobado',
-                        setStateDialog,
-                      ),
-                      onReject: () => _actualizarEstadoDocumento(
-                        context,
-                        driver,
-                        'licensedDocumentStatus',
-                        'rechazado',
-                        setStateDialog,
-                      ),
-                    ),
-                    const Divider(height: 16),
-
-                    // 4. SOAT / Revisión Técnica
-                    _buildDocItem(
-                      title: 'SOAT / Revisión Técnica',
-                      url: driver.soatPhotoUrl ?? driver.documents['soatPhoto'],
-                      status:
-                          driver.documents['soatPhotoStatus'] ??
-                          driver.documents['soatStatus'] ??
-                          'pendiente',
-                      onView: () => _showFullImage(
-                        context,
-                        driver.soatPhotoUrl ?? driver.documents['soatPhoto'],
-                      ),
-                      onApprove: () => _actualizarEstadoDocumento(
-                        context,
-                        driver,
-                        'soatPhotoStatus',
-                        'aprobado',
-                        setStateDialog,
-                      ),
-                      onReject: () => _actualizarEstadoDocumento(
-                        context,
-                        driver,
-                        'soatPhotoStatus',
-                        'rechazado',
-                        setStateDialog,
-                      ),
-                    ),
-                    const Divider(height: 16),
-
-                    // 5. Antecedentes Policiales
-                    _buildDocItem(
-                      title: 'Antecedentes Policiales',
-                      url: driver.documents['policeRecord'],
-                      status:
-                          driver.documents['policeRecordStatus'] ?? 'pendiente',
-                      onView: () => _showFullImage(
-                        context,
-                        driver.documents['policeRecord'],
-                      ),
-                      onApprove: () => _actualizarEstadoDocumento(
-                        context,
-                        driver,
-                        'policeRecordStatus',
-                        'aprobado',
-                        setStateDialog,
-                      ),
-                      onReject: () => _actualizarEstadoDocumento(
-                        context,
-                        driver,
-                        'policeRecordStatus',
-                        'rechazado',
-                        setStateDialog,
-                      ),
-                    ),
-                    const Divider(height: 16),
-
-                    // 6. Antecedentes Penales
-                    _buildDocItem(
-                      title: 'Antecedentes Penales',
-                      url: driver.documents['criminalRecord'],
-                      status:
-                          driver.documents['criminalRecordStatus'] ??
-                          'pendiente',
-                      onView: () => _showFullImage(
-                        context,
-                        driver.documents['criminalRecord'],
-                      ),
-                      onApprove: () => _actualizarEstadoDocumento(
-                        context,
-                        driver,
-                        'criminalRecordStatus',
-                        'aprobado',
-                        setStateDialog,
-                      ),
-                      onReject: () => _actualizarEstadoDocumento(
-                        context,
-                        driver,
-                        'criminalRecordStatus',
-                        'rechazado',
-                        setStateDialog,
-                      ),
-                    ),
-                    const Divider(height: 16),
-
-                    // 7. Tarjeta de Propiedad
-                    _buildDocItem(
-                      title: 'Tarjeta de Propiedad',
-                      url: driver.documents['propertyCardPhoto'],
-                      status:
-                          driver.documents['propertyCardPhotoStatus'] ??
-                          'pendiente',
-                      onView: () => _showFullImage(
-                        context,
-                        driver.documents['propertyCardPhoto'],
-                      ),
-                      onApprove: () => _actualizarEstadoDocumento(
-                        context,
-                        driver,
-                        'propertyCardPhotoStatus',
-                        'aprobado',
-                        setStateDialog,
-                      ),
-                      onReject: () => _actualizarEstadoDocumento(
-                        context,
-                        driver,
-                        'propertyCardPhotoStatus',
-                        'rechazado',
-                        setStateDialog,
-                      ),
-                    ),
-                    const Divider(height: 16),
-
-                    // 8. Foto del Vehículo
-                    _buildDocItem(
-                      title: 'Foto del Vehículo',
-                      url: driver.documents['vehiclePhoto'],
-                      status:
-                          driver.documents['vehiclePhotoStatus'] ?? 'pendiente',
-                      onView: () => _showFullImage(
-                        context,
-                        driver.documents['vehiclePhoto'],
-                      ),
-                      onApprove: () => _actualizarEstadoDocumento(
-                        context,
-                        driver,
-                        'vehiclePhotoStatus',
-                        'aprobado',
-                        setStateDialog,
-                      ),
-                      onReject: () => _actualizarEstadoDocumento(
-                        context,
-                        driver,
-                        'vehiclePhotoStatus',
-                        'rechazado',
-                        setStateDialog,
-                      ),
-                    ),
-                  ],
+                    return Column(
+                      children: [
+                        _buildDocItem(
+                          title: label,
+                          url: url,
+                          status: status,
+                          onView: () => _showFullImage(context, url),
+                          onApprove: () => _actualizarEstadoDocumento(
+                            context,
+                            driver,
+                            '${key}Status',
+                            'approved',
+                            setStateDialog,
+                          ),
+                          onReject: () => _actualizarEstadoDocumento(
+                            context,
+                            driver,
+                            '${key}Status',
+                            'rejected',
+                            setStateDialog,
+                          ),
+                        ),
+                        if (index < docsList.length - 1)
+                          const Divider(height: 16),
+                      ],
+                    );
+                  }),
                 ),
               ),
             ),

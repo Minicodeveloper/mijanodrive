@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:mijano_drive_app/services/auth_service.dart';
-import 'package:mijano_drive_app/screens/driver/driver_documents_screen.dart';
+import '../../services/auth_service.dart';
+import '../../services/firestore_service.dart';
+import 'driver_documents_screen.dart';
 
 class PendingAccountScreen extends StatelessWidget {
   const PendingAccountScreen({super.key});
@@ -54,6 +55,55 @@ class PendingAccountScreen extends StatelessWidget {
                 ),
               ),
               const Spacer(),
+              StreamBuilder<List<Map<String, dynamic>>>(
+                stream: FirestoreService.instance.userNotifications(AuthService.instance.currentUser?.uid ?? ''),
+                builder: (context, snapshot) {
+                  final notifs = snapshot.data ?? [];
+                  final unread = notifs.where((n) => n['isRead'] == false).toList();
+                  if (unread.isEmpty) return const SizedBox.shrink();
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 20),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withValues(alpha: 0.1),
+                      border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.warning_amber_rounded, color: Colors.red),
+                            SizedBox(width: 8),
+                            Expanded(child: Text('Atención Requerida', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold))),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        ...unread.map((n) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('• ', style: TextStyle(color: Colors.white)),
+                                Expanded(child: Text(n['body'] ?? '', style: const TextStyle(color: Colors.white, fontSize: 13))),
+                                IconButton(
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                  icon: const Icon(Icons.check_circle_outline, color: Colors.green, size: 20),
+                                  onPressed: () => FirestoreService.instance.markNotificationRead(n['id']),
+                                )
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  );
+                },
+              ),
               ElevatedButton(
                 onPressed: () {
                   

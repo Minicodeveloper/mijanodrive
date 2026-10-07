@@ -40,8 +40,16 @@ service cloud.firestore {
       return isAuth() && getRole() in ['operator', 'operador', 'gerente'];
     }
 
+    function isSupport() {
+      return isAuth() && getRole() in ['support', 'soporte'];
+    }
+
+    function isControl() {
+      return isAuth() && getRole() == 'control';
+    }
+
     function isStaff() {
-      return isSuperAdmin() || isManager();
+      return isSuperAdmin() || isManager() || isSupport() || isControl();
     }
 
     function isAppUser() {
@@ -78,8 +86,8 @@ service cloud.firestore {
       );
 
       allow update: if isSuperAdmin() || (
-        // El gerente puede editar a clientes sin cambiarles el rol, solo campos de moderación
-        isManager()
+        // El gerente o control pueden editar a clientes sin cambiarles el rol, solo campos de moderación
+        (isManager() || isControl())
         && resource.data.get('role', '').lower() in ['passenger', 'pasajero', 'driver']
         && request.resource.data.get('role', '') == resource.data.get('role', '')
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isBlocked','isApproved','isRejected','isReported','status','documents'])
@@ -210,14 +218,14 @@ service cloud.firestore {
 
     // 5. CONFIGURACIÓN (SETTINGS & CITIES)
     match /settings/{docId} {
-      // El gerente nunca lee settings (para evitar acceso a pricing).
-      allow read: if isSuperAdmin() || (isAuth() && !isManager() && docId == 'pricing');
+      // El gerente, control o soporte nunca leen settings (para evitar acceso a pricing).
+      allow read: if isSuperAdmin() || (isAuth() && !isStaff() && docId == 'pricing');
       allow write: if isSuperAdmin();
     }
 
     match /cities/{cityId} {
       // Usado para ver la tarifa urbana en search_trip_screen.
-      allow read: if isAuth() && !isManager();
+      allow read: if isAuth() && !isStaff();
       allow write: if isSuperAdmin();
     }
 

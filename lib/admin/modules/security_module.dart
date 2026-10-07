@@ -15,10 +15,14 @@ import 'shared_admin_widgets.dart';
 //  Roles
 //  · users.role = 'admin' (o 'superAdmin')  -> SuperAdmin (dueños)
 //  · users.role = 'operator'                -> Gerente
+//  · users.role = 'support'                 -> Soporte
+//  · users.role = 'control'                 -> Control
 //  · users.role = 'driver' / 'passenger'    -> solo apps móviles
 // ---------------------------------------------------------------------
 const _roleSuperAdmin = 'admin';
 const _roleManager = 'operator';
+const _roleSupport = 'support';
+const _roleControl = 'control';
 
 String _norm(dynamic r) =>
     (r ?? '').toString().toLowerCase().replaceAll('_', '').replaceAll(' ', '');
@@ -31,6 +35,16 @@ bool _isSuper(Map<String, dynamic>? u) {
 bool _isManager(Map<String, dynamic>? u) {
   final r = _norm(u?['role']);
   return r == 'operator' || r == 'gerente';
+}
+
+bool _isSupportRole(Map<String, dynamic>? u) {
+  final r = _norm(u?['role']);
+  return r == 'support' || r == 'soporte';
+}
+
+bool _isControlRole(Map<String, dynamic>? u) {
+  final r = _norm(u?['role']);
+  return r == 'control';
 }
 
 bool _isPassenger(Map<String, dynamic> u) {
@@ -220,6 +234,10 @@ class _SecurityModuleState extends State<SecurityModule> {
               'Acceso total: tarifas, permisos, montos del panel y todas las cuentas.'),
           line(Icons.manage_accounts, Colors.blue, 'Gerente',
               'Panel sin montos, pasajeros, conductores, soporte y alertas S.O.S. Sin Tarifas ni Permisos.'),
+          line(Icons.chat, Colors.green, 'Soporte',
+              'Solo ve el grupo SEGURIDAD (Soporte y Alertas S.O.S.). Sin acceso a Permisos ni configuraciones.'),
+          line(Icons.supervised_user_circle, Colors.teal, 'Control',
+              'Solo ve el grupo GENERAL (Panel, Pasajeros, Conductores). Sin acceso a Tarifas, Seguridad ni montos.'),
           line(Icons.two_wheeler, Colors.orange, 'Conductor / Pasajero',
               'Solo usan las apps móviles. Aquí puedes aprobar, rechazar o bloquear su acceso.'),
         ],
@@ -324,7 +342,8 @@ class _SecurityModuleState extends State<SecurityModule> {
 
         final supers = staff.where(_isSuper).length;
         final managers = staff.where(_isManager).length;
-        final disabled = staff.where((u) => u['isBlocked'] == true).length;
+        final supports = staff.where(_isSupportRole).length;
+        final controls = staff.where(_isControlRole).length;
         final activeSupers =
             staff.where((u) => _isSuper(u) && u['isBlocked'] != true).length;
 
@@ -343,7 +362,7 @@ class _SecurityModuleState extends State<SecurityModule> {
             AdminStatsGrid(items: [
               AdminStat('SuperAdmins', '$supers', Icons.verified_user, Colors.deepPurple),
               AdminStat('Gerentes', '$managers', Icons.manage_accounts, Colors.blue),
-              AdminStat('Deshabilitados', '$disabled', Icons.block, Colors.red),
+              AdminStat('Ctr/Soporte', '${supports+controls}', Icons.security, Colors.green),
             ]),
             const SizedBox(height: 16),
             Align(
@@ -368,17 +387,21 @@ class _SecurityModuleState extends State<SecurityModule> {
   Widget _staffRow(Map<String, dynamic> u, String myUid, int activeSupers) {
     final isMe = u['uid'] == myUid;
     final isSuper = _isSuper(u);
+    final isManager = _isManager(u);
+    final isSupport = _isSupportRole(u);
+    final isControl = _isControlRole(u);
     final blocked = u['isBlocked'] == true;
     // Nunca dejar el sistema sin un SuperAdmin activo.
     final lastSuper = isSuper && !blocked && activeSupers <= 1;
     final email = (u['email'] ?? '').toString();
 
     final items = <PopupMenuEntry<String>>[
-      if (!isMe && !lastSuper)
-        PopupMenuItem(
-          value: isSuper ? 'toManager' : 'toSuper',
-          child: Text(isSuper ? 'Cambiar a Gerente' : 'Cambiar a SuperAdmin'),
-        ),
+      if (!isMe && !lastSuper) ...[
+        if (!isSuper) const PopupMenuItem(value: 'toSuper', child: Text('Cambiar a SuperAdmin')),
+        if (!isManager) const PopupMenuItem(value: 'toManager', child: Text('Cambiar a Gerente')),
+        if (!isSupport) const PopupMenuItem(value: 'toSupport', child: Text('Cambiar a Soporte')),
+        if (!isControl) const PopupMenuItem(value: 'toControl', child: Text('Cambiar a Control')),
+      ],
       if (!isMe && !lastSuper)
         PopupMenuItem(
           value: blocked ? 'enable' : 'disable',
@@ -396,9 +419,10 @@ class _SecurityModuleState extends State<SecurityModule> {
       subtitle: email.isEmpty ? 'Sin correo' : email,
       badges: [
         if (isMe) const AdminBadge('Tú', Colors.teal),
-        isSuper
-            ? const AdminBadge('SuperAdmin', Colors.deepPurple)
-            : const AdminBadge('Gerente', Colors.blue),
+        if (isSuper) const AdminBadge('SuperAdmin', Colors.deepPurple),
+        if (isManager) const AdminBadge('Gerente', Colors.blue),
+        if (isSupport) const AdminBadge('Soporte', Colors.green),
+        if (isControl) const AdminBadge('Control', Colors.teal),
         blocked
             ? AdminBadge('Deshabilitado', Colors.red.shade800)
             : const AdminBadge('Activo', Colors.green),
@@ -434,6 +458,24 @@ class _SecurityModuleState extends State<SecurityModule> {
             danger: true);
         if (!ok || !mounted) return;
         await _run(() => fs.setStaffRole(uid, _roleManager), '$name ahora es Gerente');
+        break;
+      case 'toSupport':
+        final ok = await adminConfirm(context,
+            title: 'Cambiar a Soporte',
+            body: '$name solo podrá acceder a Soporte y Alertas S.O.S.',
+            action: 'Cambiar',
+            danger: true);
+        if (!ok || !mounted) return;
+        await _run(() => fs.setStaffRole(uid, _roleSupport), '$name ahora es Soporte');
+        break;
+      case 'toControl':
+        final ok = await adminConfirm(context,
+            title: 'Cambiar a Control',
+            body: '$name solo podrá acceder a la pestaña General (Panel, Pasajeros, Conductores).',
+            action: 'Cambiar',
+            danger: true);
+        if (!ok || !mounted) return;
+        await _run(() => fs.setStaffRole(uid, _roleControl), '$name ahora es Control');
         break;
       case 'disable':
         final ok = await adminConfirm(context,
@@ -823,6 +865,8 @@ class _CreateStaffDialogState extends State<_CreateStaffDialog> {
                   ),
                   items: const [
                     DropdownMenuItem(value: _roleManager, child: Text('Gerente')),
+                    DropdownMenuItem(value: _roleControl, child: Text('Control')),
+                    DropdownMenuItem(value: _roleSupport, child: Text('Soporte')),
                     DropdownMenuItem(value: _roleSuperAdmin, child: Text('SuperAdmin (dueño)')),
                   ],
                   onChanged: (v) => setState(() => _role = v ?? _roleManager),
@@ -831,7 +875,11 @@ class _CreateStaffDialogState extends State<_CreateStaffDialog> {
                 Text(
                   _role == _roleSuperAdmin
                       ? 'Acceso total: tarifas, permisos, montos y todas las cuentas.'
-                      : 'Gestiona conductores, pasajeros, soporte y alertas. Sin Tarifas ni Permisos.',
+                      : _role == _roleManager
+                          ? 'Gestiona conductores, pasajeros, soporte y alertas. Sin Tarifas ni Permisos.'
+                          : _role == _roleControl
+                              ? 'Solo ve el Panel general, conductores y pasajeros. Sin seguridad, tarifas ni dinero.'
+                              : 'Solo ve el grupo SEGURIDAD (Soporte y Alertas). Sin permisos.',
                   style: const TextStyle(fontSize: 12, color: Colors.black54),
                 ),
                 if (_error != null) ...[
