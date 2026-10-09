@@ -4,6 +4,8 @@ import 'package:image_picker/image_picker.dart';
 import '../../config/app_config.dart';
 import '../../models/user_model.dart';
 import '../../services/auth_service.dart';
+import '../../services/firestore_service.dart';
+import '../../utils/validators.dart';
 import '../../theme.dart';
 import '../../widgets/mijano_icon.dart';
 
@@ -22,8 +24,6 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   String _city = AppConfig.cities.first;
   UserRole _role = UserRole.passenger;
   String? _selfiePath;
-  bool _lookingUp = false;
-  bool _nameLocked = false;
   bool _saving = false;
 
   final _auth = AuthService.instance;
@@ -35,27 +35,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     super.dispose();
   }
 
-  Future<void> _lookupDni() async {
-    final dni = _dniController.text.trim();
-    if (dni.length != 8) {
-      _snack('El DNI debe tener 8 dígitos');
-      return;
-    }
-    setState(() => _lookingUp = true);
-    final name = await _auth.lookupDni(dni);
-    if (!mounted) return;
-    setState(() {
-      _lookingUp = false;
-      if (name != null && name.isNotEmpty) {
-        _nameController.text = name;
-        _nameLocked = true;
-        _snack('Datos verificados con RENIEC');
-      } else {
-        _nameLocked = false;
-        _snack('No se pudo validar el DNI, escribe tu nombre manualmente');
-      }
-    });
-  }
+
 
   Future<void> _takeSelfie() async {
     try {
@@ -72,24 +52,45 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   }
 
   Future<void> _save() async {
+    final dniVal = Validators.validateDni(_dniController.text);
+    if (dniVal != null) {
+      _snack(dniVal);
+      return;
+    }
     if (_nameController.text.trim().isEmpty) {
       _snack('Completa tu nombre');
       return;
     }
+
     setState(() => _saving = true);
-    await _auth.completeProfile(
-      name: _nameController.text.trim(),
-      dni: _dniController.text.trim(),
-      city: _city,
-      role: _role,
-      photoUrl: _selfiePath,
-    );
-    if (!mounted) return;
-    setState(() => _saving = false);
-    Navigator.of(context).pushNamedAndRemoveUntil(
-      _role == UserRole.driver ? '/driver' : '/home',
-      (r) => false,
-    );
+    
+    final isTaken = await FirestoreService.instance.isDniTaken(_dniController.text.trim());
+    if (isTaken) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      _snack('Este DNI ya está registrado en otra cuenta.');
+      return;
+    }
+
+    try {
+      await _auth.completeProfile(
+        name: _nameController.text.trim(),
+        dni: _dniController.text.trim(),
+        city: _city,
+        role: _role,
+        photoUrl: _selfiePath,
+      );
+      if (!mounted) return;
+      setState(() => _saving = false);
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        _role == UserRole.driver ? '/driver' : '/home',
+        (r) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      _snack(e.toString().replaceAll('Exception: ', ''));
+    }
   }
 
   void _snack(String m) => ScaffoldMessenger.of(context)
@@ -128,34 +129,22 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                   style: TextStyle(color: Colors.black54)),
             ),
             const SizedBox(height: 24),
-            // DNI + RENIEC
+            // DNI
             TextField(
               controller: _dniController,
               keyboardType: TextInputType.number,
               maxLength: 8,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Número de DNI',
-                prefixIcon: const Icon(Icons.badge),
-                suffixIcon: TextButton(
-                  onPressed: _lookingUp ? null : _lookupDni,
-                  child: _lookingUp
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('Validar'),
-                ),
+                prefixIcon: Icon(Icons.badge),
               ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _nameController,
-              readOnly: _nameLocked,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Nombres y apellidos',
-                prefixIcon: const Icon(Icons.person),
-                helperText:
-                    _nameLocked ? 'Verificado con RENIEC' : null,
+                prefixIcon: Icon(Icons.person),
               ),
             ),
             const SizedBox(height: 16),

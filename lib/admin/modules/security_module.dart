@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
@@ -130,6 +131,82 @@ class _SecurityModuleState extends State<SecurityModule> {
     return fb.FirebaseAuth.instanceFor(app: app);
   }
 
+  Future<void> _indexDni() async {
+    final ok = await adminConfirm(
+      context,
+      title: 'Indexar DNI',
+      body: 'Se revisarán todos los usuarios y se creará su índice de DNI si es válido y no existe. Esto evitará duplicados en nuevos registros.',
+      action: 'Iniciar',
+    );
+    if (!ok || !mounted) return;
+
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(child: CircularProgressIndicator()),
+      );
+
+      final snapshot = await FirebaseFirestore.instance.collection('users').get();
+      int added = 0;
+      List<String> conflicts = [];
+
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        final dni = data['dni']?.toString().trim();
+        final uid = doc.id;
+        final name = data['name'] ?? 'Sin nombre';
+        final email = data['email'] ?? 'Sin correo';
+
+        if (dni != null && RegExp(r'^\d{8}$').hasMatch(dni)) {
+          final indexDoc = await FirebaseFirestore.instance.collection('dni_index').doc(dni).get();
+          if (!indexDoc.exists) {
+            await FirebaseFirestore.instance.collection('dni_index').doc(dni).set({
+              'uid': uid,
+              'createdAt': FieldValue.serverTimestamp(),
+            });
+            added++;
+          } else if (indexDoc.data()?['uid'] != uid) {
+            conflicts.add('$dni -> $name ($email, $uid)');
+          }
+        }
+      }
+
+      if (!mounted) return;
+      Navigator.pop(context); // Cerrar loading
+
+      if (conflicts.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Proceso terminado. DNI nuevos indexados: $added.')));
+      } else {
+        showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Conflictos detectados (DNI duplicado)'),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('DNI nuevos indexados: $added'),
+                  const SizedBox(height: 8),
+                  const Text('Estos usuarios comparten DNI con alguien más:'),
+                  ...conflicts.map((c) => Text(c, style: const TextStyle(fontSize: 12, color: Colors.red))),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cerrar')),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+    }
+  }
+
   // ------------------------------------------------------------------
   //  Build + control de acceso
   // ------------------------------------------------------------------
@@ -188,6 +265,16 @@ class _SecurityModuleState extends State<SecurityModule> {
               searchCtrl: _searchCtrl,
               searchHint: 'Buscar por nombre o correo...',
               onSearch: (v) => setState(() => _query = v),
+            ),
+            const SizedBox(height: 16),
+            Align(
+              alignment: Alignment.centerRight,
+              child: ElevatedButton.icon(
+                onPressed: _indexDni,
+                icon: const Icon(Icons.fingerprint),
+                label: const Text('Indexar DNI existentes'),
+                style: ElevatedButton.styleFrom(backgroundColor: MijanoTheme.sol, foregroundColor: MijanoTheme.ink),
+              ),
             ),
             const SizedBox(height: 16),
             if (_tab == 0)

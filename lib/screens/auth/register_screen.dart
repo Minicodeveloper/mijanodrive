@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:mijano_drive_app/models/user_model.dart';
 import 'package:mijano_drive_app/services/auth_service.dart';
 import 'package:mijano_drive_app/services/document_service.dart';
+import 'package:mijano_drive_app/services/firestore_service.dart';
 import 'package:mijano_drive_app/screens/driver/pending_account_screen.dart';
 import 'package:mijano_drive_app/utils/validators.dart';
 
@@ -179,9 +180,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   
-  void _onNextPressed() {
+  void _onNextPressed() async {
     if (_currentStep == 0) {
       if (!_validateStep1()) return;
+      
+      setState(() => _isLoading = true);
+      final dniTaken = await FirestoreService.instance.isDniTaken(_dniController.text.trim());
+      setState(() => _isLoading = false);
+      
+      if (dniTaken) {
+        _showSnackBar('Este DNI ya está registrado en otra cuenta.');
+        return;
+      }
+
       if (_selectedRole == 'passenger') {
         _register(); // Pasajero solo tiene 1 paso
       } else {

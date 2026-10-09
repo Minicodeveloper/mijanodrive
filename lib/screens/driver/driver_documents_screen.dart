@@ -62,6 +62,8 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
       final pickedFile = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
       if (pickedFile == null) return;
       
+      if (!mounted) return;
+
       // Mostrar indicador de carga
       showDialog(
         context: context,

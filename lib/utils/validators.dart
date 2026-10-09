@@ -46,4 +46,22 @@ class Validators {
     }
     return null;
   }
+
+  /// Valida que el DNI tenga 8 dígitos numéricos exactos y no sea secuencial/repetitivo.
+  static String? validateDni(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'El DNI es obligatorio';
+    }
+    final dni = value.trim();
+    if (!RegExp(r'^\d{8}$').hasMatch(dni)) {
+      return 'El DNI debe tener 8 números';
+    }
+    if (dni == '00000000' || dni == '11111111' || dni == '22222222' || 
+        dni == '33333333' || dni == '44444444' || dni == '55555555' || 
+        dni == '66666666' || dni == '77777777' || dni == '88888888' || 
+        dni == '99999999' || dni == '12345678' || dni == '87654321') {
+      return 'DNI no válido';
+    }
+    return null;
+  }
 }

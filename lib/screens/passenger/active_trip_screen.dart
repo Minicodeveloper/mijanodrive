@@ -124,16 +124,53 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
   }
 
   Future<void> _cancelTrip() async {
+    final reasons = [
+      'El conductor tarda mucho',
+      'Me equivoqué de destino',
+      'Ya no lo necesito',
+      'Otro'
+    ];
+
+    String? selectedReason = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Cancelar viaje'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('¿Por qué deseas cancelar el viaje?'),
+              const SizedBox(height: 16),
+              ...reasons.map((r) => ListTile(
+                title: Text(r),
+                onTap: () => Navigator.pop(context, r),
+              )),
+              ListTile(
+                title: const Text('Cancelar sin motivo'),
+                onTap: () => Navigator.pop(context, ''),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, null), // Cancelar diálogo
+              child: const Text('Atrás'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (selectedReason == null) return; // User didn't confirm cancellation
+
     try {
-      await FirestoreService.instance.updateTrip(widget.tripId, {
-        'status': 'cancelled',
-      });
-      if (mounted) Navigator.of(context).pop();
+      await FirestoreService.instance.cancelTrip(widget.tripId, cancelledBy: 'passenger', reason: selectedReason.isEmpty ? null : selectedReason);
+      if (mounted) {
+        Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+      }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error al cancelar: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al cancelar: $e')));
       }
     }
   }
@@ -322,14 +359,59 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
             trip.status == TripStatus.completed &&
             !_hasNavigatedToRating) {
           _hasNavigatedToRating = true;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            Navigator.of(context).pushReplacementNamed(
+          
+          String resolvedName = 'tu conductor';
+          if (trip.driverName != null && trip.driverName!.isNotEmpty) {
+            resolvedName = trip.driverName!;
+          } else if (_driver != null && _driver!.name != 'Sin nombre') {
+            resolvedName = _driver!.name;
+          }
+
+          WidgetsBinding.instance.addPostFrameCallback((_) async {
+             if (resolvedName == 'tu conductor' && trip.driverId != null) {
+                try {
+                  final doc = await FirebaseFirestore.instance.collection('users').doc(trip.driverId).get();
+                  if (doc.exists) {
+                    final n = doc.data()?['name'] ?? doc.data()?['fullName'];
+                    if (n != null && n.toString().trim().isNotEmpty) {
+                       resolvedName = n.toString();
+                    }
+                  }
+                } catch (_) {}
+             }
+             if (!mounted) return;
+             Navigator.of(context).pushReplacementNamed(
               '/rating',
               arguments: {
-                'driverName': _driver?.name ?? 'Conductor',
+                'driverName': resolvedName,
                 'tripId': widget.tripId,
               },
             );
+          });
+        }
+
+        if (trip != null && trip.status == TripStatus.cancelled) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              final nav = Navigator.of(context);
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('Viaje Cancelado'),
+                  content: const Text('Tu conductor canceló el viaje.'),
+                  actions: [
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        nav.pushNamedAndRemoveUntil('/home', (route) => false);
+                      },
+                      child: const Text('Aceptar'),
+                    ),
+                  ],
+                ),
+              );
+            }
           });
         }
 
@@ -482,7 +564,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                                   (trip?.driverName != null &&
                                           trip!.driverName!.isNotEmpty)
                                       ? trip.driverName!
-                                      : 'Conductor asignado',
+                                      : (_driver != null && _driver!.name != 'Sin nombre')
+                                          ? _driver!.name
+                                          : 'Conductor asignado',
                                   style: const TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
@@ -646,7 +730,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                             ),
                           ),
                         ),
-                      if (trip != null && trip.status == TripStatus.pending)
+                      if (trip != null && (trip.status == TripStatus.pending || trip.status == TripStatus.accepted || trip.status == TripStatus.arrived))
                         Padding(
                           padding: const EdgeInsets.only(top: 10),
                           child: OutlinedButton(

@@ -44,6 +44,16 @@ class FirestoreService {
     }
   }
 
+  // ---- DNI Unicidad ----
+  Future<bool> isDniTaken(String dni) async {
+    try {
+      final doc = await _db.collection('dni_index').doc(dni).get();
+      return doc.exists;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // ---- Conductores ----
   Future<void> saveDriver(Driver driver) => _db
       .collection('drivers')
@@ -80,6 +90,14 @@ class FirestoreService {
 
   Future<void> updateTrip(String id, Map<String, dynamic> data) =>
       _db.collection('trips').doc(id).set(data, SetOptions(merge: true));
+
+  Future<void> cancelTrip(String id, {required String cancelledBy, String? reason}) =>
+      _db.collection('trips').doc(id).set({
+        'status': 'cancelled',
+        'cancelledBy': cancelledBy,
+        'cancelReason': reason,
+        'cancelledAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
 
   Stream<Trip?> tripStream(String id) => _db
       .collection('trips')
