@@ -133,6 +133,9 @@ service cloud.firestore {
         && (!('isBlocked' in request.resource.data) || request.resource.data.isBlocked == get(/databases/$(database)/documents/users/$(driverId)).data.get('isBlocked', false))
         && (!('isApproved' in request.resource.data) || request.resource.data.isApproved == get(/databases/$(database)/documents/users/$(driverId)).data.get('isApproved', false))
         && (!('status' in request.resource.data) || request.resource.data.status == get(/databases/$(database)/documents/users/$(driverId)).data.get('status', 'pending'))
+        && (!('isAvailable' in request.resource.data) || request.resource.data.isAvailable == false)
+        && (!('planPaymentStatus' in request.resource.data) || request.resource.data.planPaymentStatus == 'pending')
+        && !('planExpiresAt' in request.resource.data)
       );
 
       // Cuando actualiza su GPS, disponibilidad, etc.
@@ -140,12 +143,69 @@ service cloud.firestore {
         request.auth.uid == driverId
         // Impide que el propio conductor modifique sus campos de acceso
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isBlocked', 'isApproved', 'status'])
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['planExpiresAt', 'activePlanId'])
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAvailable'])
+            || request.resource.data.isAvailable == false
+            || (
+              resource.data.get('planPaymentStatus', '') == 'active'
+              && resource.data.get('planExpiresAt', request.time) is timestamp
+              && resource.data.planExpiresAt > request.time
+            ))
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['planPaymentStatus'])
+            || request.resource.data.planPaymentStatus == 'pending')
       );
 
       allow delete: if isSuperAdmin();
     }
 
-    // 3. VIAJES Y RESERVAS (TRIPS & RESERVATIONS)
+    // 3. COMPROBANTES DE PLANES PARA CONDUCTORES
+    match /driver_plan_payments/{paymentId} {
+      allow create: if isApprovedDriver()
+                    && request.resource.data.keys().hasAll([
+                      'driverId', 'driverName', 'vehiclePlate',
+                      'planId', 'planName', 'amount',
+                      'durationDays', 'receiptUrl', 'notes', 'status', 'createdAt'
+                    ])
+                    && request.resource.data.keys().hasOnly([
+                      'driverId', 'driverName', 'vehiclePlate',
+                      'planId', 'planName', 'amount',
+                      'durationDays', 'receiptUrl', 'notes', 'status', 'createdAt'
+                    ])
+                    && request.resource.data.get('driverId', '') == request.auth.uid
+                    && request.resource.data.get('driverName', '') is string
+                    && request.resource.data.get('vehiclePlate', '') is string
+                    && request.resource.data.get('status', '') == 'pending'
+                    && request.resource.data.get('createdAt', null) == request.time
+                    && request.resource.data.get('receiptUrl', '') is string
+                    && request.resource.data.get('receiptUrl', '') != ''
+                    && request.resource.data.get('notes', '') is string
+                    && request.resource.data.get('notes', '').size() <= 240
+                    && (
+                      (request.resource.data.get('planId', '') == 'daily'
+                       && request.resource.data.get('planName', '') == 'Plan diario'
+                       && request.resource.data.get('amount', 0) == 2.5
+                       && request.resource.data.get('durationDays', 0) == 1)
+                      ||
+                      (request.resource.data.get('planId', '') == 'weekly'
+                       && request.resource.data.get('planName', '') == 'Plan semanal'
+                       && request.resource.data.get('amount', 0) == 15
+                       && request.resource.data.get('durationDays', 0) == 7)
+                      ||
+                      (request.resource.data.get('planId', '') == 'monthly'
+                       && request.resource.data.get('planName', '') == 'Plan mensual'
+                       && request.resource.data.get('amount', 0) == 50
+                       && request.resource.data.get('durationDays', 0) == 30)
+                    );
+      allow read: if isSuperAdmin()
+                  || resource.data.get('driverId', '') == request.auth.uid;
+      allow update: if isSuperAdmin()
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                      .hasOnly(['status', 'reviewedAt'])
+                    && request.resource.data.get('status', '') in ['approved', 'rejected'];
+      allow delete: if isSuperAdmin();
+    }
+
+    // 4. VIAJES Y RESERVAS (TRIPS & RESERVATIONS)
     match /trips/{tripId} {
       allow read: if isStaff()
                   || resource.data.get('passengerId', '') == request.auth.uid
@@ -203,7 +263,7 @@ service cloud.firestore {
       allow delete: if isSuperAdmin();
     }
 
-    // 4. DINERO (WALLETS & TRANSACTIONS)
+    // 5. DINERO (WALLETS & TRANSACTIONS)
     match /wallets/{walletId} {
       allow read: if isSuperAdmin() || request.auth.uid == walletId;
       // Solo el dueño puede crear su propia billetera e inicializada en 0/0.0
@@ -216,7 +276,7 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
-    // 5. CONFIGURACIÓN (SETTINGS & CITIES)
+    // 6. CONFIGURACIÓN (SETTINGS & CITIES)
     match /settings/{docId} {
       // El gerente, control o soporte nunca leen settings (para evitar acceso a pricing).
       allow read: if isSuperAdmin() || (isAuth() && !isStaff() && docId == 'pricing');

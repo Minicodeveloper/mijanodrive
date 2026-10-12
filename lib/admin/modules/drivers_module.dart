@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../../theme.dart';
 import '../../models/driver_model.dart';
@@ -7,10 +8,21 @@ import 'profile_dialogs.dart';
 import '../utils/driver_docs.dart';
 
 class DriversModule extends StatefulWidget {
-  final Future<void> Function(BuildContext, Driver, String, String, StateSetter)? onUpdateStatus;
+  final Future<void> Function(
+    BuildContext,
+    Driver,
+    String,
+    String,
+    StateSetter,
+  )?
+  onUpdateStatus;
   final bool canSeeMoney;
 
-  const DriversModule({super.key, this.onUpdateStatus, required this.canSeeMoney});
+  const DriversModule({
+    super.key,
+    this.onUpdateStatus,
+    required this.canSeeMoney,
+  });
 
   @override
   State<DriversModule> createState() => _DriversModuleState();
@@ -28,79 +40,311 @@ class _DriversModuleState extends State<DriversModule> {
     super.dispose();
   }
 
+  Future<void> _reviewPlanPayment(
+    QueryDocumentSnapshot<Map<String, dynamic>> payment,
+    bool approve,
+  ) async {
+    final data = payment.data();
+    final driverId = data['driverId'] as String;
+    final planId = data['planId'] as String;
+    final durationDays = switch (planId) {
+      'daily' => 1,
+      'weekly' => 7,
+      'monthly' => 30,
+      _ => throw StateError('Plan de pago desconocido: $planId'),
+    };
+    final batch = FirebaseFirestore.instance.batch();
+
+    batch.update(payment.reference, {
+      'status': approve ? 'approved' : 'rejected',
+      'reviewedAt': FieldValue.serverTimestamp(),
+    });
+    batch.set(
+      FirebaseFirestore.instance.collection('drivers').doc(driverId),
+      approve
+          ? {
+              'planPaymentStatus': 'active',
+              'activePlanId': planId,
+              'planExpiresAt': Timestamp.fromDate(
+                DateTime.now().add(Duration(days: durationDays)),
+              ),
+            }
+          : {'planPaymentStatus': 'rejected'},
+      SetOptions(merge: true),
+    );
+    await batch.commit();
+  }
+
+  Widget _pendingPlanPayments(bool compact) {
+    if (!widget.canSeeMoney) return const SizedBox.shrink();
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('driver_plan_payments')
+          .where('status', isEqualTo: 'pending')
+          .limit(50)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return adminCard(
+            child: Text('No se pudieron cargar los pagos: ${snapshot.error}'),
+          );
+        }
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.all(20),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final payments = [...?snapshot.data?.docs]
+          ..sort((a, b) {
+            final aDate = a.data()['createdAt'];
+            final bDate = b.data()['createdAt'];
+            final aMillis = aDate is Timestamp
+                ? aDate.millisecondsSinceEpoch
+                : 0;
+            final bMillis = bDate is Timestamp
+                ? bDate.millisecondsSinceEpoch
+                : 0;
+            return bMillis.compareTo(aMillis);
+          });
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Pagos de planes por validar',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 10),
+            adminCard(
+              padding: EdgeInsets.all(compact ? 12 : 18),
+              child: payments.isEmpty
+                  ? const Text('No hay pagos pendientes de revisión.')
+                  : Column(
+                      children: [
+                        for (
+                          var index = 0;
+                          index < payments.length;
+                          index++
+                        ) ...[
+                          _planPaymentCard(payments[index], compact),
+                          if (index < payments.length - 1)
+                            const Divider(height: 24),
+                        ],
+                      ],
+                    ),
+            ),
+            const SizedBox(height: 22),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _planPaymentCard(
+    QueryDocumentSnapshot<Map<String, dynamic>> payment,
+    bool compact,
+  ) {
+    final data = payment.data();
+    final receiptUrl = data['receiptUrl'] as String? ?? '';
+    final amount = (data['amount'] as num?)?.toDouble() ?? 0;
+    final createdAt = data['createdAt'];
+    final submittedAt = createdAt is Timestamp
+        ? createdAt.toDate().toLocal().toString().split('.').first
+        : 'Fecha pendiente';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '${data['planName'] ?? 'Plan'} · S/ ${amount.toStringAsFixed(2)}',
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Conductor: ${data['driverName'] ?? data['driverId'] ?? 'Sin identificador'}',
+        ),
+        if ((data['vehiclePlate'] as String? ?? '').isNotEmpty)
+          Text('Placa: ${data['vehiclePlate']}'),
+        Text('Enviado: $submittedAt'),
+        if ((data['notes'] as String? ?? '').trim().isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text('Nota: ${data['notes']}'),
+        ],
+        const SizedBox(height: 10),
+        if (receiptUrl.isNotEmpty)
+          InkWell(
+            onTap: () => showDialog<void>(
+              context: context,
+              builder: (dialogContext) => Dialog(
+                child: InteractiveViewer(
+                  child: Image.network(
+                    receiptUrl,
+                    errorBuilder: (_, _, _) => const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text('No se pudo cargar el comprobante.'),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            child: Image.network(
+              receiptUrl,
+              height: compact ? 150 : 210,
+              width: double.infinity,
+              fit: BoxFit.contain,
+              errorBuilder: (_, _, _) => const Text(
+                'No se pudo cargar el comprobante.',
+                style: TextStyle(color: Colors.red),
+              ),
+            ),
+          ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            OutlinedButton.icon(
+              onPressed: () => _run(
+                () => _reviewPlanPayment(payment, false),
+                'Pago rechazado',
+              ),
+              icon: const Icon(Icons.close),
+              label: const Text('Rechazar'),
+            ),
+            ElevatedButton.icon(
+              onPressed: () => _run(
+                () => _reviewPlanPayment(payment, true),
+                'Pago aprobado; plan activado',
+              ),
+              icon: const Icon(Icons.check),
+              label: const Text('Aprobar pago'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: MijanoTheme.ink,
+                foregroundColor: MijanoTheme.sol,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (context, c) {
-      final compact = c.maxWidth < 720;
-      return SingleChildScrollView(
-        padding: EdgeInsets.all(compact ? 14 : 28),
-        child: StreamBuilder<List<Driver>>(
-          stream: fs.allDrivers(),
-          builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            final drivers = snap.data ?? [];
-            final pendientes = drivers.where((d) => d.status == 'pending').toList();
-            final activos = drivers.where((d) => d.status == 'approved' && !d.isBlocked).toList();
-            final inactivos = drivers.where((d) => d.status == 'rejected' || d.isBlocked).toList();
-
-            List<Driver> filtered = drivers;
-            if (_currentTab == 1) filtered = pendientes;
-            if (_currentTab == 2) filtered = activos;
-            if (_currentTab == 3) filtered = inactivos;
-
-            if (_query.isNotEmpty) {
-              final q = _query.toLowerCase();
-              filtered = filtered
-                  .where((d) =>
-              d.name.toLowerCase().contains(q) ||
-                  d.email.toLowerCase().contains(q) ||
-                  d.plate.toLowerCase().contains(q) ||
-                  d.licenseNumber.toLowerCase().contains(q))
+    return LayoutBuilder(
+      builder: (context, c) {
+        final compact = c.maxWidth < 720;
+        return SingleChildScrollView(
+          padding: EdgeInsets.all(compact ? 14 : 28),
+          child: StreamBuilder<List<Driver>>(
+            stream: fs.allDrivers(),
+            builder: (context, snap) {
+              if (snap.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final drivers = snap.data ?? [];
+              final pendientes = drivers
+                  .where((d) => d.status == 'pending')
                   .toList();
-            }
+              final activos = drivers
+                  .where((d) => d.status == 'approved' && !d.isBlocked)
+                  .toList();
+              final inactivos = drivers
+                  .where((d) => d.status == 'rejected' || d.isBlocked)
+                  .toList();
 
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const AdminHeader('Gestión de Conductores', 'Supervisión y control de conductores registrados'),
-                AdminStatsGrid(items: [
-                  AdminStat('Total', '${drivers.length}', Icons.people, Colors.blueGrey),
-                  AdminStat('Pendientes', '${pendientes.length}', Icons.access_time, Colors.orange),
-                  AdminStat('Activos', '${activos.length}', Icons.check_circle, Colors.green),
-                  AdminStat('Inactivos', '${inactivos.length}', Icons.cancel, Colors.red),
-                ]),
-                const SizedBox(height: 24),
-                AdminFilterBar(
-                  tabs: [
-                    'Todos (${drivers.length})',
-                    'Pendientes (${pendientes.length})',
-                    'Activos (${activos.length})',
-                    'Inactivos (${inactivos.length})',
-                  ],
-                  selected: _currentTab,
-                  onSelected: (i) => setState(() => _currentTab = i),
-                  searchCtrl: _searchCtrl,
-                  searchHint: 'Buscar conductor...',
-                  onSearch: (v) => setState(() => _query = v),
-                ),
-                const SizedBox(height: 16),
-                adminCard(
-                  padding: EdgeInsets.all(compact ? 12 : 20),
-                  child: filtered.isEmpty
-                      ? const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(child: Text('No hay conductores para mostrar.')),
-                  )
-                      : (compact ? _compactList(filtered) : _wideTable(filtered)),
-                ),
-              ],
-            );
-          },
-        ),
-      );
-    });
+              List<Driver> filtered = drivers;
+              if (_currentTab == 1) filtered = pendientes;
+              if (_currentTab == 2) filtered = activos;
+              if (_currentTab == 3) filtered = inactivos;
+
+              if (_query.isNotEmpty) {
+                final q = _query.toLowerCase();
+                filtered = filtered
+                    .where(
+                      (d) =>
+                          d.name.toLowerCase().contains(q) ||
+                          d.email.toLowerCase().contains(q) ||
+                          d.plate.toLowerCase().contains(q) ||
+                          d.licenseNumber.toLowerCase().contains(q),
+                    )
+                    .toList();
+              }
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const AdminHeader(
+                    'Gestión de Conductores',
+                    'Supervisión y control de conductores registrados',
+                  ),
+                  _pendingPlanPayments(compact),
+                  AdminStatsGrid(
+                    items: [
+                      AdminStat(
+                        'Total',
+                        '${drivers.length}',
+                        Icons.people,
+                        Colors.blueGrey,
+                      ),
+                      AdminStat(
+                        'Pendientes',
+                        '${pendientes.length}',
+                        Icons.access_time,
+                        Colors.orange,
+                      ),
+                      AdminStat(
+                        'Activos',
+                        '${activos.length}',
+                        Icons.check_circle,
+                        Colors.green,
+                      ),
+                      AdminStat(
+                        'Inactivos',
+                        '${inactivos.length}',
+                        Icons.cancel,
+                        Colors.red,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  AdminFilterBar(
+                    tabs: [
+                      'Todos (${drivers.length})',
+                      'Pendientes (${pendientes.length})',
+                      'Activos (${activos.length})',
+                      'Inactivos (${inactivos.length})',
+                    ],
+                    selected: _currentTab,
+                    onSelected: (i) => setState(() => _currentTab = i),
+                    searchCtrl: _searchCtrl,
+                    searchHint: 'Buscar conductor...',
+                    onSearch: (v) => setState(() => _query = v),
+                  ),
+                  const SizedBox(height: 16),
+                  adminCard(
+                    padding: EdgeInsets.all(compact ? 12 : 20),
+                    child: filtered.isEmpty
+                        ? const Padding(
+                            padding: EdgeInsets.all(24),
+                            child: Center(
+                              child: Text('No hay conductores para mostrar.'),
+                            ),
+                          )
+                        : (compact
+                              ? _compactList(filtered)
+                              : _wideTable(filtered)),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 
   // ---------- Vista ancha: tabla que ocupa todo el ancho ----------
@@ -110,13 +354,15 @@ class _DriversModuleState extends State<DriversModule> {
       children: [
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 8),
-          child: Row(children: [
-            Expanded(flex: 3, child: Text('Conductor', style: head)),
-            Expanded(flex: 2, child: Text('Vehículo', style: head)),
-            Expanded(flex: 3, child: Text('Contacto', style: head)),
-            Expanded(flex: 2, child: Text('Estado', style: head)),
-            SizedBox(width: 56, child: Text('Acciones', style: head)),
-          ]),
+          child: Row(
+            children: [
+              Expanded(flex: 3, child: Text('Conductor', style: head)),
+              Expanded(flex: 2, child: Text('Vehículo', style: head)),
+              Expanded(flex: 3, child: Text('Contacto', style: head)),
+              Expanded(flex: 2, child: Text('Estado', style: head)),
+              SizedBox(width: 56, child: Text('Acciones', style: head)),
+            ],
+          ),
         ),
         const Divider(height: 1),
         for (final d in list) ...[
@@ -124,17 +370,28 @@ class _DriversModuleState extends State<DriversModule> {
             onTap: () => _openProfile(d),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Row(children: [
-                Expanded(flex: 3, child: _identity(d)),
-                Expanded(flex: 2, child: _vehicle(d)),
-                Expanded(
-                  flex: 3,
-                  child: Text(d.email.isNotEmpty ? d.email : 'Sin correo',
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
-                ),
-                Expanded(flex: 2, child: Align(alignment: Alignment.centerLeft, child: _buildStatusBadge(_statusOf(d)))),
-                SizedBox(width: 56, child: _actions(d)),
-              ]),
+              child: Row(
+                children: [
+                  Expanded(flex: 3, child: _identity(d)),
+                  Expanded(flex: 2, child: _vehicle(d)),
+                  Expanded(
+                    flex: 3,
+                    child: Text(
+                      d.email.isNotEmpty ? d.email : 'Sin correo',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Expanded(
+                    flex: 2,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: _buildStatusBadge(_statusOf(d)),
+                    ),
+                  ),
+                  SizedBox(width: 56, child: _actions(d)),
+                ],
+              ),
             ),
           ),
           const Divider(height: 1),
@@ -153,16 +410,18 @@ class _DriversModuleState extends State<DriversModule> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(children: [
-                  Expanded(
-                    child: InkWell(
-                      onTap: () => _openProfile(list[i]),
-                      child: _identity(list[i]),
+                Row(
+                  children: [
+                    Expanded(
+                      child: InkWell(
+                        onTap: () => _openProfile(list[i]),
+                        child: _identity(list[i]),
+                      ),
                     ),
-                  ),
-                  _buildStatusBadge(_statusOf(list[i])),
-                  _actions(list[i]),
-                ]),
+                    _buildStatusBadge(_statusOf(list[i])),
+                    _actions(list[i]),
+                  ],
+                ),
                 const SizedBox(height: 6),
                 Padding(
                   padding: const EdgeInsets.only(left: 40),
@@ -173,14 +432,20 @@ class _DriversModuleState extends State<DriversModule> {
                         '${list[i].vehicleModel.isNotEmpty ? list[i].vehicleModel : 'N/A'} · Placa: ${list[i].plate}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12, color: Colors.black87),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.black87,
+                        ),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         list[i].email.isNotEmpty ? list[i].email : 'Sin correo',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12, color: Colors.black54),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.black54,
+                        ),
                       ),
                     ],
                   ),
@@ -196,32 +461,40 @@ class _DriversModuleState extends State<DriversModule> {
 
   Widget _identity(Driver d) {
     final hasPhoto = d.photoUrl != null && d.photoUrl!.isNotEmpty;
-    return Row(children: [
-      CircleAvatar(
-        radius: 16,
-        backgroundColor: MijanoTheme.sol,
-        backgroundImage: hasPhoto ? NetworkImage(d.photoUrl!) : null,
-        child: hasPhoto
-            ? null
-            : Text(d.name.isNotEmpty ? d.name[0].toUpperCase() : '?',
-            style: const TextStyle(color: MijanoTheme.ink)),
-      ),
-      const SizedBox(width: 8),
-      Expanded(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(d.name.isNotEmpty ? d.name : 'Sin nombre',
+    return Row(
+      children: [
+        CircleAvatar(
+          radius: 16,
+          backgroundColor: MijanoTheme.sol,
+          backgroundImage: hasPhoto ? NetworkImage(d.photoUrl!) : null,
+          child: hasPhoto
+              ? null
+              : Text(
+                  d.name.isNotEmpty ? d.name[0].toUpperCase() : '?',
+                  style: const TextStyle(color: MijanoTheme.ink),
+                ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                d.name.isNotEmpty ? d.name : 'Sin nombre',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.bold)),
-            Text(d.createdAt.toLocal().toString().split(' ')[0],
-                style: const TextStyle(fontSize: 10, color: Colors.black54)),
-          ],
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Text(
+                d.createdAt.toLocal().toString().split(' ')[0],
+                style: const TextStyle(fontSize: 10, color: Colors.black54),
+              ),
+            ],
+          ),
         ),
-      ),
-    ]);
+      ],
+    );
   }
 
   Widget _vehicle(Driver d) {
@@ -229,18 +502,27 @@ class _DriversModuleState extends State<DriversModule> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(d.vehicleModel.isNotEmpty ? d.vehicleModel : 'N/A',
-            maxLines: 1, overflow: TextOverflow.ellipsis),
-        Text('Placa: ${d.plate}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 10, color: Colors.black54)),
+        Text(
+          d.vehicleModel.isNotEmpty ? d.vehicleModel : 'N/A',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        Text(
+          'Placa: ${d.plate}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 10, color: Colors.black54),
+        ),
       ],
     );
   }
 
-  void _openProfile(Driver d) =>
-      DriverProfileDialog.show(context, d.uid, onUpdateStatus: widget.onUpdateStatus, canSeeMoney: widget.canSeeMoney);
+  void _openProfile(Driver d) => DriverProfileDialog.show(
+    context,
+    d.uid,
+    onUpdateStatus: widget.onUpdateStatus,
+    canSeeMoney: widget.canSeeMoney,
+  );
 
   /// 'blocked' tiene prioridad sobre el estado de aprobación.
   String _statusOf(Driver d) => d.isBlocked ? 'blocked' : d.status;
@@ -251,7 +533,9 @@ class _DriversModuleState extends State<DriversModule> {
       await action();
       messenger.showSnackBar(SnackBar(content: Text(okMsg)));
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('No se pudo completar la acción: $e')));
+      messenger.showSnackBar(
+        SnackBar(content: Text('No se pudo completar la acción: $e')),
+      );
     }
   }
 
@@ -264,16 +548,21 @@ class _DriversModuleState extends State<DriversModule> {
             _openProfile(d);
             break;
           case 'approve':
-            await _run(() => fs.approveDriver(d.uid, true), '${d.name} aprobado');
+            await _run(
+              () => fs.approveDriver(d.uid, true),
+              '${d.name} aprobado',
+            );
             break;
           case 'reject':
-            final ok = await adminConfirm(context,
-                title: 'Rechazar conductor',
-                body: '¿Rechazar a ${d.name}? No podrá operar hasta ser aprobado de nuevo.',
-                action: 'Rechazar',
-                danger: true);
+            final ok = await adminConfirm(
+              context,
+              title: 'Rechazar conductor',
+              body:
+                  '¿Rechazar a ${d.name}? No podrá operar hasta ser aprobado de nuevo.',
+              action: 'Rechazar',
+              danger: true,
+            );
             if (!ok || !mounted) return;
-            
             final rejected = DriverDocs.rejectedDocs(d);
             if (rejected.isEmpty) {
                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Debes rechazar al menos un documento antes de rechazar la solicitud.')));
@@ -284,16 +573,25 @@ class _DriversModuleState extends State<DriversModule> {
             await _run(() => fs.updateDriverStatus(d.uid, isRejected: true), '${d.name} rechazado');
             break;
           case 'block':
-            final ok = await adminConfirm(context,
-                title: 'Bloquear conductor',
-                body: '${d.name} no podrá iniciar sesión mientras esté bloqueado.',
-                action: 'Bloquear',
-                danger: true);
+            final ok = await adminConfirm(
+              context,
+              title: 'Bloquear conductor',
+              body:
+                  '${d.name} no podrá iniciar sesión mientras esté bloqueado.',
+              action: 'Bloquear',
+              danger: true,
+            );
             if (!ok || !mounted) return;
-            await _run(() => fs.setAccountBlocked(d.uid, true), '${d.name} bloqueado');
+            await _run(
+              () => fs.setAccountBlocked(d.uid, true),
+              '${d.name} bloqueado',
+            );
             break;
           case 'unblock':
-            await _run(() => fs.setAccountBlocked(d.uid, false), '${d.name} desbloqueado');
+            await _run(
+              () => fs.setAccountBlocked(d.uid, false),
+              '${d.name} desbloqueado',
+            );
             break;
         }
       },
@@ -305,6 +603,9 @@ class _DriversModuleState extends State<DriversModule> {
           if (d.status != 'rejected') const PopupMenuItem(value: 'reject', child: Text('Rechazar')),
           PopupMenuItem(
             value: d.isBlocked ? 'unblock' : 'block',
+            child: Text(d.isBlocked ? 'Desbloquear' : 'Bloquear acceso'),
+          ),
+        ];
           child: Text(d.isBlocked ? 'Desbloquear' : 'Bloquear acceso'),
         ),
       ];
@@ -338,7 +639,14 @@ class _DriversModuleState extends State<DriversModule> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color),
       ),
-      child: Text(text, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
     );
   }
 }
