@@ -4,18 +4,21 @@ import '../models/user_model.dart';
 import '../models/trip_model.dart';
 import '../models/driver_model.dart';
 import '../models/driver_plan_model.dart';
+import '../models/plan_model.dart';
 import '../models/wallet_model.dart';
 import '../models/tariff_model.dart';
 import '../utils/role_helper.dart';
 import '../admin/utils/driver_docs.dart';
+import 'auth_service.dart';
 
 // ============================================================================
-// CONTRATO DE DATOS: PLANES
+// CONTRATO DE DATOS: PLANES Y SOLICITUDES
 // plan_requests: driverId, driverName, driverPhone, planId, planName, amount,
-//                days, receiptUrl, status ('pending'|'approved'|'rejected'),
+//                days, priority, receiptUrl, notes, status ('pending'|'approved'|'rejected'),
 //                rejectReason, createdAt, reviewedBy, reviewedAt.
-// driver_plans:  planId, planName, priority, startsAt, expiresAt, status,
+// driver_plans:  planId, planName, priority, startsAt, expiresAt, status ('active'|'expired'),
 //                activatedBy, updatedAt. (ID del documento = driverId)
+// drivers:       planPaymentStatus ('pending'|'active'|'rejected'), activePlanId, planExpiresAt
 // ============================================================================
 
 class FirestoreService {
@@ -758,8 +761,19 @@ class FirestoreService {
         );
   }
 
-  Future<void> updatePlan(String id, Map<String, dynamic> data) async {
-    await _db.collection('plans').doc(id).update(data);
+  Future<void> updatePlan(PlanModel plan, String updatedBy) async {
+    final data = plan.toMap();
+    data['updatedAt'] = FieldValue.serverTimestamp();
+    data['updatedBy'] = updatedBy;
+    await _db.collection('plans').doc(plan.id).set(data, SetOptions(merge: true));
+  }
+
+  Future<void> togglePlanActive(String planId, bool isActive, String updatedBy) async {
+    await _db.collection('plans').doc(planId).set({
+      'isActive': isActive,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'updatedBy': updatedBy,
+    }, SetOptions(merge: true));
   }
 
   Future<void> seedDefaultPlans() async {
@@ -844,33 +858,44 @@ class FirestoreService {
 
   Future<void> approvePlanRequest(Map<String, dynamic> request, String adminName) async {
     final reqId = request['id'];
-    
+    final realAdminName = AuthService.instance.currentUser?.name ?? (adminName.isNotEmpty ? adminName : 'Admin');
+
     await _db.runTransaction((transaction) async {
       final reqRef = _db.collection('plan_requests').doc(reqId);
       final reqDoc = await transaction.get(reqRef);
       if (!reqDoc.exists) throw Exception('La solicitud no existe.');
       if (reqDoc.data()?['status'] != 'pending') throw Exception('La solicitud ya fue revisada.');
 
-      final driverId = request['driverId'];
-      final planId = request['planId'];
-      final planName = request['planName'];
-      final int days = request['days'];
+      final driverId = request['driverId']?.toString() ?? '';
+      final planId = request['planId']?.toString() ?? '';
+      final planName = request['planName']?.toString() ?? '';
+      final int days = (request['days'] as num?)?.toInt() ?? 1;
+
+      // Obtener la prioridad del documento del plan si no viene en el request
+      int priority = (request['priority'] as num?)?.toInt() ?? 1;
+      if (planId.isNotEmpty) {
+        final planRef = _db.collection('plans').doc(planId);
+        final planDoc = await transaction.get(planRef);
+        if (planDoc.exists && planDoc.data() != null) {
+          priority = (planDoc.data()!['priority'] as num?)?.toInt() ?? priority;
+        }
+      }
 
       // 1. Marcar el request como aprobado
       transaction.update(reqRef, {
         'status': 'approved',
-        'reviewedBy': adminName,
+        'reviewedBy': realAdminName,
         'reviewedAt': FieldValue.serverTimestamp(),
       });
 
-      // 2. Extender o crear el plan activo del conductor
+      // 2. Extender o crear el plan activo del conductor en driver_plans
       final driverPlanRef = _db.collection('driver_plans').doc(driverId);
       final driverPlanDoc = await transaction.get(driverPlanRef);
 
       DateTime startsAt = DateTime.now();
       DateTime expiresAt = DateTime.now().add(Duration(days: days));
 
-      if (driverPlanDoc.exists) {
+      if (driverPlanDoc.exists && driverPlanDoc.data() != null) {
         final currentData = driverPlanDoc.data()!;
         final currentExpires = (currentData['expiresAt'] as Timestamp?)?.toDate();
         if (currentExpires != null && currentExpires.isAfter(DateTime.now())) {
@@ -882,15 +907,25 @@ class FirestoreService {
       transaction.set(driverPlanRef, {
         'planId': planId,
         'planName': planName,
-        'priority': request['priority'] ?? 1,
+        'priority': priority,
         'startsAt': startsAt,
         'expiresAt': expiresAt,
         'status': 'active',
-        'activatedBy': adminName,
+        'activatedBy': realAdminName,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      // 3. Notificar
+      // 3. Merge en drivers/{driverId} para no romper driver_dashboard_screen
+      if (driverId.isNotEmpty) {
+        final driverRef = _db.collection('drivers').doc(driverId);
+        transaction.set(driverRef, {
+          'planPaymentStatus': 'active',
+          'activePlanId': planId,
+          'planExpiresAt': expiresAt,
+        }, SetOptions(merge: true));
+      }
+
+      // 4. Notificar al conductor
       final notifRef = _db.collection('notifications').doc();
       transaction.set(notifRef, {
         'userId': driverId,
@@ -904,6 +939,7 @@ class FirestoreService {
 
   Future<void> rejectPlanRequest(Map<String, dynamic> request, String reason, String adminName) async {
     final reqId = request['id'];
+    final realAdminName = AuthService.instance.currentUser?.name ?? (adminName.isNotEmpty ? adminName : 'Admin');
 
     await _db.runTransaction((transaction) async {
       final reqRef = _db.collection('plan_requests').doc(reqId);
@@ -911,15 +947,25 @@ class FirestoreService {
       if (!reqDoc.exists) throw Exception('La solicitud no existe.');
       if (reqDoc.data()?['status'] != 'pending') throw Exception('La solicitud ya fue revisada.');
 
-      final driverId = request['driverId'];
+      final driverId = request['driverId']?.toString() ?? '';
 
+      // 1. Marcar request como rechazado
       transaction.update(reqRef, {
         'status': 'rejected',
         'rejectReason': reason,
-        'reviewedBy': adminName,
+        'reviewedBy': realAdminName,
         'reviewedAt': FieldValue.serverTimestamp(),
       });
 
+      // 2. Merge en drivers/{driverId}
+      if (driverId.isNotEmpty) {
+        final driverRef = _db.collection('drivers').doc(driverId);
+        transaction.set(driverRef, {
+          'planPaymentStatus': 'rejected',
+        }, SetOptions(merge: true));
+      }
+
+      // 3. Notificar al conductor
       final notifRef = _db.collection('notifications').doc();
       transaction.set(notifRef, {
         'userId': driverId,
@@ -929,5 +975,34 @@ class FirestoreService {
         'isRead': false,
       });
     });
+  }
+
+  Future<void> notifyPlanRequestIssue(Map<String, dynamic> request, String message, String adminName) async {
+    final reqId = request['id'];
+    final driverId = request['driverId']?.toString() ?? '';
+    final planName = request['planName']?.toString() ?? '';
+    final realAdminName = AuthService.instance.currentUser?.name ?? (adminName.isNotEmpty ? adminName : 'Admin');
+
+    final batch = _db.batch();
+
+    // 1. Notificación al conductor
+    final notifRef = _db.collection('notifications').doc();
+    batch.set(notifRef, {
+      'userId': driverId,
+      'title': 'Revisa tu comprobante de pago',
+      'body': 'No pudimos reconocer tu comprobante del plan $planName. $message Vuelve a subirlo.',
+      'createdAt': FieldValue.serverTimestamp(),
+      'isRead': false,
+    });
+
+    // 2. Actualizar solicitud en plan_requests
+    final reqRef = _db.collection('plan_requests').doc(reqId);
+    batch.update(reqRef, {
+      'lastWarning': message,
+      'lastWarningAt': FieldValue.serverTimestamp(),
+      'lastWarningBy': realAdminName,
+    });
+
+    await batch.commit();
   }
 }

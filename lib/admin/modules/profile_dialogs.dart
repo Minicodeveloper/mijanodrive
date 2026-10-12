@@ -3,6 +3,7 @@ import '../../models/driver_model.dart';
 import '../../services/firestore_service.dart';
 import '../../theme.dart';
 import '../utils/driver_docs.dart';
+import '../widgets/document_viewer_dialog.dart';
 import 'shared_admin_widgets.dart';
 
 /// Misma firma que `_actualizarEstadoDocumento` de admin_app.dart.
@@ -362,41 +363,10 @@ class DriverProfileDialog extends StatelessWidget {
   }
 
   void _showImage(BuildContext context, String url) {
-    showDialog(
-      context: context,
-      builder: (c) => Dialog(
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          constraints: const BoxConstraints(maxWidth: 700, maxHeight: 700),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Previsualización de Documento',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                  IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(c)),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: InteractiveViewer(
-                    child: Image.network(
-                      url,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const Center(
-                          child: Text('No se pudo cargar la imagen')),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    DocumentViewerDialog.show(
+      context,
+      url: url,
+      title: 'Previsualización de Documento',
     );
   }
 }

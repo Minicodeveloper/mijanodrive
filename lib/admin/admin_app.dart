@@ -13,6 +13,7 @@ import 'modules/security_module.dart';
 import 'modules/ads_module.dart';
 import 'modules/plans_module.dart';
 import 'widgets/live_drivers_map.dart';
+import 'widgets/document_viewer_dialog.dart';
 import 'utils/driver_docs.dart';
 import '../widgets/mijano_icon.dart';
 import '../admin/modules/drivers_module.dart';
@@ -425,7 +426,7 @@ class _AdminShellState extends State<AdminShell> {
       case 'Publicidad':
         return const AdsModule();
       case 'Planes':
-        return const PlansModule();
+        return PlansModule(canEdit: role == AdminRole.superAdmin);
       case 'Soporte':
         return ReportsModule(canSeeMoney: canSeeMoney);
       case 'Alertas S.O.S.':
@@ -1119,41 +1120,10 @@ extension _DocumentDialogExtension on _AdminShellState {
 
   void _showFullImage(BuildContext context, String? imageUrl) {
     if (imageUrl == null || imageUrl.isEmpty) return;
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          constraints: const BoxConstraints(maxWidth: 700, maxHeight: 700),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Previsualización de Documento',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: InteractiveViewer(
-                    child: Image.network(imageUrl, fit: BoxFit.contain),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    DocumentViewerDialog.show(
+      context,
+      url: imageUrl,
+      title: 'Previsualización de Documento',
     );
   }
 }

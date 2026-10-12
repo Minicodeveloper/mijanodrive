@@ -535,6 +535,51 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
             },
           ),
 
+          if (_planPaymentRejected) ...[
+            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: FirebaseFirestore.instance
+                  .collection('plan_requests')
+                  .where('driverId', isEqualTo: _uid)
+                  .where('status', isEqualTo: 'rejected')
+                  .limit(1)
+                  .snapshots(),
+              builder: (context, snap) {
+                final docs = snap.data?.docs ?? [];
+                String reason = '';
+                if (docs.isNotEmpty) {
+                  reason = docs.first.data()['rejectReason']?.toString() ?? '';
+                }
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  color: Colors.red.shade50,
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline, color: Colors.red, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          reason.isNotEmpty
+                              ? 'Solicitud de plan rechazada: $reason'
+                              : 'Solicitud de plan rechazada.',
+                          style: const TextStyle(fontSize: 12, color: Colors.black87, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const DriverPlanPaymentScreen()),
+                          );
+                        },
+                        child: const Text('Reenviar comprobante', style: TextStyle(fontSize: 12, color: Colors.red, fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ],
+
           // Estado de disponibilidad.
           Container(
             color: MijanoTheme.sol,

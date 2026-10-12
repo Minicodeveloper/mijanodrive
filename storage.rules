@@ -8,8 +8,7 @@ service firebase.storage {
     }
 
     function isStaff() {
-      // Simplificado: asume que admin o operator tienen acceso.
-      return request.auth.token.role in ['admin', 'superadmin', 'operator', 'operador', 'gerente'];
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('role', '').lower() in ['admin', 'superadmin', 'operator', 'operador', 'gerente'];
     }
 
     match /drivers/{userId}/{fileName} {
