@@ -18,6 +18,7 @@ import '../../models/driver_plan_model.dart';
 import '../../models/plan_model.dart';
 import '../widgets/document_viewer_dialog.dart';
 import '../widgets/edit_plan_dialog.dart';
+import '../widgets/edit_qr_dialog.dart';
 import '../utils/plan_reject_reasons.dart';
 import 'shared_admin_widgets.dart';
 
@@ -775,7 +776,49 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const AdminHeader('Planes de Conductores', 'Gestión de suscripciones y aprobaciones'),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 600;
+              final header = const AdminHeader(
+                'Planes de Conductores',
+                'Gestión de suscripciones y aprobaciones',
+              );
+              final qrButton = widget.canEdit
+                  ? ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: MijanoTheme.sol,
+                        foregroundColor: MijanoTheme.ink,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      ),
+                      onPressed: () => EditQrDialog.show(context),
+                      icon: const Icon(Icons.qr_code_2, size: 18),
+                      label: const Text('Editar QR'),
+                    )
+                  : const SizedBox.shrink();
+
+              if (isNarrow) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    header,
+                    if (widget.canEdit) ...[
+                      const SizedBox(height: 8),
+                      qrButton,
+                      const SizedBox(height: 12),
+                    ],
+                  ],
+                );
+              }
+
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(child: header),
+                  if (widget.canEdit) qrButton,
+                ],
+              );
+            },
+          ),
           Container(
             decoration: const BoxDecoration(
               border: Border(bottom: BorderSide(color: Colors.black12)),

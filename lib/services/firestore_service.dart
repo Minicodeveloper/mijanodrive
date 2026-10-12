@@ -10,6 +10,7 @@ import '../models/tariff_model.dart';
 import '../utils/role_helper.dart';
 import '../admin/utils/driver_docs.dart';
 import 'auth_service.dart';
+import 'document_service.dart';
 
 // ============================================================================
 // CONTRATO DE DATOS: PLANES Y SOLICITUDES
@@ -1004,5 +1005,53 @@ class FirestoreService {
     });
 
     await batch.commit();
+  }
+
+  // =====================================================================
+  // CONFIGURACIÓN Y QR DE PAGO
+  // =====================================================================
+  Stream<Map<String, dynamic>?> streamPaymentQr() {
+    return _db
+        .collection('settings')
+        .doc('payment_qr')
+        .snapshots()
+        .map((snap) => snap.exists ? snap.data() : null);
+  }
+
+  Future<void> savePaymentQr({
+    required String url,
+    required String storagePath,
+    String? oldStoragePath,
+    String? adminName,
+  }) async {
+    final realAdminName = AuthService.instance.currentUser?.name ?? adminName ?? 'SuperAdmin';
+
+    final docRef = _db.collection('settings').doc('payment_qr');
+    try {
+      await docRef.set({
+        'url': url,
+        'storagePath': storagePath,
+        'label': 'Plin',
+        'updatedAt': FieldValue.serverTimestamp(),
+        'updatedBy': realAdminName,
+      }, SetOptions(merge: true));
+    } catch (e) {
+      // Si falla Firestore, limpiamos el archivo recién subido
+      await DocumentService.instance.deleteStorageFile(storagePath);
+      rethrow;
+    }
+
+    // Si todo salió bien, eliminamos el archivo anterior de Storage si existía
+    if (oldStoragePath != null && oldStoragePath.isNotEmpty && oldStoragePath != storagePath) {
+      await DocumentService.instance.deleteStorageFile(oldStoragePath);
+    }
+  }
+
+  Future<void> restoreDefaultPaymentQr({String? oldStoragePath}) async {
+    await _db.collection('settings').doc('payment_qr').delete();
+
+    if (oldStoragePath != null && oldStoragePath.isNotEmpty) {
+      await DocumentService.instance.deleteStorageFile(oldStoragePath);
+    }
   }
 }

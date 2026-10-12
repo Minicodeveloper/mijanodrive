@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../models/plan_model.dart';
 import '../../services/document_service.dart';
@@ -344,14 +345,88 @@ class _DriverPlanPaymentScreenState extends State<DriverPlanPaymentScreen> {
                         ),
                         child: Column(
                           children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(18),
-                              child: Image.asset(
-                                'assets/images/driver_payment_qr.jpeg',
-                                width: 224,
-                                height: 224,
-                                fit: BoxFit.contain,
-                              ),
+                            StreamBuilder<Map<String, dynamic>?>(
+                              stream: FirestoreService.instance.streamPaymentQr(),
+                              builder: (context, qrSnap) {
+                                final qrData = qrSnap.data;
+                                final qrUrl = qrData?['url'] as String?;
+
+                                Widget qrWidget;
+                                if (qrSnap.connectionState == ConnectionState.waiting) {
+                                  qrWidget = const SizedBox(
+                                    width: 224,
+                                    height: 224,
+                                    child: Center(
+                                      child: CircularProgressIndicator(color: MijanoTheme.sol),
+                                    ),
+                                  );
+                                } else if (qrUrl != null && qrUrl.isNotEmpty) {
+                                  qrWidget = CachedNetworkImage(
+                                    imageUrl: qrUrl,
+                                    width: 224,
+                                    height: 224,
+                                    fit: BoxFit.contain,
+                                    placeholder: (_, __) => const SizedBox(
+                                      width: 224,
+                                      height: 224,
+                                      child: Center(
+                                        child: CircularProgressIndicator(color: MijanoTheme.sol),
+                                      ),
+                                    ),
+                                    errorWidget: (_, __, ___) => Image.asset(
+                                      'assets/images/driver_payment_qr.jpeg',
+                                      width: 224,
+                                      height: 224,
+                                      fit: BoxFit.contain,
+                                    ),
+                                  );
+                                } else {
+                                  qrWidget = Image.asset(
+                                    'assets/images/driver_payment_qr.jpeg',
+                                    width: 224,
+                                    height: 224,
+                                    fit: BoxFit.contain,
+                                  );
+                                }
+
+                                return GestureDetector(
+                                  onTap: () {
+                                    if (qrUrl != null && qrUrl.isNotEmpty) {
+                                      showDialog(
+                                        context: context,
+                                        builder: (ctx) => Dialog(
+                                          child: InteractiveViewer(
+                                            child: CachedNetworkImage(
+                                              imageUrl: qrUrl,
+                                              fit: BoxFit.contain,
+                                              errorWidget: (_, __, ___) => Image.asset(
+                                                'assets/images/driver_payment_qr.jpeg',
+                                                fit: BoxFit.contain,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    } else {
+                                      showDialog(
+                                        context: context,
+                                        builder: (ctx) => Dialog(
+                                          child: InteractiveViewer(
+                                            child: Image.asset(
+                                              'assets/images/driver_payment_qr.jpeg',
+                                              fit: BoxFit.contain,
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  },
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(18),
+                                    child: qrWidget,
+                                  ),
+                                );
+                              },
                             ),
                             const SizedBox(height: 12),
                             const Text(

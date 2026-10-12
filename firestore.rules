@@ -209,7 +209,9 @@ service cloud.firestore {
 
     // 5. CONFIGURACIÓN (SETTINGS & CITIES)
     match /settings/{docId} {
-      allow read: if isSuperAdmin() || (isAuth() && !isStaff() && docId == 'pricing');
+      allow read: if isSuperAdmin()
+                  || (isAuth() && !isStaff() && docId == 'pricing')
+                  || (isAuth() && docId == 'payment_qr');
       allow write: if isSuperAdmin();
     }
 

@@ -11,6 +11,10 @@ service firebase.storage {
       return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('role', '').lower() in ['admin', 'superadmin', 'operator', 'operador', 'gerente'];
     }
 
+    function isSuperAdmin() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('role', '').lower() in ['admin', 'superadmin'];
+    }
+
     match /drivers/{userId}/{fileName} {
       allow read: if isAuth();
       allow write: if isAuth() && request.auth.uid == userId
@@ -35,6 +39,13 @@ service firebase.storage {
     match /plan_receipts/{userId}/{fileName} {
       allow read: if isAuth() && (request.auth.uid == userId || isStaff());
       allow write: if isAuth() && request.auth.uid == userId
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    match /settings/payment_qr/{fileName} {
+      allow read: if isAuth();
+      allow write: if isAuth() && isSuperAdmin()
                    && request.resource.size < 5 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*');
     }

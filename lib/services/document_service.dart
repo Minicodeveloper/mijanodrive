@@ -73,4 +73,38 @@ class DocumentService {
       rethrow;
     }
   }
+
+  Future<Map<String, String>> uploadPaymentQr(Uint8List imageBytes, String extension) async {
+    try {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final storagePath = 'settings/payment_qr/qr_$timestamp.$extension';
+      final storageRef = FirebaseStorage.instance.ref().child(storagePath);
+      final metadata = SettableMetadata(
+        contentType: extension.toLowerCase() == 'png' ? 'image/png' : 'image/jpeg',
+      );
+
+      final uploadTask = storageRef.putData(
+        imageBytes,
+        metadata,
+      );
+      final snapshot = await uploadTask;
+      final url = await snapshot.ref.getDownloadURL();
+      return {
+        'url': url,
+        'storagePath': storagePath,
+      };
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  Future<void> deleteStorageFile(String storagePath) async {
+    if (storagePath.trim().isEmpty) return;
+    try {
+      final ref = FirebaseStorage.instance.ref().child(storagePath);
+      await ref.delete();
+    } catch (_) {
+      // Ignorar si el archivo no existe
+    }
+  }
 }
