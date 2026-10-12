@@ -606,10 +606,8 @@ class _DriversModuleState extends State<DriversModule> {
             child: Text(d.isBlocked ? 'Desbloquear' : 'Bloquear acceso'),
           ),
         ];
-          child: Text(d.isBlocked ? 'Desbloquear' : 'Bloquear acceso'),
-        ),
-      ];
-      });
+      },
+    );
   }
 
   Widget _buildStatusBadge(String status) {
