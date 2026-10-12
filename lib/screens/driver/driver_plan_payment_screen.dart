@@ -4,7 +4,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../services/auth_service.dart';
@@ -34,18 +33,8 @@ class _DriverPlan {
 
 class _DriverPlanPaymentScreenState extends State<DriverPlanPaymentScreen> {
   static const _plans = [
-    _DriverPlan(
-      id: 'daily',
-      name: 'Plan diario',
-      price: 2.50,
-      durationDays: 1,
-    ),
-    _DriverPlan(
-      id: 'weekly',
-      name: 'Plan semanal',
-      price: 15,
-      durationDays: 7,
-    ),
+    _DriverPlan(id: 'daily', name: 'Plan diario', price: 2.50, durationDays: 1),
+    _DriverPlan(id: 'weekly', name: 'Plan semanal', price: 15, durationDays: 7),
     _DriverPlan(
       id: 'monthly',
       name: 'Plan mensual',
@@ -54,7 +43,6 @@ class _DriverPlanPaymentScreenState extends State<DriverPlanPaymentScreen> {
     ),
   ];
 
-  static const _paymentNumber = '987 654 321';
   final _picker = ImagePicker();
   final _notesController = TextEditingController();
   _DriverPlan _selectedPlan = _plans.first;
@@ -76,14 +64,6 @@ class _DriverPlanPaymentScreenState extends State<DriverPlanPaymentScreen> {
     setState(() => _receipt = File(image.path));
   }
 
-  Future<void> _copyPaymentNumber() async {
-    await Clipboard.setData(const ClipboardData(text: _paymentNumber));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Número copiado')),
-    );
-  }
-
   Future<void> _submitPayment() async {
     final receipt = _receipt;
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -101,10 +81,12 @@ class _DriverPlanPaymentScreenState extends State<DriverPlanPaymentScreen> {
     }
 
     setState(() => _isSubmitting = true);
-    final paymentRef =
-        FirebaseFirestore.instance.collection('driver_plan_payments').doc();
-    final fileExtension =
-        receipt.path.toLowerCase().endsWith('.png') ? 'png' : 'jpg';
+    final paymentRef = FirebaseFirestore.instance
+        .collection('driver_plan_payments')
+        .doc();
+    final fileExtension = receipt.path.toLowerCase().endsWith('.png')
+        ? 'png'
+        : 'jpg';
     final storageRef = FirebaseStorage.instance
         .ref()
         .child('drivers')
@@ -133,15 +115,11 @@ class _DriverPlanPaymentScreenState extends State<DriverPlanPaymentScreen> {
         'status': 'pending',
         'createdAt': FieldValue.serverTimestamp(),
       });
-      batch.set(
-        FirebaseFirestore.instance.collection('drivers').doc(uid),
-        {
-          'isAvailable': false,
-          'planPaymentStatus': 'pending',
-          'pendingPlanId': _selectedPlan.id,
-        },
-        SetOptions(merge: true),
-      );
+      batch.set(FirebaseFirestore.instance.collection('drivers').doc(uid), {
+        'isAvailable': false,
+        'planPaymentStatus': 'pending',
+        'pendingPlanId': _selectedPlan.id,
+      }, SetOptions(merge: true));
       await batch.commit();
 
       if (!mounted) return;
@@ -233,60 +211,11 @@ class _DriverPlanPaymentScreenState extends State<DriverPlanPaymentScreen> {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFAF8FF),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Row(
-                        children: [
-                          const Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Número para Yape / Plin',
-                                  style: TextStyle(
-                                    color: Colors.black54,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                SizedBox(height: 3),
-                                Text(
-                                  _paymentNumber,
-                                  style: TextStyle(
-                                    color: MijanoTheme.ink,
-                                    fontSize: 19,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: 'Copiar número',
-                            onPressed: _copyPaymentNumber,
-                            icon: const Icon(
-                              Icons.copy_rounded,
-                              color: MijanoTheme.solDeep,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                   ],
                 ),
               ),
               const SizedBox(height: 20),
-              _SectionLabel(
-                number: '2',
-                title: 'Adjunta tu comprobante',
-              ),
+              _SectionLabel(number: '2', title: 'Adjunta tu comprobante'),
               const SizedBox(height: 10),
               InkWell(
                 onTap: _isSubmitting ? null : _pickReceipt,
