@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import '../../models/ad_model.dart';
 import '../../services/firestore_service.dart';
-import '../../services/document_service.dart';
 import '../../theme.dart';
 import 'shared_admin_widgets.dart';
 
@@ -18,8 +18,9 @@ class AdsModule extends StatefulWidget {
 
 class _AdsModuleState extends State<AdsModule> {
   final fs = FirestoreService.instance;
-  final _formKey = GlobalKey<FormState>();
 
+  // --- FORMULARIO 1: Banners ---
+  final _formKey = GlobalKey<FormState>();
   final _companyCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
@@ -27,11 +28,26 @@ class _AdsModuleState extends State<AdsModule> {
   Uint8List? _imageBytes;
   bool _isLoading = false;
 
+  // --- FORMULARIO 2: Pop-ups Programados y Segmentados ---
+  final _popupFormKey = GlobalKey<FormState>();
+  final _popupCompanyCtrl = TextEditingController();
+  final _popupDescCtrl = TextEditingController();
+  final _popupPhoneCtrl = TextEditingController();
+  TimeOfDay _startTime = const TimeOfDay(hour: 8, minute: 0);
+  TimeOfDay _endTime = const TimeOfDay(hour: 20, minute: 0);
+  bool _enableSound = true;
+  String _targetAudience = 'Todos los usuarios'; // Nuevo campo de segmentación
+  Uint8List? _popupImageBytes;
+  bool _isPopupLoading = false;
+
   @override
   void dispose() {
     _companyCtrl.dispose();
     _descCtrl.dispose();
     _phoneCtrl.dispose();
+    _popupCompanyCtrl.dispose();
+    _popupDescCtrl.dispose();
+    _popupPhoneCtrl.dispose();
     super.dispose();
   }
 
@@ -54,6 +70,25 @@ class _AdsModuleState extends State<AdsModule> {
     }
   }
 
+  Future<void> _pickPopupImage() async {
+    final picker = ImagePicker();
+    final file = await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+    if (file != null) {
+      final bytes = await file.readAsBytes();
+      if (bytes.lengthInBytes > 5 * 1024 * 1024) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('La imagen supera los 5 MB'), backgroundColor: Colors.red),
+          );
+        }
+        return;
+      }
+      setState(() {
+        _popupImageBytes = bytes;
+      });
+    }
+  }
+
   Future<void> _submitAd() async {
     if (!_formKey.currentState!.validate()) return;
     if (_imageBytes == null) {
@@ -67,7 +102,10 @@ class _AdsModuleState extends State<AdsModule> {
 
     try {
       final newAdId = FirebaseFirestore.instance.collection('ads').doc().id;
-      final imageUrl = await DocumentService.instance.uploadAdImage(newAdId, _imageBytes!.toList());
+      final ref = FirebaseStorage.instance.ref().child('ads/$newAdId.jpg');
+      final uploadTask = ref.putData(_imageBytes!);
+      final snapshot = await uploadTask;
+      final imageUrl = await snapshot.ref.getDownloadURL();
 
       await fs.createAd({
         'companyName': _companyCtrl.text.trim(),
@@ -91,7 +129,7 @@ class _AdsModuleState extends State<AdsModule> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Publicidad subida correctamente.'), backgroundColor: Colors.green),
+          const SnackBar(content: Text('Publicidad subida correctamente a la carpeta ads/.'), backgroundColor: Colors.green),
         );
       }
     } catch (e) {
@@ -99,6 +137,64 @@ class _AdsModuleState extends State<AdsModule> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error al crear publicidad: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  // Guardar Pop-up Programado con Audiencia Seleccionada
+  Future<void> _submitPopupAd() async {
+    if (!_popupFormKey.currentState!.validate()) return;
+    if (_popupImageBytes == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Debes seleccionar una imagen para el Pop-up.'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    setState(() => _isPopupLoading = true);
+
+    try {
+      final newAdId = FirebaseFirestore.instance.collection('ads').doc().id;
+      final ref = FirebaseStorage.instance.ref().child('ads/$newAdId.jpg');
+      final uploadTask = ref.putData(_popupImageBytes!);
+      final snapshot = await uploadTask;
+      final imageUrl = await snapshot.ref.getDownloadURL();
+
+      await fs.createAd({
+        'companyName': _popupCompanyCtrl.text.trim(),
+        'description': _popupDescCtrl.text.trim(),
+        'phone': _popupPhoneCtrl.text.trim(),
+        'type': 'popup',
+        'imageUrl': imageUrl,
+        'isActive': true,
+        'startTime': '${_startTime.hour.toString().padLeft(2, '0')}:${_startTime.minute.toString().padLeft(2, '0')}',
+        'endTime': '${_endTime.hour.toString().padLeft(2, '0')}:${_endTime.minute.toString().padLeft(2, '0')}',
+        'enableSound': _enableSound,
+        'targetAudience': _targetAudience, // Guardamos la audiencia seleccionada
+        'createdBy': 'Admin',
+      });
+
+      _popupFormKey.currentState!.reset();
+      _popupCompanyCtrl.clear();
+      _popupDescCtrl.clear();
+      _popupPhoneCtrl.clear();
+      setState(() {
+        _popupImageBytes = null;
+        _targetAudience = 'Todos los usuarios';
+        _isPopupLoading = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Pop-up programado correctamente.'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      setState(() => _isPopupLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al crear pop-up: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -115,6 +211,15 @@ class _AdsModuleState extends State<AdsModule> {
     if (!confirm) return;
 
     try {
+      try {
+        final uri = Uri.parse(ad.imageUrl);
+        final pathSegments = uri.pathSegments;
+        String filePath = pathSegments.skipWhile((val) => val != 'ads').join('/');
+        if (filePath.isNotEmpty) {
+          await FirebaseStorage.instance.ref().child(filePath).delete();
+        }
+      } catch (_) {}
+
       await fs.deleteAd(ad.id);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -146,7 +251,6 @@ class _AdsModuleState extends State<AdsModule> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Image Picker
               GestureDetector(
                 onTap: _pickImage,
                 child: Container(
@@ -173,7 +277,6 @@ class _AdsModuleState extends State<AdsModule> {
                 ),
               ),
               const SizedBox(width: 20),
-              // Form Fields
               Expanded(
                 child: Column(
                   children: [
@@ -261,23 +364,179 @@ class _AdsModuleState extends State<AdsModule> {
     );
   }
 
-  Widget _buildAdGrid(List<Map<String, dynamic>> rawAds) {
-    if (rawAds.isEmpty) {
+  // Formulario de Pop-ups con selector de Audiencia
+  Widget _buildPopupForm() {
+    return Form(
+      key: _popupFormKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              GestureDetector(
+                onTap: _pickPopupImage,
+                child: Container(
+                  width: 150,
+                  height: 150,
+                  decoration: BoxDecoration(
+                    color: MijanoTheme.cream,
+                    border: Border.all(color: MijanoTheme.ink, width: 2),
+                    borderRadius: BorderRadius.circular(12),
+                    image: _popupImageBytes != null
+                        ? DecorationImage(image: MemoryImage(_popupImageBytes!), fit: BoxFit.cover)
+                        : null,
+                  ),
+                  child: _popupImageBytes == null
+                      ? const Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.add_to_photos, size: 40, color: Colors.black54),
+                            SizedBox(height: 8),
+                            Text('Imagen Pop-up', style: TextStyle(color: Colors.black54, fontWeight: FontWeight.bold)),
+                          ],
+                        )
+                      : null,
+                ),
+              ),
+              const SizedBox(width: 20),
+              Expanded(
+                child: Column(
+                  children: [
+                    TextFormField(
+                      controller: _popupCompanyCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre de la Empresa / Campaña',
+                        border: OutlineInputBorder(),
+                        filled: true,
+                        fillColor: MijanoTheme.cream,
+                      ),
+                      validator: (v) => v!.trim().isEmpty ? 'Requerido' : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _popupPhoneCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Teléfono (WhatsApp)',
+                        border: OutlineInputBorder(),
+                        filled: true,
+                        fillColor: MijanoTheme.cream,
+                        prefixText: '+51 ',
+                      ),
+                      keyboardType: TextInputType.phone,
+                      maxLength: 9,
+                      validator: (v) {
+                        if (v == null || v.isEmpty) return 'Requerido';
+                        if (!RegExp(r'^9\d{8}$').hasMatch(v)) return 'Ingrese un número válido';
+                        return null;
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _popupDescCtrl,
+            decoration: const InputDecoration(
+              labelText: 'Descripción del Pop-up',
+              border: OutlineInputBorder(),
+              filled: true,
+              fillColor: MijanoTheme.cream,
+            ),
+            maxLength: 120,
+            maxLines: 2,
+            validator: (v) => v!.trim().isEmpty ? 'Requerido' : null,
+          ),
+          const SizedBox(height: 12),
+          // Selector de Audiencia Destino
+          DropdownButtonFormField<String>(
+            value: _targetAudience,
+            decoration: const InputDecoration(
+              labelText: 'Dirigido a (Audiencia)',
+              border: OutlineInputBorder(),
+              filled: true,
+              fillColor: MijanoTheme.cream,
+            ),
+            items: const [
+              DropdownMenuItem(value: 'Todos los usuarios', child: Text('Todos los usuarios')),
+              DropdownMenuItem(value: 'Recién registrados', child: Text('Recién registrados')),
+              DropdownMenuItem(value: 'Usuarios con viajes previos', child: Text('Usuarios con viajes previos')),
+            ],
+            onChanged: (v) => setState(() => _targetAudience = v ?? 'Todos los usuarios'),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Icon(Icons.schedule, color: MijanoTheme.ink),
+              const SizedBox(width: 8),
+              const Text('Horario:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(width: 10),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final picked = await showTimePicker(context: context, initialTime: _startTime);
+                  if (picked != null) setState(() => _startTime = picked);
+                },
+                icon: const Icon(Icons.access_time, size: 16),
+                label: Text('Desde: ${_startTime.format(context)}'),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final picked = await showTimePicker(context: context, initialTime: _endTime);
+                  if (picked != null) setState(() => _endTime = picked);
+                },
+                icon: const Icon(Icons.access_time_filled, size: 16),
+                label: Text('Hasta: ${_endTime.format(context)}'),
+              ),
+              const SizedBox(width: 15),
+              Row(
+                children: [
+                  Checkbox(
+                    value: _enableSound,
+                    onChanged: (v) => setState(() => _enableSound = v ?? true),
+                    activeColor: MijanoTheme.ink,
+                  ),
+                  const Text('Con Sonido'),
+                ],
+              ),
+              const Spacer(),
+              ElevatedButton.icon(
+                onPressed: _isPopupLoading ? null : _submitPopupAd,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: MijanoTheme.ink,
+                  foregroundColor: MijanoTheme.sol,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                ),
+                icon: _isPopupLoading ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: MijanoTheme.sol, strokeWidth: 2)) : const Icon(Icons.campaign),
+                label: Text(_isPopupLoading ? 'Guardando...' : 'Programar Pop-up'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdGrid(List<Map<String, dynamic>> rawAds, {required bool isPopupGroup}) {
+    final filteredRaw = rawAds.where((e) {
+      final type = e['type'] ?? 'banner';
+      return isPopupGroup ? type == 'popup' : type != 'popup';
+    }).toList();
+
+    if (filteredRaw.isEmpty) {
       return Container(
-        height: 250,
+        height: 100,
         alignment: Alignment.center,
-        child: const Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.campaign_outlined, size: 64, color: Colors.black26),
-            SizedBox(height: 12),
-            Text('No hay anuncios registrados', style: TextStyle(color: Colors.black54, fontWeight: FontWeight.bold)),
-          ],
+        child: Text(
+          isPopupGroup ? 'No hay Pop-ups programados' : 'No hay anuncios registrados',
+          style: const TextStyle(color: Colors.black45, fontWeight: FontWeight.bold),
         ),
       );
     }
 
-    final ads = rawAds.map((e) => AdModel.fromMap(e, e['id'])).toList();
+    final ads = filteredRaw.map((e) => AdModel.fromMap(e, e['id'])).toList();
 
     return GridView.builder(
       shrinkWrap: true,
@@ -286,11 +545,16 @@ class _AdsModuleState extends State<AdsModule> {
         maxCrossAxisExtent: 380,
         mainAxisSpacing: 16,
         crossAxisSpacing: 16,
-        mainAxisExtent: 140, // height
+        mainAxisExtent: 150,
       ),
       itemCount: ads.length,
       itemBuilder: (context, i) {
         final ad = ads[i];
+        final rawMap = filteredRaw[i];
+        final String? startTime = rawMap['startTime'];
+        final String? endTime = rawMap['endTime'];
+        final String? audience = rawMap['targetAudience'];
+
         return Card(
           elevation: 2,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -330,6 +594,16 @@ class _AdsModuleState extends State<AdsModule> {
                           ),
                         ],
                       ),
+                      if (isPopupGroup && audience != null)
+                        Text(
+                          '👥 $audience',
+                          style: const TextStyle(fontSize: 10, color: Colors.purple, fontWeight: FontWeight.bold),
+                        ),
+                      if (isPopupGroup && startTime != null && endTime != null)
+                        Text(
+                          '⏰ $startTime - $endTime',
+                          style: const TextStyle(fontSize: 10, color: Colors.blueAccent, fontWeight: FontWeight.bold),
+                        ),
                       const SizedBox(height: 2),
                       Expanded(
                         child: Text(
@@ -379,19 +653,39 @@ class _AdsModuleState extends State<AdsModule> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const AdminHeader('Publicidad', 'Banners e imágenes de empresas asociadas'),
-          adminCard(
-            child: _buildForm(),
-          ),
-          const SizedBox(height: 24),
+          adminCard(child: _buildForm()),
+          const SizedBox(height: 16),
           const Text('Anuncios Activos', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: MijanoTheme.ink)),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           StreamBuilder<List<Map<String, dynamic>>>(
             stream: fs.streamAds(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
               }
-              return _buildAdGrid(snapshot.data ?? []);
+              return _buildAdGrid(snapshot.data ?? [], isPopupGroup: false);
+            },
+          ),
+
+          const SizedBox(height: 40),
+          const Divider(thickness: 2),
+          const SizedBox(height: 10),
+
+          const Text('Pop-ups Programados', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20, color: MijanoTheme.ink)),
+          const SizedBox(height: 4),
+          const Text('Gestión de anuncios emergentes automáticos con horarios, alertas y segmentación', style: TextStyle(color: Colors.black54, fontSize: 13)),
+          const SizedBox(height: 12),
+          adminCard(child: _buildPopupForm()),
+          const SizedBox(height: 16),
+          const Text('Pop-ups Activos', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: MijanoTheme.ink)),
+          const SizedBox(height: 8),
+          StreamBuilder<List<Map<String, dynamic>>>(
+            stream: fs.streamAds(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              return _buildAdGrid(snapshot.data ?? [], isPopupGroup: true);
             },
           ),
         ],

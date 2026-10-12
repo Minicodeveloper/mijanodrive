@@ -313,13 +313,13 @@ class AuthService {
 
       final batch = _firestore.batch();
       final userRef = _firestore.collection('users').doc(uid);
-      final dniRef = _firestore.collection('dni_index').doc(dni);
+      //final dniRef = _firestore.collection('dni_index').doc(dni);
 
       batch.set(userRef, userData);
-      batch.set(dniRef, {
+      /*batch.set(dniRef, {
         'uid': uid,
         'createdAt': FieldValue.serverTimestamp(),
-      });
+      });*/
 
       await batch.commit();
 

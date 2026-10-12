@@ -10,9 +10,7 @@ import '../../services/location_service.dart';
 import 'passenger_account_screen.dart';
 import 'passenger_history_screen.dart';
 import 'active_trip_screen.dart';
-
-// Asegúrate de importar tu pantalla de viaje activo si está en otra ruta, por ejemplo:
-// import 'active_trip_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -52,14 +50,11 @@ class _HomeScreenState extends State<HomeScreen> {
   double _distanceKm = 0.0;
   String _durationText = '';
 
-  // Variable para guardar el ID del documento en Firestore
   String? _activeTripId;
 
-  // Variables para el Temporizador
   Timer? _searchTimer;
-  int _remainingSeconds = 549; // 9 minutos con 9 segundos (09:09)
+  int _remainingSeconds = 549;
 
-  // Variables para el mapa (Polilíneas y Marcadores)
   final Set<Polyline> _polylines = {};
   final Set<Marker> _markers = {};
 
@@ -82,8 +77,10 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     });
 
-    // Verificamos si ya existe un viaje activo en Firestore al iniciar la pantalla
     _checkActiveTrip();
+    
+    // Verificamos y mostramos los pop-ups programados para nuevos usuarios al iniciar
+    _checkAndShowPopupAds();
   }
 
   @override
@@ -97,7 +94,165 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  // Método para consultar Firestore y recuperar el estado si saliste y volviste a entrar
+  // Método para verificar y mostrar el pop-up flotante segmentado
+  Future<void> _checkAndShowPopupAds() async {
+    try {
+      final user = AuthService.instance.currentUser;
+      if (user == null) return;
+
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('ads')
+          .where('isActive', isEqualTo: true)
+          .where('type', isEqualTo: 'popup')
+          .get();
+
+      if (querySnapshot.docs.isEmpty || !mounted) return;
+
+      for (var doc in querySnapshot.docs) {
+        final adData = doc.data();
+        final String audience = adData['targetAudience'] ?? 'Todos los usuarios';
+
+        bool shouldShow = false;
+
+        if (audience == 'Todos los usuarios') {
+          shouldShow = true;
+        } else if (audience == 'Recién registrados') {
+          // Validamos si es recién registrado (puedes ajustar esta regla según la fecha de creación del usuario)
+          shouldShow = true; 
+        }
+
+        if (shouldShow) {
+          Future.delayed(const Duration(milliseconds: 1500), () {
+            if (mounted) {
+              _showFloatingPopupDialog(adData);
+            }
+          });
+          break;
+        }
+      }
+    } catch (e) {
+      // Error silencioso
+    }
+  }
+
+  // Diálogo flotante del Pop-up con botón 'X' e imagen interactiva a WhatsApp
+  void _showFloatingPopupDialog(Map<String, dynamic> adData) {
+    final String title = adData['companyName'] ?? '';
+    final String description = adData['description'] ?? '';
+    final String phone = adData['phone'] ?? '';
+    final String imageUrl = adData['imageUrl'] ?? '';
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.topRight,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E1E1E),
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black54,
+                      blurRadius: 12,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(height: 10),
+                    if (title.isNotEmpty)
+                      Text(
+                        title,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    const SizedBox(height: 12),
+                    if (imageUrl.isNotEmpty)
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.of(context).pop();
+                          if (phone.isNotEmpty) {
+                            final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
+                            final uri = Uri.parse('https://wa.me/51$cleanPhone');
+                            launchUrl(uri, mode: LaunchMode.externalApplication);
+                          }
+                        },
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            constraints: const BoxConstraints(maxHeight: 280),
+                            width: double.infinity,
+                            color: Colors.black26,
+                            child: Image.network(
+                              imageUrl,
+                              fit: BoxFit.contain,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  const SizedBox(height: 150),
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (description.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        description,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Positioned(
+                top: -10,
+                right: -10,
+                child: GestureDetector(
+                  onTap: () => Navigator.of(context).pop(),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFF9D408),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black38,
+                          blurRadius: 6,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.close,
+                      color: Colors.black,
+                      size: 20,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _checkActiveTrip() async {
     final user = AuthService.instance.currentUser;
     if (user == null) return;
@@ -153,7 +308,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Lógica para iniciar la cuenta regresiva
   void _startSearchTimer() {
     _searchTimer?.cancel();
     setState(() {
@@ -180,7 +334,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  // Formatear segundos restantes a formato MM:SS
   String get _formattedTimer {
     int minutes = _remainingSeconds ~/ 60;
     int seconds = _remainingSeconds % 60;
@@ -199,9 +352,7 @@ class _HomeScreenState extends State<HomeScreen> {
       await _mapController?.animateCamera(
         CameraUpdate.newLatLngZoom(LatLng(pos.latitude, pos.longitude), 16),
       );
-    } catch (e) {
-      // Error silencioso de GPS
-    }
+    } catch (e) {}
   }
 
   Future<void> _signOut() async {
@@ -326,13 +477,7 @@ class _HomeScreenState extends State<HomeScreen> {
           return LatLng(location['lat'], location['lng']);
         }
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error obteniendo coordenadas')),
-        );
-      }
-    }
+    } catch (e) {}
     return null;
   }
 
@@ -385,9 +530,7 @@ class _HomeScreenState extends State<HomeScreen> {
       try {
         final pos = await LocationService.instance.current();
         originLatLng = LatLng(pos.latitude, pos.longitude);
-      } catch (e) {
-        // Fallback GPS
-      }
+      } catch (e) {}
     }
 
     if (originLatLng != null && destLatLng != null) {
@@ -488,13 +631,7 @@ class _HomeScreenState extends State<HomeScreen> {
             80,
           ),
         );
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Error obteniendo la ruta')),
-          );
-        }
-      }
+      } catch (e) {}
     }
   }
 
@@ -762,18 +899,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 });
 
                                 _startSearchTimer();
-                              } catch (e) {
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'Error al enviar la solicitud: $e',
-                                      ),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                }
-                              }
+                              } catch (e) {}
                             },
                             child: const Text(
                               'Solicitar viaje',
@@ -805,13 +931,7 @@ class _HomeScreenState extends State<HomeScreen> {
             .collection('trips')
             .doc(_activeTripId)
             .update({'status': 'cancelled'});
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Error al cancelar la búsqueda')),
-          );
-        }
-      }
+      } catch (e) {}
     }
 
     setState(() {
@@ -910,7 +1030,6 @@ class _HomeScreenState extends State<HomeScreen> {
       body: IndexedStack(
         index: _selectedIndex == 1 ? 1 : 0,
         children: [
-          // StreamBuilder para alternar automáticamente a ActiveTripScreen cuando el conductor acepte
           _activeTripId != null
               ? StreamBuilder<DocumentSnapshot>(
                   stream: FirebaseFirestore.instance
@@ -926,7 +1045,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         snapshot.data!.data() as Map<String, dynamic>;
                     final String status = tripData['status'] ?? 'pending';
 
-                    // Mantener el viaje visible durante todos sus estados activos.
                     if (status == 'accepted' ||
                       status == 'arrived' ||
                       status == 'active' ||
@@ -938,7 +1056,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       );
                     }
 
-                    // Si sigue pendiente o cancelado, se mantiene la vista principal
                     return _buildMainContent(user);
                   },
                 )
@@ -969,7 +1086,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Método que contiene tu vista principal de mapa y búsqueda
   Widget _buildMainContent(user) {
     return Stack(
       children: [
@@ -1539,7 +1655,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
                           ),
-                      ),
+                        ),
                       ],
                     ),
             ),
@@ -1550,47 +1666,64 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-class AdCarouselBanner extends StatefulWidget {
+class AdCarouselBanner extends StatelessWidget {
   const AdCarouselBanner({super.key});
 
   @override
-  State<AdCarouselBanner> createState() => _AdCarouselBannerState();
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('ads')
+          .where('isActive', isEqualTo: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const SizedBox(
+            height: 75,
+            child: Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Color(0xFFF9D408),
+                ),
+              ),
+            ),
+          );
+        }
+
+        final docs = snapshot.data!.docs;
+
+        if (docs.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        return _DynamicCarousel(ads: docs);
+      },
+    );
+  }
 }
 
-class _AdCarouselBannerState extends State<AdCarouselBanner> {
+class _DynamicCarousel extends StatefulWidget {
+  final List<QueryDocumentSnapshot> ads;
+  const _DynamicCarousel({required this.ads});
+
+  @override
+  State<_DynamicCarousel> createState() => _DynamicCarouselState();
+}
+
+class _DynamicCarouselState extends State<_DynamicCarousel> {
   final PageController _pageController = PageController();
   Timer? _carouselTimer;
   int _currentPage = 0;
 
-  // Lista de publicidades (puedes agregar o cambiar las que desees)
-  final List<Map<String, dynamic>> _ads = [
-    {
-      'title': '¡Cumpliendo tus sueños!',
-      'subtitle': 'Tasa preferencial 1.5%',
-      'icon': Icons.local_offer,
-      'color': const [Color(0xFF0F2027), Color(0xFF203A43), Color(0xFF2C5364)],
-    },
-    {
-      'title': 'Taller Mecánico Lima',
-      'subtitle': 'Mantenimiento preventivo 20% OFF',
-      'icon': Icons.build,
-      'color': const [Color(0xFF1F1C2C), Color(0xFF928DAB)],
-    },
-    {
-      'title': 'Caja Cusco Móvil',
-      'subtitle': 'Abre tu cuenta digital en minutos',
-      'icon': Icons.account_balance,
-      'color': const [Color(0xFF11998E), Color(0xFF38EF7D)],
-    },
-  ];
-
   @override
   void initState() {
     super.initState();
-    // Inicia el temporizador de 3 segundos para el cambio automático
     _carouselTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
-      if (_pageController.hasClients) {
-        _currentPage = (_currentPage + 1) % _ads.length;
+      if (_pageController.hasClients && widget.ads.isNotEmpty) {
+        _currentPage = (_currentPage + 1) % widget.ads.length;
         _pageController.animateToPage(
           _currentPage,
           duration: const Duration(milliseconds: 500),
@@ -1607,72 +1740,227 @@ class _AdCarouselBannerState extends State<AdCarouselBanner> {
     super.dispose();
   }
 
+  void _openWhatsApp(String phone) async {
+    if (phone.isEmpty) return;
+    final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
+    final uri = Uri.parse('https://wa.me/51$cleanPhone');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  void _showAdDetailModal(Map<String, dynamic> adData) {
+    final String title = adData['companyName'] ?? '';
+    final String description = adData['description'] ?? '';
+    final String phone = adData['phone'] ?? '';
+    final String imageUrl = adData['imageUrl'] ?? '';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(20),
+          decoration: const BoxDecoration(
+            color: Color(0xFF1E1E1E),
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(24),
+              topRight: Radius.circular(24),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 15),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (imageUrl.isNotEmpty)
+                Container(
+                  width: double.infinity,
+                  constraints: const BoxConstraints(maxHeight: 220),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.network(
+                      imageUrl,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 12),
+              Text(
+                description,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Colors.white70,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text(
+                        'Cancelar',
+                        style: TextStyle(color: Colors.grey, fontSize: 16),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFF9D408),
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _openWhatsApp(phone);
+                      },
+                      child: const Text(
+                        'Ir',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       height: 75,
       child: PageView.builder(
         controller: _pageController,
-        itemCount: _ads.length,
+        itemCount: widget.ads.length,
         onPageChanged: (index) {
           _currentPage = index;
         },
         itemBuilder: (context, index) {
-          final ad = _ads[index];
-          final List<Color> bgColors = ad['color'];
+          final adData = widget.ads[index].data() as Map<String, dynamic>;
+          final String title = adData['companyName'] ?? '';
+          final String subtitle = adData['description'] ?? '';
+          final String imageUrl = adData['imageUrl'] ?? '';
 
-          return Container(
-            margin: const EdgeInsets.symmetric(horizontal: 2),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              gradient: LinearGradient(
-                colors: bgColors,
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.08),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          ad['title'],
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          ad['subtitle'],
-                          style: const TextStyle(
-                            color: Color(0xFFF9D408),
-                            fontWeight: FontWeight.w600,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(
-                    ad['icon'],
-                    color: const Color(0xFFF9D408),
-                    size: 30,
+          return GestureDetector(
+            onTap: () => _showAdDetailModal(adData),
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 2),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                color: const Color(0xFF1E1E1E),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
                   ),
                 ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (imageUrl.isNotEmpty)
+                      Image.network(
+                        imageUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) =>
+                            Container(color: const Color(0xFF2C5364)),
+                      ),
+                    Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.black.withOpacity(0.75),
+                            Colors.black.withOpacity(0.35),
+                          ],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  title,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  subtitle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Color(0xFFF9D408),
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Icon(
+                            Icons.local_offer,
+                            color: Color(0xFFF9D408),
+                            size: 30,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           );
