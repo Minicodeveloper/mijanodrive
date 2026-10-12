@@ -10,6 +10,8 @@ import 'modules/tariffs_module.dart';
 import 'modules/reports_module.dart';
 import 'modules/alerts_module.dart';
 import 'modules/security_module.dart';
+import 'modules/ads_module.dart';
+import 'modules/plans_module.dart';
 import 'widgets/live_drivers_map.dart';
 import 'utils/driver_docs.dart';
 import '../widgets/mijano_icon.dart';
@@ -138,7 +140,7 @@ class _AdminShellState extends State<AdminShell> {
       case AdminRole.support:
         return view == 'Soporte' || view == 'Alertas S.O.S.';
       case AdminRole.control:
-        return view == 'Panel' || view == 'Pasajeros' || view == 'Conductores';
+        return view == 'Panel' || view == 'Pasajeros' || view == 'Conductores' || view == 'Publicidad' || view == 'Planes';
     }
   }
 
@@ -215,6 +217,7 @@ class _AdminShellState extends State<AdminShell> {
     IconData icon,
     String title, {
     bool closeDrawer = false,
+    Widget? trailing,
   }) {
     final isSelected = _currentView == title;
     return Material(
@@ -232,6 +235,7 @@ class _AdminShellState extends State<AdminShell> {
             fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
           ),
         ),
+        trailing: trailing,
         selected: isSelected,
         selectedTileColor: Colors.white.withValues(alpha: 0.06),
         onTap: () {
@@ -246,7 +250,7 @@ class _AdminShellState extends State<AdminShell> {
   }
 
   Widget _sidebar(AdminRole role, {bool closeDrawer = false}) {
-    final showGeneral = canAccess(role, 'Panel') || canAccess(role, 'Pasajeros') || canAccess(role, 'Conductores') || canAccess(role, 'Tarifas');
+    final showGeneral = canAccess(role, 'Panel') || canAccess(role, 'Pasajeros') || canAccess(role, 'Conductores') || canAccess(role, 'Tarifas') || canAccess(role, 'Publicidad');
     final showSecurity = canAccess(role, 'Soporte') || canAccess(role, 'Alertas S.O.S.') || canAccess(role, 'Permisos');
     
     String roleName = 'Operador';
@@ -306,6 +310,29 @@ class _AdminShellState extends State<AdminShell> {
                           _buildNavItem(Icons.two_wheeler, 'Conductores', closeDrawer: closeDrawer),
                         if (canAccess(role, 'Tarifas'))
                           _buildNavItem(Icons.attach_money, 'Tarifas', closeDrawer: closeDrawer),
+                        if (canAccess(role, 'Publicidad'))
+                          _buildNavItem(Icons.campaign, 'Publicidad', closeDrawer: closeDrawer),
+                        if (canAccess(role, 'Planes'))
+                          _buildNavItem(
+                            Icons.workspace_premium,
+                            'Planes',
+                            closeDrawer: closeDrawer,
+                            trailing: StreamBuilder<List<Map<String, dynamic>>>(
+                              stream: FirestoreService.instance.streamPendingPlanRequests(),
+                              builder: (context, snap) {
+                                final count = snap.data?.length ?? 0;
+                                if (count == 0) return const SizedBox.shrink();
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: MijanoTheme.sol,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text('$count', style: const TextStyle(color: MijanoTheme.ink, fontSize: 11, fontWeight: FontWeight.bold)),
+                                );
+                              },
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -395,6 +422,10 @@ class _AdminShellState extends State<AdminShell> {
         );
       case 'Tarifas':
         return const TariffsModule();
+      case 'Publicidad':
+        return const AdsModule();
+      case 'Planes':
+        return const PlansModule();
       case 'Soporte':
         return ReportsModule(canSeeMoney: canSeeMoney);
       case 'Alertas S.O.S.':

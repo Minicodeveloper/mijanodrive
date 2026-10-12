@@ -3,10 +3,20 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
 import '../models/trip_model.dart';
 import '../models/driver_model.dart';
+import '../models/driver_plan_model.dart';
 import '../models/wallet_model.dart';
 import '../models/tariff_model.dart';
 import '../utils/role_helper.dart';
 import '../admin/utils/driver_docs.dart';
+
+// ============================================================================
+// CONTRATO DE DATOS: PLANES
+// plan_requests: driverId, driverName, driverPhone, planId, planName, amount,
+//                days, receiptUrl, status ('pending'|'approved'|'rejected'),
+//                rejectReason, createdAt, reviewedBy, reviewedAt.
+// driver_plans:  planId, planName, priority, startsAt, expiresAt, status,
+//                activatedBy, updatedAt. (ID del documento = driverId)
+// ============================================================================
 
 class FirestoreService {
   static final FirestoreService instance = FirestoreService._();
@@ -712,4 +722,212 @@ class FirestoreService {
         'status': 'open',
         'createdAt': FieldValue.serverTimestamp(),
       });
+
+  // =====================================================================
+  // PUBLICIDAD (ADS)
+  // =====================================================================
+  Stream<List<Map<String, dynamic>>> streamAds() {
+    return _db.collection('ads').orderBy('createdAt', descending: true).snapshots().map(
+          (snap) => snap.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList(),
+        );
+  }
+
+  Future<void> createAd(Map<String, dynamic> data) async {
+    data['createdAt'] = FieldValue.serverTimestamp();
+    await _db.collection('ads').add(data);
+  }
+
+  Future<void> updateAd(String id, Map<String, dynamic> data) async {
+    await _db.collection('ads').doc(id).update(data);
+  }
+
+  Future<void> toggleAd(String id, bool isActive) async {
+    await _db.collection('ads').doc(id).update({'isActive': isActive});
+  }
+
+  Future<void> deleteAd(String id) async {
+    await _db.collection('ads').doc(id).delete();
+  }
+
+  // =====================================================================
+  // PLANES
+  // =====================================================================
+  Stream<List<Map<String, dynamic>>> streamPlans() {
+    return _db.collection('plans').orderBy('priority', descending: false).snapshots().map(
+          (snap) => snap.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList(),
+        );
+  }
+
+  Future<void> updatePlan(String id, Map<String, dynamic> data) async {
+    await _db.collection('plans').doc(id).update(data);
+  }
+
+  Future<void> seedDefaultPlans() async {
+    final batch = _db.batch();
+    
+    // Plan Diario
+    final dRef = _db.collection('plans').doc('plan_diario');
+    batch.set(dRef, {
+      'name': 'Diario',
+      'price': 2.50,
+      'durationDays': 1,
+      'priority': 1,
+      'benefits': ['Carreras ilimitadas', 'Visibilidad normal', 'Soporte estándar'],
+      'isActive': true,
+    }, SetOptions(merge: true));
+
+    // Plan Semanal
+    final sRef = _db.collection('plans').doc('plan_semanal');
+    batch.set(sRef, {
+      'name': 'Semanal',
+      'price': 15.00,
+      'durationDays': 7,
+      'priority': 2,
+      'benefits': ['Ahorras S/2.50', 'Carreras ilimitadas', 'Mayor visibilidad', 'Soporte prioritario'],
+      'isActive': true,
+    }, SetOptions(merge: true));
+
+    // Plan Mensual
+    final mRef = _db.collection('plans').doc('plan_mensual');
+    batch.set(mRef, {
+      'name': 'Mensual',
+      'price': 50.00,
+      'durationDays': 30,
+      'priority': 3,
+      'benefits': ['Ahorras S/25.00', 'Mejor plan valor/precio', 'Visibilidad TOP', 'Prioridad en la asignación de viajes'],
+      'isActive': true,
+    }, SetOptions(merge: true));
+
+    await batch.commit();
+  }
+
+  // =====================================================================
+  // SOLICITUDES DE PLANES (REQUESTS)
+  // =====================================================================
+  Stream<List<Map<String, dynamic>>> streamPendingPlanRequests() {
+    return _db
+        .collection('plan_requests')
+        .where('status', isEqualTo: 'pending')
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList());
+  }
+
+  Stream<List<Map<String, dynamic>>> streamAllPlanRequests() {
+    return _db
+        .collection('plan_requests')
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList());
+  }
+
+  Stream<List<DriverPlanModel>> streamDriverPlans() {
+    return _db.collection('driver_plans').snapshots().map(
+          (snap) => snap.docs.map((doc) => DriverPlanModel.fromFirestore(doc)).toList(),
+        );
+  }
+
+  Future<void> createPlanRequest(Map<String, dynamic> data) async {
+    final driverId = data['driverId'];
+    if (driverId != null) {
+      final userDoc = await _db.collection('users').doc(driverId).get();
+      if (userDoc.exists) {
+        final userData = userDoc.data()!;
+        data['driverName'] = userData['name'] ?? userData['fullName'] ?? 'Sin nombre';
+        data['driverPhone'] = userData['phone'] ?? '';
+      }
+    }
+    data['createdAt'] = FieldValue.serverTimestamp();
+    data['status'] = 'pending';
+    await _db.collection('plan_requests').add(data);
+  }
+
+  Future<void> approvePlanRequest(Map<String, dynamic> request, String adminName) async {
+    final reqId = request['id'];
+    
+    await _db.runTransaction((transaction) async {
+      final reqRef = _db.collection('plan_requests').doc(reqId);
+      final reqDoc = await transaction.get(reqRef);
+      if (!reqDoc.exists) throw Exception('La solicitud no existe.');
+      if (reqDoc.data()?['status'] != 'pending') throw Exception('La solicitud ya fue revisada.');
+
+      final driverId = request['driverId'];
+      final planId = request['planId'];
+      final planName = request['planName'];
+      final int days = request['days'];
+
+      // 1. Marcar el request como aprobado
+      transaction.update(reqRef, {
+        'status': 'approved',
+        'reviewedBy': adminName,
+        'reviewedAt': FieldValue.serverTimestamp(),
+      });
+
+      // 2. Extender o crear el plan activo del conductor
+      final driverPlanRef = _db.collection('driver_plans').doc(driverId);
+      final driverPlanDoc = await transaction.get(driverPlanRef);
+
+      DateTime startsAt = DateTime.now();
+      DateTime expiresAt = DateTime.now().add(Duration(days: days));
+
+      if (driverPlanDoc.exists) {
+        final currentData = driverPlanDoc.data()!;
+        final currentExpires = (currentData['expiresAt'] as Timestamp?)?.toDate();
+        if (currentExpires != null && currentExpires.isAfter(DateTime.now())) {
+          startsAt = (currentData['startsAt'] as Timestamp?)?.toDate() ?? startsAt;
+          expiresAt = currentExpires.add(Duration(days: days));
+        }
+      }
+
+      transaction.set(driverPlanRef, {
+        'planId': planId,
+        'planName': planName,
+        'priority': request['priority'] ?? 1,
+        'startsAt': startsAt,
+        'expiresAt': expiresAt,
+        'status': 'active',
+        'activatedBy': adminName,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      // 3. Notificar
+      final notifRef = _db.collection('notifications').doc();
+      transaction.set(notifRef, {
+        'userId': driverId,
+        'title': 'Plan activado',
+        'body': 'Tu plan $planName de $days días ha sido aprobado y activado.',
+        'createdAt': FieldValue.serverTimestamp(),
+        'isRead': false,
+      });
+    });
+  }
+
+  Future<void> rejectPlanRequest(Map<String, dynamic> request, String reason, String adminName) async {
+    final reqId = request['id'];
+
+    await _db.runTransaction((transaction) async {
+      final reqRef = _db.collection('plan_requests').doc(reqId);
+      final reqDoc = await transaction.get(reqRef);
+      if (!reqDoc.exists) throw Exception('La solicitud no existe.');
+      if (reqDoc.data()?['status'] != 'pending') throw Exception('La solicitud ya fue revisada.');
+
+      final driverId = request['driverId'];
+
+      transaction.update(reqRef, {
+        'status': 'rejected',
+        'rejectReason': reason,
+        'reviewedBy': adminName,
+        'reviewedAt': FieldValue.serverTimestamp(),
+      });
+
+      final notifRef = _db.collection('notifications').doc();
+      transaction.set(notifRef, {
+        'userId': driverId,
+        'title': 'Solicitud de plan rechazada',
+        'body': 'Tu pago para el plan ${request['planName']} fue rechazado. Motivo: $reason',
+        'createdAt': FieldValue.serverTimestamp(),
+        'isRead': false,
+      });
+    });
+  }
 }

@@ -1,0 +1,43 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function isStaff() {
+      // Simplificado: asume que admin o operator tienen acceso.
+      return request.auth.token.role in ['admin', 'superadmin', 'operator', 'operador', 'gerente'];
+    }
+
+    match /drivers/{userId}/{fileName} {
+      allow read: if isAuth();
+      allow write: if isAuth() && request.auth.uid == userId
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    match /profile_images/{userId}/{fileName} {
+      allow read: if isAuth();
+      allow write: if isAuth() && request.auth.uid == userId
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    match /ads/{fileName} {
+      allow read: if isAuth();
+      allow write: if isAuth() && isStaff()
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    match /plan_receipts/{userId}/{fileName} {
+      allow read: if isAuth() && (request.auth.uid == userId || isStaff());
+      allow write: if isAuth() && request.auth.uid == userId
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+  }
+}

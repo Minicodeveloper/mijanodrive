@@ -251,7 +251,36 @@ service cloud.firestore {
 
     match /notifications/{notifId} {
       allow read: if isStaff() || resource.data.get('userId', '') == request.auth.uid;
-      allow write: if isStaff();
+      allow create, delete: if isStaff();
+      allow update: if isStaff() || (
+        resource.data.get('userId', '') == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead'])
+      );
+    }
+
+    // 8. PUBLICIDAD Y PLANES
+    match /ads/{adId} {
+      allow read: if isAuth();
+      allow write: if isSuperAdmin() || isManager();
+    }
+
+    match /plans/{planId} {
+      allow read: if isAuth();
+      allow write: if isSuperAdmin();
+    }
+
+    match /plan_requests/{reqId} {
+      allow create: if isApprovedDriver()
+                    && request.resource.data.get('driverId', '') == request.auth.uid
+                    && request.resource.data.get('status', '') == 'pending';
+      allow read: if isSuperAdmin() || isManager() || resource.data.get('driverId', '') == request.auth.uid;
+      allow update: if isSuperAdmin() || isManager();
+      allow delete: if isSuperAdmin();
+    }
+
+    match /driver_plans/{driverId} {
+      allow read: if isSuperAdmin() || isManager() || request.auth.uid == driverId;
+      allow write: if isSuperAdmin() || isManager();
     }
   }
 }
