@@ -311,7 +311,18 @@ class AuthService {
         ];
       }
 
-      await _firestore.collection('users').doc(uid).set(userData);
+      final batch = _firestore.batch();
+      final userRef = _firestore.collection('users').doc(uid);
+      final dniRef = _firestore.collection('dni_index').doc(dni);
+
+      batch.set(userRef, userData);
+      batch.set(dniRef, {
+        'uid': uid,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      await batch.commit();
+
       await _getOrCreateWallet(uid);
 
       return (true, '¡Cuenta registrada con éxito!');
@@ -328,22 +339,17 @@ class AuthService {
       }
       return (false, message);
     } catch (e) {
-      return (false, 'Error inesperado al registrar: $e');
-    }
-  }
-
-  // ==========================================
-  // 6. CONSULTAR DNI (RENIEC)
-  // ==========================================
-  Future<String?> lookupDni(String dni) async {
-    try {
-      await Future.delayed(const Duration(seconds: 1)); 
-      if (dni.length == 8) {
-        return "Ciudadano Verificado $dni"; 
+      if (e.toString().contains('permission-denied')) {
+         final user = _fbAuth.currentUser;
+         if (user != null) {
+            try {
+               await user.delete();
+            } catch (_) {}
+            await _fbAuth.signOut();
+         }
+         return (false, 'Este DNI ya está registrado.');
       }
-      return null;
-    } catch (e) {
-      return null;
+      return (false, 'Error inesperado al registrar: $e');
     }
   }
 
@@ -373,15 +379,32 @@ class AuthService {
         );
       }
 
-      await _firestore.collection('users').doc(uid).update({
+      final batch = _firestore.batch();
+      final userRef = _firestore.collection('users').doc(uid);
+      final dniRef = _firestore.collection('dni_index').doc(dni);
+
+      batch.update(userRef, {
         'name': name,
         'dni': dni,
         'city': city,
         'role': role.name,
         if (photoUrl != null) 'photoUrl': photoUrl,
       });
+
+      // Crear índice. Si ya existía, fallará por las reglas de Firestore (si el uid es de otro).
+      batch.set(dniRef, {
+        'uid': uid,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      await batch.commit();
+
     } catch (e) {
-      // Manejar error silenciosamente
+      if (e.toString().contains('permission-denied')) {
+         throw Exception('DNI ya registrado en otra cuenta.');
+      }
+      // Manejar error
+      throw Exception(e);
     }
   }
 

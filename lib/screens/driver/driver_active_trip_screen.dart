@@ -173,6 +173,56 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<void> _cancelTrip() async {
+    final reasons = [
+      'El pasajero no aparece',
+      'El pasajero tardó demasiado',
+      'Problemas con el vehículo',
+      'Me equivoqué al aceptar',
+      'Otro',
+    ];
+
+    String? selectedReason = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Cancelar viaje'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('¿Por qué deseas cancelar el viaje?'),
+              const SizedBox(height: 16),
+              ...reasons.map((r) => ListTile(
+                title: Text(r),
+                onTap: () => Navigator.pop(context, r),
+              )),
+              ListTile(
+                title: const Text('Cancelar sin motivo'),
+                onTap: () => Navigator.pop(context, ''),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, null),
+              child: const Text('Atrás'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (selectedReason == null) return;
+
+    try {
+      await FirestoreService.instance.cancelTrip(widget.trip.id, cancelledBy: 'driver', reason: selectedReason.isEmpty ? null : selectedReason);
+      await FirestoreService.instance.setDriverAvailability(_driverId, true);
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) _showMessage('Error al cancelar: $e');
+    }
+  }
+
   Set<Marker> _markers(Trip trip) {
     final markers = <Marker>{
       Marker(
@@ -345,6 +395,31 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
           );
         }
         final trip = snapshot.data ?? widget.trip;
+        
+        if (trip.status == TripStatus.cancelled) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('Viaje Cancelado'),
+                  content: const Text('El pasajero ha cancelado el viaje.'),
+                  actions: [
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        Navigator.of(context).pop(); // Vuelve al dashboard
+                      },
+                      child: const Text('Aceptar'),
+                    ),
+                  ],
+                ),
+              );
+            }
+          });
+        }
+
         final status = _optimisticStatus ?? trip.status;
         _scheduleRouteUpdate(trip, status);
         final origin = LatLng(trip.origin.latitude, trip.origin.longitude);
@@ -558,14 +633,17 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
                               ),
                             ),
                           ),
-                          if (status == TripStatus.completed ||
-                              status == TripStatus.cancelled) ...[
+                          if (status == TripStatus.accepted || status == TripStatus.arrived) ...[
                             const SizedBox(height: 8),
                             SizedBox(
                               width: double.infinity,
                               child: OutlinedButton(
-                                onPressed: () => Navigator.of(context).pop(),
-                                child: const Text('Volver al panel'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.red,
+                                  side: const BorderSide(color: Colors.red),
+                                ),
+                                onPressed: _cancelTrip,
+                                child: const Text('Cancelar viaje'),
                               ),
                             ),
                           ],

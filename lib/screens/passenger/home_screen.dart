@@ -728,7 +728,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     .add({
                                       'passengerId': user!.uid,
                                       'passengerName': user.name,
-                                      'passengerPhone': user!.phone,
+                                      'passengerPhone': user.phone,
                                       'originAddress':
                                           _originController.text.isNotEmpty
                                           ? _originController.text

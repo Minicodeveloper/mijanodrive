@@ -17,8 +17,20 @@ class RoleHelper {
     return r == 'operator' || r == 'operador' || r == 'gerente';
   }
 
+  /// Verifica si el rol corresponde a Soporte
+  static bool isSupport(String? role) {
+    final r = normalizeRole(role);
+    return r == 'support' || r == 'soporte';
+  }
+
+  /// Verifica si el rol corresponde a Control
+  static bool isControl(String? role) {
+    final r = normalizeRole(role);
+    return r == 'control';
+  }
+
   /// Verifica si el rol tiene acceso al panel de administración (staff)
   static bool isStaff(String? role) {
-    return isSuperAdmin(role) || isManager(role);
+    return isSuperAdmin(role) || isManager(role) || isSupport(role) || isControl(role);
   }
 }
