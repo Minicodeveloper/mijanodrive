@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -12,6 +13,7 @@ import '../../theme.dart';
 import '../../widgets/mijano_icon.dart';
 import '../../config/app_config.dart';
 import 'driver_active_trip_screen.dart';
+import 'driver_plan_payment_screen.dart';
 
 class DriverDashboardScreen extends StatefulWidget {
   const DriverDashboardScreen({super.key});
@@ -24,20 +26,23 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   final _fs = FirestoreService.instance;
   final _auth = AuthService.instance;
 
-  bool _available = true;
+  bool _available = false;
+  bool _hasActivePlan = false;
+  bool _planPaymentPending = false;
+  bool _planPaymentRejected = false;
 
   final Completer<GoogleMapController> _mapController = Completer();
 
   Position? _driverPosition;
   StreamSubscription<Position>? _locationSubscription;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+  _driverPlanSubscription;
+  Timer? _planExpiryTimer;
 
-  
   static const double _maxTripDistanceKm = 3.0;
 
-  
   final Set<String> _shownAlertTripIds = {};
 
-  
   final Set<String> _rejectedTripIds = {};
 
   static const CameraPosition _initialPosition = CameraPosition(
@@ -54,16 +59,102 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   @override
   void initState() {
     super.initState();
+    _setInitialUnavailable();
+    _watchDriverPlan();
     _startLocationTracking();
   }
 
   @override
   void dispose() {
     _locationSubscription?.cancel();
+    _driverPlanSubscription?.cancel();
+    _planExpiryTimer?.cancel();
     super.dispose();
   }
 
-  
+  Future<void> _setInitialUnavailable() async {
+    try {
+      await _fs.setDriverAvailability(_uid, false);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo actualizar tu disponibilidad: $error'),
+        ),
+      );
+    }
+  }
+
+  void _watchDriverPlan() {
+    _driverPlanSubscription = FirebaseFirestore.instance
+        .collection('drivers')
+        .doc(_uid)
+        .snapshots()
+        .listen(
+          (snapshot) {
+            final data = snapshot.data();
+            final expiresAt = data?['planExpiresAt'];
+            final expiryDate = expiresAt is Timestamp
+                ? expiresAt.toDate()
+                : null;
+            final hasNotExpired = expiryDate?.isAfter(DateTime.now()) ?? false;
+            final hasActivePlan =
+                data?['planPaymentStatus'] == 'active' && hasNotExpired;
+            final isPending = data?['planPaymentStatus'] == 'pending';
+            final isRejected = data?['planPaymentStatus'] == 'rejected';
+
+            _planExpiryTimer?.cancel();
+            if (hasActivePlan && expiryDate != null) {
+              _planExpiryTimer = Timer(expiryDate.difference(DateTime.now()), () {
+                if (!mounted) return;
+                setState(() {
+                  _hasActivePlan = false;
+                  _available = false;
+                });
+                _fs.setDriverAvailability(_uid, false).catchError((error) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'No se pudo pausar tu disponibilidad al vencer el plan: $error',
+                      ),
+                    ),
+                  );
+                });
+              });
+            }
+
+            if (!mounted) return;
+            final wasAvailable = _available;
+            setState(() {
+              _hasActivePlan = hasActivePlan;
+              _planPaymentPending = isPending;
+              _planPaymentRejected = isRejected;
+              if (!hasActivePlan) _available = false;
+            });
+
+            if (wasAvailable && !hasActivePlan) {
+              _fs.setDriverAvailability(_uid, false).catchError((error) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'No se pudo pausar tu disponibilidad: $error',
+                    ),
+                  ),
+                );
+              });
+            }
+          },
+          onError: (Object error) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('No se pudo verificar tu plan: $error')),
+            );
+          },
+        );
+  }
+
   /// la ubicación del conductor.
   Future<void> _startLocationTracking() async {
     try {
@@ -77,9 +168,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
       _publishLocation(pos);
 
-      _locationSubscription = LocationService.instance.stream().listen((
-        pos,
-      ) {
+      _locationSubscription = LocationService.instance.stream().listen((pos) {
         if (!mounted) return;
 
         setState(() {
@@ -106,18 +195,56 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
     _lastPublishedTime = now;
     // Dispara y olvida para no bloquear la UI
-    _fs.updateDriverLocation(_uid, pos.latitude, pos.longitude).catchError((_) {});
+    _fs
+        .updateDriverLocation(_uid, pos.latitude, pos.longitude)
+        .catchError((_) {});
   }
 
-  void _toggleAvailability(bool value) {
+  Future<void> _toggleAvailability(bool value) async {
+    if (value && !_hasActivePlan) {
+      if (_planPaymentPending) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Tu comprobante sigue pendiente de validación.'),
+          ),
+        );
+        return;
+      }
+      final submitted = await Navigator.of(context).push<bool>(
+        MaterialPageRoute<bool>(
+          builder: (_) => const DriverPlanPaymentScreen(),
+        ),
+      );
+      if (submitted == true && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Comprobante enviado. Espera la validación del administrador.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
     setState(() {
       _available = value;
     });
 
-    _fs.setDriverAvailability(_uid, value);
+    try {
+      await _fs.setDriverAvailability(_uid, value);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _available = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo cambiar tu disponibilidad: $error')),
+      );
+      return;
+    }
 
     if (value && _driverPosition != null) {
-      // Fuerza publicación inmediata si pasa a estar disponible
       _lastPublishedTime = null;
       _publishLocation(_driverPosition!);
     }
@@ -136,7 +263,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
           'driverVehicleBrand': user.vehicleBrand,
           'driverVehicleModel': user.vehicleModel,
           'driverVehicleColor': user.vehicleColor,
-        }
+        },
       });
 
       if (!mounted) return;
@@ -161,7 +288,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     });
   }
 
-  
   double? _tripDistanceKm(Trip trip) {
     final position = _driverPosition;
 
@@ -177,7 +303,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     );
   }
 
-  
   List<Trip> _nearbyTrips(List<Trip> trips) {
     if (_driverPosition == null) {
       return [];
@@ -194,7 +319,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     }).toList();
   }
 
-  
   void _checkForNewNearbyTripAlerts(List<Trip> trips) {
     if (!_available || _driverPosition == null || trips.isEmpty) {
       return;
@@ -215,8 +339,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         _showTripAlert(trip);
       });
 
-      
-      
       break;
     }
   }
@@ -328,7 +450,9 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         city: _city,
         name: user?.name,
         phone: user?.phone,
-        plate: user?.vehiclePlate ?? 'Pendiente', // Preparado para cuando se generen
+        plate:
+            user?.vehiclePlate ??
+            'Pendiente', // Preparado para cuando se generen
         reportedBy: 'driver',
       );
 
@@ -392,7 +516,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    _available ? 'Disponible para viajes' : 'No disponible',
+                    _available
+                        ? 'Disponible para viajes'
+                        : _planPaymentPending
+                        ? 'Pago pendiente de validación'
+                        : _planPaymentRejected
+                            ? 'Pago rechazado · Intenta de nuevo'
+                        : 'No disponible',
                     style: const TextStyle(
                       fontWeight: FontWeight.w800,
                       color: MijanoTheme.ink,
@@ -503,7 +633,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
                       final nearbyTrips = _nearbyTrips(trips);
 
-                      
                       _checkForNewNearbyTripAlerts(trips);
 
                       if (nearbyTrips.isEmpty) {
