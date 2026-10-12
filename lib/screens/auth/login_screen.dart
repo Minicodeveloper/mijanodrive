@@ -123,9 +123,14 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 10),
 
-                const Center(
-                  child: MototaxiIcon(size: 96),
-                ),
+                Center(
+  child: Image.asset(
+    'assets/images/logo2.jpg',
+    width: 150,
+    height: 150,
+    fit: BoxFit.contain,
+  ),
+),
 
                 const SizedBox(height: 20),
                 const Text(
