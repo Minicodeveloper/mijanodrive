@@ -1501,6 +1501,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ],
                         ),
+                        const SizedBox(height: 15),
+                        const AdCarouselBanner(),
                         const SizedBox(height: 20),
                         SizedBox(
                           width: double.infinity,
@@ -1537,13 +1539,145 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
                           ),
-                        ),
+                      ),
                       ],
                     ),
             ),
           ),
         ),
       ],
+    );
+  }
+}
+
+class AdCarouselBanner extends StatefulWidget {
+  const AdCarouselBanner({super.key});
+
+  @override
+  State<AdCarouselBanner> createState() => _AdCarouselBannerState();
+}
+
+class _AdCarouselBannerState extends State<AdCarouselBanner> {
+  final PageController _pageController = PageController();
+  Timer? _carouselTimer;
+  int _currentPage = 0;
+
+  // Lista de publicidades (puedes agregar o cambiar las que desees)
+  final List<Map<String, dynamic>> _ads = [
+    {
+      'title': '¡Cumpliendo tus sueños!',
+      'subtitle': 'Tasa preferencial 1.5%',
+      'icon': Icons.local_offer,
+      'color': const [Color(0xFF0F2027), Color(0xFF203A43), Color(0xFF2C5364)],
+    },
+    {
+      'title': 'Taller Mecánico Lima',
+      'subtitle': 'Mantenimiento preventivo 20% OFF',
+      'icon': Icons.build,
+      'color': const [Color(0xFF1F1C2C), Color(0xFF928DAB)],
+    },
+    {
+      'title': 'Caja Cusco Móvil',
+      'subtitle': 'Abre tu cuenta digital en minutos',
+      'icon': Icons.account_balance,
+      'color': const [Color(0xFF11998E), Color(0xFF38EF7D)],
+    },
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    // Inicia el temporizador de 3 segundos para el cambio automático
+    _carouselTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+      if (_pageController.hasClients) {
+        _currentPage = (_currentPage + 1) % _ads.length;
+        _pageController.animateToPage(
+          _currentPage,
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOut,
+        );
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _carouselTimer?.cancel();
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 75,
+      child: PageView.builder(
+        controller: _pageController,
+        itemCount: _ads.length,
+        onPageChanged: (index) {
+          _currentPage = index;
+        },
+        itemBuilder: (context, index) {
+          final ad = _ads[index];
+          final List<Color> bgColors = ad['color'];
+
+          return Container(
+            margin: const EdgeInsets.symmetric(horizontal: 2),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              gradient: LinearGradient(
+                colors: bgColors,
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          ad['title'],
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          ad['subtitle'],
+                          style: const TextStyle(
+                            color: Color(0xFFF9D408),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    ad['icon'],
+                    color: const Color(0xFFF9D408),
+                    size: 30,
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }
