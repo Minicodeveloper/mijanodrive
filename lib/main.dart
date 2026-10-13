@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -28,7 +29,13 @@ Future<void> main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+    
+    // Activación de App Check con Play Integrity para validar la app en producción
+    await FirebaseAppCheck.instance.activate(
+      androidProvider: AndroidProvider.playIntegrity,
+    );
   } catch (_) {}
+  
   try {
     await Hive.initFlutter();
   } catch (_) {}
@@ -120,7 +127,6 @@ class MijanoDriveApp extends StatelessWidget {
         page = const DriverMainLayout();
         break;
       case '/admin': 
-        
         page = const admin.AdminApp();
         break;
       default:
