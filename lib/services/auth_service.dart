@@ -49,7 +49,7 @@ class AuthService {
     try {
       fb.UserCredential credential = await _fbAuth.signInWithEmailAndPassword(
         email: email.trim(),
-        password: password, // No recortar contraseña (Paso 6)
+        password: password,
       );
 
       final uid = credential.user!.uid;
@@ -58,7 +58,6 @@ class AuthService {
       if (userDoc.exists) {
         final data = userDoc.data() as Map<String, dynamic>;
 
-        // Cuenta bloqueada desde el panel (Permisos / Conductores / Pasajeros).
         if (data['isBlocked'] == true) {
           await _fbAuth.signOut();
           return (false, 'Tu cuenta ha sido bloqueada. Comunícate con el soporte de Mijano Drive.', null, null);
@@ -180,8 +179,6 @@ class AuthService {
         return (false, 'No hay una solicitud de código activa. Solicita un nuevo SMS.');
       }
 
-
-
       return await _createAccountInFirebase(
         name: name,
         email: email,
@@ -246,6 +243,51 @@ class AuthService {
   }
 
   // ==========================================
+  // MÉTODOS DE VALIDACIÓN DE DUPLICADOS
+  // ==========================================
+  Future<bool> isPhoneRegistered(String phone) async {
+    try {
+      final cleanPhone = _normalize(phone);
+      final snapshot = await _firestore
+          .collection('users')
+          .where('phone', isEqualTo: cleanPhone)
+          .limit(1)
+          .get();
+      return snapshot.docs.isNotEmpty;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> isLicenseRegistered(String license) async {
+    try {
+      final cleanLicense = license.trim();
+      final snapshot = await _firestore
+          .collection('users')
+          .where('licenseNumber', isEqualTo: cleanLicense)
+          .limit(1)
+          .get();
+      return snapshot.docs.isNotEmpty;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> isPlateRegistered(String plate) async {
+    try {
+      final cleanPlate = plate.trim().toUpperCase();
+      final snapshot = await _firestore
+          .collection('users')
+          .where('vehiclePlate', isEqualTo: cleanPlate)
+          .limit(1)
+          .get();
+      return snapshot.docs.isNotEmpty;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // ==========================================
   // MÉTODO PRIVADO UNIFICADO
   // ==========================================
   Future<(bool, String)> _createAccountInFirebase({
@@ -268,7 +310,7 @@ class AuthService {
     try {
       fb.UserCredential userCredential = await _fbAuth.createUserWithEmailAndPassword(
         email: email.trim(),
-        password: password, // No recortar contraseña (Paso 6)
+        password: password,
       );
 
       final uid = userCredential.user!.uid;
@@ -313,14 +355,8 @@ class AuthService {
 
       final batch = _firestore.batch();
       final userRef = _firestore.collection('users').doc(uid);
-      //final dniRef = _firestore.collection('dni_index').doc(dni);
 
       batch.set(userRef, userData);
-      /*batch.set(dniRef, {
-        'uid': uid,
-        'createdAt': FieldValue.serverTimestamp(),
-      });*/
-
       await batch.commit();
 
       await _getOrCreateWallet(uid);
@@ -391,7 +427,6 @@ class AuthService {
         if (photoUrl != null) 'photoUrl': photoUrl,
       });
 
-      // Crear índice. Si ya existía, fallará por las reglas de Firestore (si el uid es de otro).
       batch.set(dniRef, {
         'uid': uid,
         'createdAt': FieldValue.serverTimestamp(),
@@ -403,7 +438,6 @@ class AuthService {
       if (e.toString().contains('permission-denied')) {
          throw Exception('DNI ya registrado en otra cuenta.');
       }
-      // Manejar error
       throw Exception(e);
     }
   }
@@ -449,9 +483,7 @@ class AuthService {
           'updatedAt': FieldValue.serverTimestamp(),
         });
       }
-    } catch (e) {
-      // Manejar de forma silenciosa
-    }
+    } catch (e) {}
   }
 
   Future<void> signOut() async {

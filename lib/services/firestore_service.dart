@@ -61,8 +61,12 @@ class FirestoreService {
   // ---- DNI Unicidad ----
   Future<bool> isDniTaken(String dni) async {
     try {
-      final doc = await _db.collection('dni_index').doc(dni).get();
-      return doc.exists;
+      final q = await _db
+          .collection('users')
+          .where('dni', isEqualTo: dni.trim())
+          .limit(1)
+          .get();
+      return q.docs.isNotEmpty;
     } catch (_) {
       return false;
     }
@@ -188,7 +192,7 @@ class FirestoreService {
   //  ADMIN (panel web) — consume la MISMA colección
   // =====================================================
 
-  /// Todos los viajes activos (pending/accepted/active) para la consola.
+  
   Stream<List<Trip>> allActiveTrips() => _db
       .collection('trips')
       .where('status', whereIn: ['pending', 'accepted', 'arrived', 'active'])
@@ -216,7 +220,7 @@ class FirestoreService {
     }
   }
 
-  /// Todos los conductores (aprobados + pendientes) combinando 'users' y 'drivers'.
+  
   Stream<List<Driver>> allDrivers() {
     if (_allDriversStream != null) return _allDriversStream!;
 
@@ -354,25 +358,24 @@ class FirestoreService {
   //  PERMISOS: cuentas del panel, conductores y pasajeros
   // =====================================================
 
-  /// Roles guardados en `users.role` que pueden entrar al panel.
-  /// 'admin' / 'superAdmin' = SuperAdmin (dueños) · 'operator' = Gerente · 'support' = Soporte · 'control' = Control.
+  
   static const List<String> staffRoles = ['admin', 'superAdmin', 'operator', 'support', 'control'];
 
-  /// Cuentas del panel (SuperAdmin y Gerente).
+  
   Stream<List<Map<String, dynamic>>> staffAccounts() => _db
       .collection('users')
       .where('role', whereIn: staffRoles)
       .snapshots()
       .map((q) => q.docs.map((d) => {'uid': d.id, ...d.data()}).toList());
 
-  /// Documento `users/{uid}` en vivo (null si no existe).
+  
   Stream<Map<String, dynamic>?> userDoc(String uid) => _db
       .collection('users')
       .doc(uid)
       .snapshots()
       .map((d) => d.exists ? {'uid': d.id, ...?d.data()} : null);
 
-  /// Conductor en vivo combinando `users/{uid}` y `drivers/{uid}`.
+  
   Stream<Driver?> driverStream(String uid) {
     late StreamController<Driver?> controller;
     StreamSubscription? userSub;
@@ -490,7 +493,7 @@ class FirestoreService {
     }, SetOptions(merge: true));
   }
 
-  /// Todos los reportes (Moderación)
+  
   Stream<List<Map<String, dynamic>>> allReports() => _db
       .collection('reports')
       .orderBy('createdAt', descending: true)
@@ -711,7 +714,7 @@ class FirestoreService {
     String? phone,
     String? name,
     String? plate,
-    String reportedBy = 'driver', // 'driver' o 'passenger'
+    String reportedBy = 'driver', 
   }) =>
       _db.collection('alerts').add({
         'type': 'sos',
@@ -863,35 +866,35 @@ class FirestoreService {
 
     await _db.runTransaction((transaction) async {
       final reqRef = _db.collection('plan_requests').doc(reqId);
-      final reqDoc = await transaction.get(reqRef);
-      if (!reqDoc.exists) throw Exception('La solicitud no existe.');
-      if (reqDoc.data()?['status'] != 'pending') throw Exception('La solicitud ya fue revisada.');
-
       final driverId = request['driverId']?.toString() ?? '';
       final planId = request['planId']?.toString() ?? '';
       final planName = request['planName']?.toString() ?? '';
       final int days = (request['days'] as num?)?.toInt() ?? 1;
 
-      // Obtener la prioridad del documento del plan si no viene en el request
-      int priority = (request['priority'] as num?)?.toInt() ?? 1;
+      // =====================================================================
+      // 1. TODAS LAS LECTURAS (READS) PRIMERO
+      // =====================================================================
+      final reqDoc = await transaction.get(reqRef);
+      if (!reqDoc.exists) throw Exception('La solicitud no existe.');
+      if (reqDoc.data()?['status'] != 'pending') throw Exception('La solicitud ya fue revisada.');
+
+      DocumentSnapshot? planDoc;
       if (planId.isNotEmpty) {
         final planRef = _db.collection('plans').doc(planId);
-        final planDoc = await transaction.get(planRef);
-        if (planDoc.exists && planDoc.data() != null) {
-          priority = (planDoc.data()!['priority'] as num?)?.toInt() ?? priority;
-        }
+        planDoc = await transaction.get(planRef);
       }
 
-      // 1. Marcar el request como aprobado
-      transaction.update(reqRef, {
-        'status': 'approved',
-        'reviewedBy': realAdminName,
-        'reviewedAt': FieldValue.serverTimestamp(),
-      });
-
-      // 2. Extender o crear el plan activo del conductor en driver_plans
       final driverPlanRef = _db.collection('driver_plans').doc(driverId);
       final driverPlanDoc = await transaction.get(driverPlanRef);
+
+      // =====================================================================
+      // 2. CÁLCULOS LÓGICOS Y DE FECHAS
+      // =====================================================================
+      int priority = (request['priority'] as num?)?.toInt() ?? 1;
+      if (planDoc != null && planDoc.exists && planDoc.data() != null) {
+        final planData = planDoc.data() as Map<String, dynamic>;
+        priority = (planData['priority'] as num?)?.toInt() ?? priority;
+      }
 
       DateTime startsAt = DateTime.now();
       DateTime expiresAt = DateTime.now().add(Duration(days: days));
@@ -905,6 +908,17 @@ class FirestoreService {
         }
       }
 
+      // =====================================================================
+      // 3. TODAS LAS ESCRITURAS (WRITES) DESPUÉS
+      // =====================================================================
+      // Marcar el request como aprobado
+      transaction.update(reqRef, {
+        'status': 'approved',
+        'reviewedBy': realAdminName,
+        'reviewedAt': FieldValue.serverTimestamp(),
+      });
+
+      
       transaction.set(driverPlanRef, {
         'planId': planId,
         'planName': planName,
@@ -916,7 +930,7 @@ class FirestoreService {
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      // 3. Merge en drivers/{driverId} para no romper driver_dashboard_screen
+      
       if (driverId.isNotEmpty) {
         final driverRef = _db.collection('drivers').doc(driverId);
         transaction.set(driverRef, {
@@ -926,7 +940,7 @@ class FirestoreService {
         }, SetOptions(merge: true));
       }
 
-      // 4. Notificar al conductor
+      // Notificar al conductor
       final notifRef = _db.collection('notifications').doc();
       transaction.set(notifRef, {
         'userId': driverId,
@@ -1019,33 +1033,31 @@ class FirestoreService {
   }
 
   Future<void> savePaymentQr({
-    required String url,
-    required String storagePath,
-    String? oldStoragePath,
-    String? adminName,
-  }) async {
-    final realAdminName = AuthService.instance.currentUser?.name ?? adminName ?? 'SuperAdmin';
-
-    final docRef = _db.collection('settings').doc('payment_qr');
-    try {
-      await docRef.set({
-        'url': url,
-        'storagePath': storagePath,
-        'label': 'Plin',
-        'updatedAt': FieldValue.serverTimestamp(),
-        'updatedBy': realAdminName,
-      }, SetOptions(merge: true));
-    } catch (e) {
-      // Si falla Firestore, limpiamos el archivo recién subido
-      await DocumentService.instance.deleteStorageFile(storagePath);
-      rethrow;
-    }
-
-    // Si todo salió bien, eliminamos el archivo anterior de Storage si existía
-    if (oldStoragePath != null && oldStoragePath.isNotEmpty && oldStoragePath != storagePath) {
-      await DocumentService.instance.deleteStorageFile(oldStoragePath);
-    }
+  required String url,
+  required String storagePath,
+  String? oldStoragePath,
+  String? adminName,
+}) async {
+  final realAdminName = AuthService.instance.currentUser?.name ?? adminName ?? 'SuperAdmin';
+  final docRef = _db.collection('settings').doc('payment_qr');
+  
+  try {
+    await docRef.set({
+      'url': url,
+      'storagePath': storagePath,
+      'label': 'Plin',
+      'updatedAt': FieldValue.serverTimestamp(),
+      'updatedBy': realAdminName,
+    }, SetOptions(merge: false)); 
+  } catch (e) {
+    await DocumentService.instance.deleteStorageFile(storagePath);
+    rethrow;
   }
+
+  if (oldStoragePath != null && oldStoragePath.isNotEmpty && oldStoragePath != storagePath) {
+    await DocumentService.instance.deleteStorageFile(oldStoragePath);
+  }
+}
 
   Future<void> restoreDefaultPaymentQr({String? oldStoragePath}) async {
     await _db.collection('settings').doc('payment_qr').delete();

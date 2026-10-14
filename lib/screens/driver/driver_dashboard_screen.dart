@@ -148,6 +148,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
           },
           onError: (Object error) {
             if (!mounted) return;
+            
+            if (error.toString().contains('permission-denied')) {
+              return;
+            }
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('No se pudo verificar tu plan: $error')),
             );
@@ -178,7 +182,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         _publishLocation(pos);
       });
     } catch (_) {
-      // Ubicación no permitida o no disponible
+      
     }
   }
 
@@ -194,7 +198,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     }
 
     _lastPublishedTime = now;
-    // Dispara y olvida para no bloquear la UI
+    
     _fs
         .updateDriverLocation(_uid, pos.latitude, pos.longitude)
         .catchError((_) {});
@@ -452,7 +456,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         phone: user?.phone,
         plate:
             user?.vehiclePlate ??
-            'Pendiente', // Preparado para cuando se generen
+            'Pendiente', 
         reportedBy: 'driver',
       );
 

@@ -33,7 +33,7 @@ class PlansModule extends StatefulWidget {
 class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final fs = FirestoreService.instance;
-  String _requestsFilter = 'pending'; // 'pending', 'approved', 'rejected'
+  String _requestsFilter = 'pending'; 
 
   @override
   void initState() {
@@ -272,6 +272,7 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
   }
 
   void _showReceiptDialog(Map<String, dynamic> req) {
+    final parentContext = context;
     final detailCtrl = TextEditingController();
     String? selectedReason = PlanRejectReasons.reasons.first;
     bool isProcessing = false;
@@ -289,7 +290,7 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
     }
 
     showDialog(
-      context: context,
+      context: parentContext,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (context, setStateDialog) {
           final lastWarningAt = (req['lastWarningAt'] as Timestamp?)?.toDate();
@@ -343,7 +344,7 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
                     const SizedBox(height: 16),
                     GestureDetector(
                       onTap: () => DocumentViewerDialog.show(
-                        context,
+                        parentContext,
                         url: receiptUrl,
                         title: 'Comprobante - ${req['driverName']}',
                       ),
@@ -358,21 +359,21 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
                         child: Stack(
                           alignment: Alignment.center,
                           children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: Image.network(
-                                receiptUrl,
-                                fit: BoxFit.contain,
-                                width: double.infinity,
-                                height: double.infinity,
-                                errorBuilder: (_, __, ___) => const Center(
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(Icons.broken_image, size: 48, color: Colors.grey),
-                                      SizedBox(height: 8),
-                                      Text('No se pudo cargar la imagen', style: TextStyle(color: Colors.black54)),
-                                    ],
+                            Positioned.fill(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Image.network(
+                                  receiptUrl,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (_, __, ___) => const Center(
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.broken_image, size: 48, color: Colors.grey),
+                                        SizedBox(height: 8),
+                                        Text('No se pudo cargar la imagen', style: TextStyle(color: Colors.black54)),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
@@ -455,24 +456,32 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
                       onPressed: isProcessing ? null : () async {
                         final reason = getEffectiveReason();
                         if (reason.isEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Debes seleccionar o escribir un motivo/indicación')),
-                          );
+                          if (parentContext.mounted) {
+                            ScaffoldMessenger.of(parentContext).showSnackBar(
+                              const SnackBar(content: Text('Debes seleccionar o escribir un motivo/indicación')),
+                            );
+                          }
                           return;
                         }
                         setStateDialog(() => isProcessing = true);
                         try {
                           await fs.notifyPlanRequestIssue(req, reason, 'Admin');
-                          if (context.mounted) {
+                          if (dialogCtx.mounted) {
                             Navigator.pop(dialogCtx);
-                            ScaffoldMessenger.of(context).showSnackBar(
+                          }
+                          if (parentContext.mounted) {
+                            ScaffoldMessenger.of(parentContext).showSnackBar(
                               const SnackBar(content: Text('Aviso enviado al conductor'), backgroundColor: Colors.amber),
                             );
                           }
                         } catch (e) {
-                          setStateDialog(() => isProcessing = false);
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+                          if (dialogCtx.mounted) {
+                            setStateDialog(() => isProcessing = false);
+                          }
+                          if (parentContext.mounted) {
+                            ScaffoldMessenger.of(parentContext).showSnackBar(
+                              SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+                            );
                           }
                         }
                       },
@@ -487,14 +496,16 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
                       onPressed: isProcessing ? null : () async {
                         final reason = getEffectiveReason();
                         if (reason.isEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Debes seleccionar o escribir un motivo para rechazar')),
-                          );
+                          if (parentContext.mounted) {
+                            ScaffoldMessenger.of(parentContext).showSnackBar(
+                              const SnackBar(content: Text('Debes seleccionar o escribir un motivo para rechazar')),
+                            );
+                          }
                           return;
                         }
 
                         final confirm = await adminConfirm(
-                          context,
+                          parentContext,
                           title: 'Rechazar solicitud',
                           body: '¿Estás seguro de rechazar la solicitud de ${req['driverName']}?',
                           danger: true,
@@ -505,16 +516,22 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
                         setStateDialog(() => isProcessing = true);
                         try {
                           await fs.rejectPlanRequest(req, reason, 'Admin');
-                          if (context.mounted) {
+                          if (dialogCtx.mounted) {
                             Navigator.pop(dialogCtx);
-                            ScaffoldMessenger.of(context).showSnackBar(
+                          }
+                          if (parentContext.mounted) {
+                            ScaffoldMessenger.of(parentContext).showSnackBar(
                               const SnackBar(content: Text('Solicitud rechazada'), backgroundColor: Colors.red),
                             );
                           }
                         } catch (e) {
-                          setStateDialog(() => isProcessing = false);
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+                          if (dialogCtx.mounted) {
+                            setStateDialog(() => isProcessing = false);
+                          }
+                          if (parentContext.mounted) {
+                            ScaffoldMessenger.of(parentContext).showSnackBar(
+                              SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+                            );
                           }
                         }
                       },
@@ -530,16 +547,22 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
                         setStateDialog(() => isProcessing = true);
                         try {
                           await fs.approvePlanRequest(req, 'Admin');
-                          if (context.mounted) {
+                          if (dialogCtx.mounted) {
                             Navigator.pop(dialogCtx);
-                            ScaffoldMessenger.of(context).showSnackBar(
+                          }
+                          if (parentContext.mounted) {
+                            ScaffoldMessenger.of(parentContext).showSnackBar(
                               const SnackBar(content: Text('Plan activado correctamente'), backgroundColor: Colors.green),
                             );
                           }
                         } catch (e) {
-                          setStateDialog(() => isProcessing = false);
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+                          if (dialogCtx.mounted) {
+                            setStateDialog(() => isProcessing = false);
+                          }
+                          if (parentContext.mounted) {
+                            ScaffoldMessenger.of(parentContext).showSnackBar(
+                              SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+                            );
                           }
                         }
                       },
@@ -622,7 +645,7 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
 
                           return ListTile(
                             leading: const CircleAvatar(backgroundColor: MijanoTheme.cream, child: Icon(Icons.two_wheeler, color: MijanoTheme.ink)),
-                            title: Text('Conductor ID: ${p.driverId}'), // Ideally resolve name
+                            title: Text('Conductor ID: ${p.driverId}'),
                             subtitle: Text('Plan: ${p.planName} · Vence: ${_formatDate(p.expiresAt)}'),
                             trailing: AdminBadge(statusText, statusColor),
                           );

@@ -150,7 +150,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  // Validaciones del Paso 1
   bool _validateStep1() {
     if (!_formKey.currentState!.validate()) {
       return false;
@@ -158,24 +157,33 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return true;
   }
 
-  
+  // Validaciones del Paso 2 con límites y campos obligatorios
   bool _validateStep2() {
     if (!_acceptedTerms || !_acceptedPrivacy) {
       _showSnackBar('Debes aceptar los términos y condiciones y la política de privacidad');
       return false;
     }
-    if (_licenseController.text.trim().isEmpty) {
-      _showSnackBar('Ingresa el número de licencia');
+    
+    final license = _licenseController.text.trim();
+    if (license.isEmpty || license.length < 8) {
+      _showSnackBar('Ingresa un número de licencia válido (mínimo 8 caracteres)');
       return false;
     }
+
     if (_brandController.text.trim().isEmpty ||
         _modelController.text.trim().isEmpty ||
         _colorController.text.trim().isEmpty ||
-        _yearController.text.trim().isEmpty ||
-        _plateController.text.trim().isEmpty) {
+        _yearController.text.trim().isEmpty) {
       _showSnackBar('Completa todos los datos del vehículo');
       return false;
     }
+
+    final plate = _plateController.text.trim();
+    if (plate.isEmpty || plate.length < 6) {
+      _showSnackBar('Ingresa una placa válida (mínimo 6 caracteres)');
+      return false;
+    }
+
     return true;
   }
 
@@ -185,22 +193,56 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (!_validateStep1()) return;
       
       setState(() => _isLoading = true);
-      final dniTaken = await FirestoreService.instance.isDniTaken(_dniController.text.trim());
+
+      // Validar DNI existente y Teléfono existente
+      final dniText = _dniController.text.trim();
+      final phoneText = _phoneController.text.trim();
+
+      final dniTaken = await FirestoreService.instance.isDniTaken(dniText);
+      final phoneTaken = await _auth.isPhoneRegistered(phoneText);
+
       setState(() => _isLoading = false);
       
+      if (phoneTaken) {
+        _showAlert('Teléfono Duplicado', 'Este número de teléfono ya está registrado en otra cuenta.');
+        return;
+      }
+
       if (dniTaken) {
-        _showSnackBar('Este DNI ya está registrado en otra cuenta.');
+        _showAlert('DNI Duplicado', 'Este DNI ya está registrado en otra cuenta.');
         return;
       }
 
       if (_selectedRole == 'passenger') {
-        _register(); // Pasajero solo tiene 1 paso
+        _register(); 
       } else {
         setState(() => _currentStep = 1);
         _pageController.animateToPage(1, duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
       }
     } else if (_currentStep == 1) {
       if (!_validateStep2()) return;
+
+      setState(() => _isLoading = true);
+
+      // Validar Licencia existente y Placa existente en la base de datos
+      final licenseText = _licenseController.text.trim();
+      final plateText = _plateController.text.trim();
+
+      final licenseTaken = await _auth.isLicenseRegistered(licenseText);
+      final plateTaken = await _auth.isPlateRegistered(plateText);
+
+      setState(() => _isLoading = false);
+
+      if (licenseTaken) {
+        _showAlert('Licencia Duplicada', 'Este número de licencia ya está registrado en la base de datos.');
+        return;
+      }
+
+      if (plateTaken) {
+        _showAlert('Placa Duplicada', 'Esta placa de vehículo ya está registrada en la base de datos.');
+        return;
+      }
+
       setState(() => _currentStep = 2);
       _pageController.animateToPage(2, duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
     } else if (_currentStep == 2) {
@@ -281,7 +323,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 smsCode: smsCode,
                 name: _nameController.text.trim(),
                 email: _emailController.text.trim(),
-                password: _passwordController.text, // No trim (Paso 6)
+                password: _passwordController.text,
                 phone: _phoneController.text.trim(),
                 dni: _dniController.text.trim(),
                 city: _cityController.text.trim(),
@@ -312,9 +354,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             documentKey: key,
                             imageFile: entry.value!,
                           );
-                        } catch (e) {
-                          // Se ignora el error de subida para no interrumpir el registro; el admin o conductor lo podrán ver/subir después.
-                        }
+                        } catch (e) {}
                       }
                     }
                   }
@@ -345,6 +385,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
+    );
+  }
+
+  void _showAlert(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+        content: Text(message),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF9D408)),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Entendido', style: TextStyle(color: Colors.black)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -472,7 +529,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           TextFormField(
             controller: _phoneController,
             keyboardType: TextInputType.phone,
-            validator: (v) => v == null || v.isEmpty ? 'El teléfono es obligatorio' : null,
+            validator: (v) => v == null || v.length != 9 ? 'Ingresa 9 dígitos válidos' : null,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(9)],
             decoration: const InputDecoration(labelText: 'Número de teléfono', prefixIcon: Icon(Icons.phone_outlined), border: OutlineInputBorder()),
           ),
@@ -494,7 +551,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           TextFormField(
             controller: _dniController,
             keyboardType: TextInputType.number,
-            validator: (v) => v == null || v.length != 8 ? 'Ingresa 8 dígitos' : null,
+            validator: (v) => v == null || v.length != 8 ? 'Ingresa exactamente 8 dígitos' : null,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(8)],
             decoration: const InputDecoration(labelText: 'DNI', prefixIcon: Icon(Icons.badge_outlined), border: OutlineInputBorder()),
           ),
@@ -546,7 +603,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
           const SizedBox(height: 15),
           TextField(
             controller: _licenseController,
-            decoration: const InputDecoration(labelText: 'Número de licencia', prefixIcon: Icon(Icons.card_membership), border: OutlineInputBorder()),
+            maxLength: 10,
+            decoration: const InputDecoration(
+              labelText: 'Número de licencia', 
+              prefixIcon: Icon(Icons.card_membership), 
+              border: OutlineInputBorder(),
+              counterText: '',
+            ),
           ),
           const SizedBox(height: 15),
           const Text('Tipo de vehículo', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -585,7 +648,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 child: TextField(
                   controller: _yearController,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Año', border: OutlineInputBorder()),
+                  maxLength: 4,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(4)],
+                  decoration: const InputDecoration(labelText: 'Año', border: OutlineInputBorder(), counterText: ''),
                 ),
               ),
             ],
@@ -593,7 +658,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
           const SizedBox(height: 15),
           TextField(
             controller: _plateController,
-            decoration: const InputDecoration(labelText: 'Placa del vehículo', border: OutlineInputBorder()),
+            maxLength: 7,
+            decoration: const InputDecoration(
+              labelText: 'Placa del vehículo', 
+              border: OutlineInputBorder(),
+              counterText: '',
+            ),
           ),
           const SizedBox(height: 25),
           Row(
@@ -608,9 +678,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
               const SizedBox(width: 15),
               Expanded(
                 child: ElevatedButton(
-                  onPressed: _onNextPressed,
+                  onPressed: _isLoading ? null : _onNextPressed,
                   style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF9D408), padding: const EdgeInsets.symmetric(vertical: 15)),
-                  child: const Text('Siguiente', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black)),
+                  child: _isLoading
+                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2))
+                      : const Text('Siguiente', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black)),
                 ),
               ),
             ],
@@ -661,7 +733,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               mainAxisSpacing: 10,
               childAspectRatio: 1.3,
             ),
-            itemCount: 8,
+            itemCount: docTitles.length,
             itemBuilder: (context, index) {
               final file = _documents[index];
               return GestureDetector(
@@ -679,14 +751,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           children: [
                             const Icon(Icons.add_a_photo, color: Colors.grey),
                             const SizedBox(height: 5),
-                            Text(docTitles[index], textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                            Text(
+                              docTitles[index], 
+                              textAlign: TextAlign.center, 
+                              style: const TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
                           ],
                         )
                       : Align(
                           alignment: Alignment.topRight,
                           child: Container(
                             padding: const EdgeInsets.all(4),
-                            color: Colors.green,
+                            decoration: const BoxDecoration(
+                              color: Colors.green,
+                              borderRadius: BorderRadius.only(
+                                topRight: Radius.circular(8),
+                                bottomLeft: Radius.circular(8),
+                              ),
+                            ),
                             child: const Icon(Icons.check, size: 16, color: Colors.white),
                           ),
                         ),
@@ -710,7 +792,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   onPressed: _isLoading ? null : _onNextPressed,
                   style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF9D408), padding: const EdgeInsets.symmetric(vertical: 15)),
                   child: _isLoading
-                      ? const CircularProgressIndicator(color: Colors.black)
+                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2))
                       : const Text('Registrarse', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black)),
                 ),
               ),

@@ -143,7 +143,7 @@ class DriverAccountScreen extends StatelessWidget {
 
           const SizedBox(height: 32),
 
-          // Botón de Cerrar Sesión
+          // Botón de Cerrar Sesión corregido
           OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
               foregroundColor: MijanoTheme.signal,
@@ -159,10 +159,12 @@ class DriverAccountScreen extends StatelessWidget {
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             onPressed: () async {
-              await auth.signOut();
               if (context.mounted) {
                 Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
               }
+
+              
+              await auth.signOut();
             },
           ),
         ],

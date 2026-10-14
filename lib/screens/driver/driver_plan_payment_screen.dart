@@ -86,7 +86,7 @@ class _DriverPlanPaymentScreenState extends State<DriverPlanPaymentScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      // Verificación de solicitud pendiente para evitar duplicados
+      
       final pendingSnap = await FirebaseFirestore.instance
           .collection('plan_requests')
           .where('driverId', isEqualTo: uid)
@@ -105,11 +105,11 @@ class _DriverPlanPaymentScreenState extends State<DriverPlanPaymentScreen> {
         return;
       }
 
-      // Subir comprobante a Storage plan_receipts/{uid}/{timestamp}.jpg
+      
       final receiptUrl =
           await DocumentService.instance.uploadReceipt(uid, bytes);
 
-      // Crear solicitud en plan_requests
+      
       await FirestoreService.instance.createPlanRequest({
         'driverId': uid,
         'planId': selectedPlan.id,
@@ -122,7 +122,7 @@ class _DriverPlanPaymentScreenState extends State<DriverPlanPaymentScreen> {
           'notes': _notesController.text.trim(),
       });
 
-      // Actualizar estado en la colección drivers
+      
       await FirebaseFirestore.instance.collection('drivers').doc(uid).set({
         'isAvailable': false,
         'planPaymentStatus': 'pending',
@@ -430,7 +430,7 @@ class _DriverPlanPaymentScreenState extends State<DriverPlanPaymentScreen> {
                             ),
                             const SizedBox(height: 12),
                             const Text(
-                              'Paga aquí con Plin',
+                              'Paga aquí ',
                               style: TextStyle(
                                 color: MijanoTheme.ink,
                                 fontWeight: FontWeight.w700,
