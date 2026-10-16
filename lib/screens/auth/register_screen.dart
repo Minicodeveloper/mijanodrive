@@ -262,15 +262,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _isLoading = true);
     final phone = _phoneController.text.trim();
 
-    final (ok, msg) = await _auth.sendOtp(phone);
+    try {
+      final (ok, msg) = await _auth.sendOtp(phone);
 
-    if (!mounted) return;
-    setState(() => _isLoading = false);
+      if (!mounted) return;
+      setState(() => _isLoading = false);
 
-    _showSnackBar(msg);
+      // Si Firebase devuelve un error interno o de demasiados intentos en el mensaje
+      if (!ok && (msg.contains('Error code:39') || msg.contains('too-many-requests') || msg.contains('internal error'))) {
+        _showSnackBar('Demasiados intentos. Por favor, inténtalo más tarde.');
+      } else {
+        _showSnackBar(msg);
+      }
 
-    if (ok) {
-      _showOtpDialog();
+      if (ok) {
+        _showOtpDialog();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      
+      final errorStr = e.toString();
+      if (errorStr.contains('Error code:39') || errorStr.contains('too-many-requests') || errorStr.contains('internal error')) {
+        _showSnackBar('Demasiados intentos. Por favor, inténtalo más tarde.');
+      } else {
+        _showSnackBar('Ocurrió un error al enviar el código. Inténtalo de nuevo.');
+      }
     }
   }
 
