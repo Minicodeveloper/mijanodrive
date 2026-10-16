@@ -29,11 +29,9 @@ Future<void> main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
-    
-    // Activación de App Check con Play Integrity comentada temporalmente para descartar bloqueo de SMS en producción
-    // await FirebaseAppCheck.instance.activate(
-    //   androidProvider: AndroidProvider.playIntegrity,
-    // );
+    await FirebaseAppCheck.instance.activate(
+      androidProvider: AndroidProvider.playIntegrity,
+    );
   } catch (_) {}
   
   try {
