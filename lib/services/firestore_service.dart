@@ -731,7 +731,7 @@ class FirestoreService {
       });
 
   // =====================================================================
-  // PUBLICIDAD (ADS)
+  // PUBLICIDAD (ADS) Y MÉTRICAS DE SEGUIMIENTO
   // =====================================================================
   Stream<List<Map<String, dynamic>>> streamAds() {
     return _db.collection('ads').orderBy('createdAt', descending: true).snapshots().map(
@@ -754,6 +754,23 @@ class FirestoreService {
 
   Future<void> deleteAd(String id) async {
     await _db.collection('ads').doc(id).delete();
+  }
+
+  // Métodos añadidos para registrar Vistas y Clics en tiempo real
+  Future<void> trackAdView(String adId) async {
+    try {
+      await _db.collection('ads').doc(adId).update({
+        'viewsCount': FieldValue.increment(1),
+      });
+    } catch (_) {}
+  }
+
+  Future<void> trackAdClick(String adId) async {
+    try {
+      await _db.collection('ads').doc(adId).update({
+        'clicksCount': FieldValue.increment(1),
+      });
+    } catch (_) {}
   }
 
   // =====================================================================
@@ -945,7 +962,7 @@ class FirestoreService {
       transaction.set(notifRef, {
         'userId': driverId,
         'title': 'Plan activado',
-        'body': 'Tu plan $planName de $days días ha sido aprobado y activado.',
+        'body': 'Tu plan $planName de$days días ha sido aprobado y activado.',
         'createdAt': FieldValue.serverTimestamp(),
         'isRead': false,
       });
@@ -1005,7 +1022,7 @@ class FirestoreService {
     batch.set(notifRef, {
       'userId': driverId,
       'title': 'Revisa tu comprobante de pago',
-      'body': 'No pudimos reconocer tu comprobante del plan $planName. $message Vuelve a subirlo.',
+      'body': 'No pudimos reconocer tu comprobante del plan $planName.$message Vuelve a subirlo.',
       'createdAt': FieldValue.serverTimestamp(),
       'isRead': false,
     });

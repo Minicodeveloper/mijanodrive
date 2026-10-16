@@ -25,6 +25,7 @@ class _AdsModuleState extends State<AdsModule> {
   final _descCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   String _adType = 'banner';
+  DateTime? _bannerEndDate; 
   Uint8List? _imageBytes;
   bool _isLoading = false;
 
@@ -36,7 +37,8 @@ class _AdsModuleState extends State<AdsModule> {
   TimeOfDay _startTime = const TimeOfDay(hour: 8, minute: 0);
   TimeOfDay _endTime = const TimeOfDay(hour: 20, minute: 0);
   bool _enableSound = true;
-  String _targetAudience = 'Todos los usuarios'; // Nuevo campo de segmentación
+  String _targetAudience = 'Todos los usuarios';
+  DateTime? _popupEndDate; 
   Uint8List? _popupImageBytes;
   bool _isPopupLoading = false;
 
@@ -97,6 +99,12 @@ class _AdsModuleState extends State<AdsModule> {
       );
       return;
     }
+    if (_bannerEndDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Selecciona una fecha de finalización.'), backgroundColor: Colors.red),
+      );
+      return;
+    }
 
     setState(() => _isLoading = true);
 
@@ -114,6 +122,10 @@ class _AdsModuleState extends State<AdsModule> {
         'type': _adType,
         'imageUrl': imageUrl,
         'isActive': true,
+        'viewsCount': 0,
+        'clicksCount': 0,
+        'createdAt': FieldValue.serverTimestamp(), 
+        'endDate': Timestamp.fromDate(_bannerEndDate!), 
         'createdBy': 'Admin',
       });
 
@@ -124,12 +136,13 @@ class _AdsModuleState extends State<AdsModule> {
       setState(() {
         _imageBytes = null;
         _adType = 'banner';
+        _bannerEndDate = null;
         _isLoading = false;
       });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Publicidad subida correctamente a la carpeta ads/.'), backgroundColor: Colors.green),
+          const SnackBar(content: Text('Publicidad subida correctamente.'), backgroundColor: Colors.green),
         );
       }
     } catch (e) {
@@ -142,12 +155,17 @@ class _AdsModuleState extends State<AdsModule> {
     }
   }
 
-  // Guardar Pop-up Programado con Audiencia Seleccionada
   Future<void> _submitPopupAd() async {
     if (!_popupFormKey.currentState!.validate()) return;
     if (_popupImageBytes == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Debes seleccionar una imagen para el Pop-up.'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+    if (_popupEndDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Selecciona una fecha de finalización para el Pop-up.'), backgroundColor: Colors.red),
       );
       return;
     }
@@ -171,7 +189,11 @@ class _AdsModuleState extends State<AdsModule> {
         'startTime': '${_startTime.hour.toString().padLeft(2, '0')}:${_startTime.minute.toString().padLeft(2, '0')}',
         'endTime': '${_endTime.hour.toString().padLeft(2, '0')}:${_endTime.minute.toString().padLeft(2, '0')}',
         'enableSound': _enableSound,
-        'targetAudience': _targetAudience, // Guardamos la audiencia seleccionada
+        'targetAudience': _targetAudience,
+        'viewsCount': 0,
+        'clicksCount': 0,
+        'createdAt': FieldValue.serverTimestamp(), 
+        'endDate': Timestamp.fromDate(_popupEndDate!), 
         'createdBy': 'Admin',
       });
 
@@ -182,6 +204,7 @@ class _AdsModuleState extends State<AdsModule> {
       setState(() {
         _popupImageBytes = null;
         _targetAudience = 'Todos los usuarios';
+        _popupEndDate = null;
         _isPopupLoading = false;
       });
 
@@ -330,7 +353,7 @@ class _AdsModuleState extends State<AdsModule> {
           Row(
             children: [
               const Text('Tipo:', style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
               Radio<String>(
                 value: 'banner',
                 groupValue: _adType,
@@ -338,7 +361,7 @@ class _AdsModuleState extends State<AdsModule> {
                 activeColor: MijanoTheme.ink,
               ),
               const Text('Banner Superior'),
-              const SizedBox(width: 20),
+              const SizedBox(width: 15),
               Radio<String>(
                 value: 'imagen',
                 groupValue: _adType,
@@ -347,6 +370,23 @@ class _AdsModuleState extends State<AdsModule> {
               ),
               const Text('Imagen Cuadrada'),
               const Spacer(),
+              // Selector de Fecha de Vencimiento
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: DateTime.now().add(const Duration(days: 7)),
+                    firstDate: DateTime.now(),
+                    lastDate: DateTime.now().add(const Duration(days: 365)),
+                  );
+                  if (picked != null) setState(() => _bannerEndDate = picked);
+                },
+                icon: const Icon(Icons.calendar_today, size: 16),
+                label: Text(_bannerEndDate == null
+                    ? 'Fecha Fin'
+                    : 'Fin: ${_bannerEndDate!.day}/${_bannerEndDate!.month}/${_bannerEndDate!.year}'),
+              ),
+              const SizedBox(width: 15),
               ElevatedButton.icon(
                 onPressed: _isLoading ? null : _submitAd,
                 style: ElevatedButton.styleFrom(
@@ -364,7 +404,6 @@ class _AdsModuleState extends State<AdsModule> {
     );
   }
 
-  // Formulario de Pop-ups con selector de Audiencia
   Widget _buildPopupForm() {
     return Form(
       key: _popupFormKey,
@@ -450,7 +489,6 @@ class _AdsModuleState extends State<AdsModule> {
             validator: (v) => v!.trim().isEmpty ? 'Requerido' : null,
           ),
           const SizedBox(height: 12),
-          // Selector de Audiencia Destino
           DropdownButtonFormField<String>(
             value: _targetAudience,
             decoration: const InputDecoration(
@@ -489,6 +527,23 @@ class _AdsModuleState extends State<AdsModule> {
                 },
                 icon: const Icon(Icons.access_time_filled, size: 16),
                 label: Text('Hasta: ${_endTime.format(context)}'),
+              ),
+              const SizedBox(width: 15),
+              // Selector de Fecha de Vencimiento para Pop-up
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: DateTime.now().add(const Duration(days: 7)),
+                    firstDate: DateTime.now(),
+                    lastDate: DateTime.now().add(const Duration(days: 365)),
+                  );
+                  if (picked != null) setState(() => _popupEndDate = picked);
+                },
+                icon: const Icon(Icons.calendar_today, size: 16),
+                label: Text(_popupEndDate == null
+                    ? 'Fecha Fin'
+                    : 'Fin: ${_popupEndDate!.day}/${_popupEndDate!.month}/${_popupEndDate!.year}'),
               ),
               const SizedBox(width: 15),
               Row(
@@ -545,7 +600,7 @@ class _AdsModuleState extends State<AdsModule> {
         maxCrossAxisExtent: 380,
         mainAxisSpacing: 16,
         crossAxisSpacing: 16,
-        mainAxisExtent: 150,
+        mainAxisExtent: 185, 
       ),
       itemCount: ads.length,
       itemBuilder: (context, i) {
@@ -554,6 +609,21 @@ class _AdsModuleState extends State<AdsModule> {
         final String? startTime = rawMap['startTime'];
         final String? endTime = rawMap['endTime'];
         final String? audience = rawMap['targetAudience'];
+        final int views = rawMap['viewsCount'] ?? 0;
+        final int clicks = rawMap['clicksCount'] ?? 0;
+
+        // Formateo de fechas para visualización
+        String createdText = 'N/D';
+        if (rawMap['createdAt'] != null && rawMap['createdAt'] is Timestamp) {
+          final dt = (rawMap['createdAt'] as Timestamp).toDate();
+          createdText = '${dt.day}/${dt.month}/${dt.year}';
+        }
+
+        String endText = 'N/D';
+        if (rawMap['endDate'] != null && rawMap['endDate'] is Timestamp) {
+          final dt = (rawMap['endDate'] as Timestamp).toDate();
+          endText = '${dt.day}/${dt.month}/${dt.year}';
+        }
 
         return Card(
           elevation: 2,
@@ -571,7 +641,7 @@ class _AdsModuleState extends State<AdsModule> {
               ),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(10),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -583,7 +653,7 @@ class _AdsModuleState extends State<AdsModule> {
                               ad.companyName,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontWeight: FontWeight.w900, color: MijanoTheme.ink, fontSize: 14),
+                              style: const TextStyle(fontWeight: FontWeight.w900, color: MijanoTheme.ink, fontSize: 13),
                             ),
                           ),
                           Switch(
@@ -604,6 +674,11 @@ class _AdsModuleState extends State<AdsModule> {
                           '⏰ $startTime - $endTime',
                           style: const TextStyle(fontSize: 10, color: Colors.blueAccent, fontWeight: FontWeight.bold),
                         ),
+                      // Fechas de Creación y Finalización
+                      Text(
+                        '📅 Creado: $createdText | Fin: $endText',
+                        style: const TextStyle(fontSize: 9, color: Colors.grey, fontWeight: FontWeight.bold),
+                      ),
                       const SizedBox(height: 2),
                       Expanded(
                         child: Text(
@@ -613,6 +688,19 @@ class _AdsModuleState extends State<AdsModule> {
                           style: const TextStyle(fontSize: 11, color: Colors.black54),
                         ),
                       ),
+                      // Contadores de Vistas y Clics
+                      Row(
+                        children: [
+                          const Icon(Icons.visibility, size: 12, color: Colors.blueGrey),
+                          const SizedBox(width: 3),
+                          Text('$views vistas', style: const TextStyle(fontSize: 10, color: Colors.blueGrey, fontWeight: FontWeight.bold)),
+                          const SizedBox(width: 10),
+                          const Icon(Icons.ads_click, size: 12, color: Colors.orange),
+                          const SizedBox(width: 3),
+                          Text('$clicks clics', style: const TextStyle(fontSize: 10, color: Colors.orange, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -620,16 +708,16 @@ class _AdsModuleState extends State<AdsModule> {
                             onTap: () => _openWhatsApp(ad.phone),
                             child: Row(
                               children: [
-                                const Icon(Icons.phone, size: 14, color: Colors.green),
-                                const SizedBox(width: 4),
-                                Text(ad.phone, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green)),
+                                const Icon(Icons.phone, size: 13, color: Colors.green),
+                                const SizedBox(width: 3),
+                                Text(ad.phone, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green)),
                               ],
                             ),
                           ),
                           IconButton(
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(),
-                            icon: const Icon(Icons.delete_outline, color: Colors.red),
+                            icon: const Icon(Icons.delete_outline, color: Colors.red, size: 18),
                             onPressed: () => _deleteAd(ad),
                           )
                         ],

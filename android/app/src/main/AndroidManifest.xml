@@ -11,9 +11,6 @@
     
 
     <application
-
-
-
         android:label="Mijano Drive"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
@@ -51,6 +48,7 @@
             android:name="flutterEmbedding"
             android:value="2" />
     </application>
+
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
          https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
@@ -65,6 +63,16 @@
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="tel" />
+        </intent>
+
+        <!-- Esquemas añadidos para permitir abrir WhatsApp y enlaces web -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
         </intent>
     </queries>
 

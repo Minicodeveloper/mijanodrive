@@ -30,10 +30,10 @@ Future<void> main() async {
       options: DefaultFirebaseOptions.currentPlatform,
     );
     
-    // Activación de App Check con Play Integrity para validar la app en producción
-    await FirebaseAppCheck.instance.activate(
-      androidProvider: AndroidProvider.playIntegrity,
-    );
+    // Activación de App Check con Play Integrity comentada temporalmente para descartar bloqueo de SMS en producción
+    // await FirebaseAppCheck.instance.activate(
+    //   androidProvider: AndroidProvider.playIntegrity,
+    // );
   } catch (_) {}
   
   try {

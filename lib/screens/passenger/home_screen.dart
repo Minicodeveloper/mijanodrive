@@ -7,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../services/auth_service.dart';
 import '../../services/location_service.dart';
+import '../../services/firestore_service.dart';
 import 'passenger_account_screen.dart';
 import 'passenger_history_screen.dart';
 import 'active_trip_screen.dart';
@@ -109,6 +110,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (querySnapshot.docs.isEmpty || !mounted) return;
 
       for (var doc in querySnapshot.docs) {
+        final adId = doc.id;
         final adData = doc.data();
         final String audience = adData['targetAudience'] ?? 'Todos los usuarios';
 
@@ -124,7 +126,8 @@ class _HomeScreenState extends State<HomeScreen> {
         if (shouldShow) {
           Future.delayed(const Duration(milliseconds: 1500), () {
             if (mounted) {
-              _showFloatingPopupDialog(adData);
+              FirestoreService.instance.trackAdView(adId);
+              _showFloatingPopupDialog(adId, adData);
             }
           });
           break;
@@ -136,7 +139,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // Diálogo flotante del Pop-up con botón 'X' e imagen interactiva a WhatsApp
-  void _showFloatingPopupDialog(Map<String, dynamic> adData) {
+  void _showFloatingPopupDialog(String adId, Map<String, dynamic> adData) {
     final String title = adData['companyName'] ?? '';
     final String description = adData['description'] ?? '';
     final String phone = adData['phone'] ?? '';
@@ -184,7 +187,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 12),
                     if (imageUrl.isNotEmpty)
                       GestureDetector(
-                        onTap: () {
+                        onTap: () async {
+                          // Registramos el clic real en el Pop-up
+                          await FirestoreService.instance.trackAdClick(adId);
+                          if (!context.mounted) return;
                           Navigator.of(context).pop();
                           if (phone.isNotEmpty) {
                             final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
@@ -1721,6 +1727,15 @@ class _DynamicCarouselState extends State<_DynamicCarousel> {
   @override
   void initState() {
     super.initState();
+    
+    // Al iniciar el carrusel, registramos la vista del primer banner por defecto
+    if (widget.ads.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final firstAdId = widget.ads[0].id;
+        FirestoreService.instance.trackAdView(firstAdId);
+      });
+    }
+
     _carouselTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
       if (_pageController.hasClients && widget.ads.isNotEmpty) {
         _currentPage = (_currentPage + 1) % widget.ads.length;
@@ -1749,11 +1764,13 @@ class _DynamicCarouselState extends State<_DynamicCarousel> {
     }
   }
 
-  void _showAdDetailModal(Map<String, dynamic> adData) {
+  void _showAdDetailModal(String adId, Map<String, dynamic> adData) async {
+    await FirestoreService.instance.trackAdClick(adId);
     final String title = adData['companyName'] ?? '';
     final String description = adData['description'] ?? '';
     final String phone = adData['phone'] ?? '';
     final String imageUrl = adData['imageUrl'] ?? '';
+    if (!mounted) return;
 
     showModalBottomSheet(
       context: context,
@@ -1873,16 +1890,23 @@ class _DynamicCarouselState extends State<_DynamicCarousel> {
         controller: _pageController,
         itemCount: widget.ads.length,
         onPageChanged: (index) {
-          _currentPage = index;
+          setState(() {
+            _currentPage = index;
+          });
+          // Registra la vista cada vez que el carrusel cambia automáticamente o manualmente al banner siguiente
+          final adId = widget.ads[index].id;
+          FirestoreService.instance.trackAdView(adId);
         },
         itemBuilder: (context, index) {
-          final adData = widget.ads[index].data() as Map<String, dynamic>;
+          final doc = widget.ads[index];
+          final adId = doc.id;
+          final adData = doc.data() as Map<String, dynamic>;
           final String title = adData['companyName'] ?? '';
           final String subtitle = adData['description'] ?? '';
           final String imageUrl = adData['imageUrl'] ?? '';
 
           return GestureDetector(
-            onTap: () => _showAdDetailModal(adData),
+            onTap: () => _showAdDetailModal(adId, adData),
             child: Container(
               margin: const EdgeInsets.symmetric(horizontal: 2),
               decoration: BoxDecoration(
