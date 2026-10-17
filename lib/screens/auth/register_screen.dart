@@ -270,7 +270,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       // Si Firebase devuelve un error interno o de demasiados intentos en el mensaje
       if (!ok && (msg.contains('Error code:39') || msg.contains('too-many-requests') || msg.contains('internal error'))) {
-        _showSnackBar('Demasiados intentos. Por favor, inténtalo más tarde.');
+        _showSnackBar('Demasiados intentos con este número de celular. Por favor, inténtalo más tarde.');
       } else {
         _showSnackBar(msg);
       }
@@ -284,7 +284,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       
       final errorStr = e.toString();
       if (errorStr.contains('Error code:39') || errorStr.contains('too-many-requests') || errorStr.contains('internal error')) {
-        _showSnackBar('Demasiados intentos. Por favor, inténtalo más tarde.');
+        _showSnackBar('Demasiados intentos con este número de celular. Por favor, inténtalo más tarde.');
       } else {
         _showSnackBar('Ocurrió un error al enviar el código. Inténtalo de nuevo.');
       }

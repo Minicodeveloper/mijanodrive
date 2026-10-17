@@ -670,8 +670,9 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
           return const Center(child: CircularProgressIndicator());
         }
         final rawPlans = snap.data ?? [];
+        final plans = rawPlans.map((p) => PlanModel.fromMap(p, p['id'])).toList();
 
-        if (rawPlans.isEmpty) {
+        if (plans.isEmpty) {
           return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -679,12 +680,32 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
                 const Text('No hay planes configurados en la base de datos.'),
                 if (widget.canEdit) ...[
                   const SizedBox(height: 20),
-                  ElevatedButton(
-                    onPressed: () async {
-                      await fs.seedDefaultPlans();
-                      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Planes por defecto creados')));
-                    },
-                    child: const Text('Cargar planes por defecto'),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: MijanoTheme.sol,
+                          foregroundColor: MijanoTheme.ink,
+                        ),
+                        onPressed: () async {
+                          await fs.seedDefaultPlans();
+                          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Planes por defecto creados')));
+                        },
+                        icon: const Icon(Icons.auto_awesome),
+                        label: const Text('Cargar planes por defecto'),
+                      ),
+                      const SizedBox(width: 12),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: MijanoTheme.ink,
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () => _showCreatePlanDialog(context),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Crear nuevo plan'),
+                      ),
+                    ],
                   ),
                 ],
               ],
@@ -692,7 +713,7 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
           );
         }
 
-        final plans = rawPlans.map((p) => PlanModel.fromMap(p, p['id'])).toList();
+        final itemCount = plans.length + (widget.canEdit ? 1 : 0);
 
         return GridView.builder(
           gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
@@ -701,8 +722,45 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
             crossAxisSpacing: 16,
             mainAxisExtent: 290,
           ),
-          itemCount: plans.length,
+          itemCount: itemCount,
           itemBuilder: (context, i) {
+            if (widget.canEdit && i == plans.length) {
+              return adminCard(
+                child: InkWell(
+                  onTap: () => _showCreatePlanDialog(context),
+                  borderRadius: BorderRadius.circular(16),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: MijanoTheme.sol.withValues(alpha: 0.2),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.add, size: 36, color: MijanoTheme.ink),
+                      ),
+                      const SizedBox(height: 15),
+                      const Text(
+                        'Crear nuevo plan',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          color: MijanoTheme.ink,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      const Text(
+                        'Añade una nueva tarifa y beneficios',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+
             final plan = plans[i];
 
             return adminCard(
@@ -712,7 +770,14 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(plan.name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: MijanoTheme.ink)),
+                      Expanded(
+                        child: Text(
+                          plan.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: MijanoTheme.ink),
+                        ),
+                      ),
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -789,6 +854,136 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
           },
         );
       },
+    );
+  }
+
+  void _showCreatePlanDialog(BuildContext context) {
+    final nameController = TextEditingController();
+    final priceController = TextEditingController();
+    final durationController = TextEditingController();
+    final benefitsController = TextEditingController();
+    bool isActive = true;
+    bool isSaving = false;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setStateDialog) => AlertDialog(
+          title: const Text('Crear Nuevo Plan de Conductor', style: TextStyle(fontWeight: FontWeight.bold)),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 450),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre del plan (ej. Quincenal, Anual)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                  TextField(
+                    controller: priceController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Precio (S/)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                  TextField(
+                    controller: durationController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Duración en días (ej. 15, 30, 365)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                  TextField(
+                    controller: benefitsController,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: 'Beneficios (escribe uno por línea o separados por comas)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                  SwitchListTile(
+                    title: const Text('Activo para conductores'),
+                    value: isActive,
+                    activeColor: MijanoTheme.sol,
+                    onChanged: (val) => setStateDialog(() => isActive = val),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isSaving ? null : () => Navigator.pop(dialogContext),
+              child: const Text('Cancelar', style: TextStyle(color: Colors.black54)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: MijanoTheme.sol,
+                foregroundColor: MijanoTheme.ink,
+              ),
+              onPressed: isSaving ? null : () async {
+                final name = nameController.text.trim();
+                final price = double.tryParse(priceController.text.trim()) ?? 0.0;
+                final duration = int.tryParse(durationController.text.trim()) ?? 0;
+                final benefitsRaw = benefitsController.text.trim();
+
+                if (name.isEmpty || price <= 0 || duration <= 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Por favor completa todos los campos obligatorios correctamente')),
+                  );
+                  return;
+                }
+
+                final benefitsList = benefitsRaw
+                    .split(RegExp(r'[\n,]'))
+                    .map((e) => e.trim())
+                    .where((e) => e.isNotEmpty)
+                    .toList();
+
+                setStateDialog(() => isSaving = true);
+                try {
+                  await FirebaseFirestore.instance.collection('plans').add({
+                    'name': name,
+                    'price': price,
+                    'durationDays': duration,
+                    'benefits': benefitsList.isEmpty ? ['Acceso general'] : benefitsList,
+                    'isActive': isActive,
+                    'createdAt': FieldValue.serverTimestamp(),
+                  });
+
+                  if (dialogContext.mounted) Navigator.pop(dialogContext);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Plan creado exitosamente'), backgroundColor: Colors.green),
+                    );
+                  }
+                } catch (e) {
+                  setStateDialog(() => isSaving = false);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error al crear el plan: $e'), backgroundColor: Colors.red),
+                    );
+                  }
+                }
+              },
+              child: isSaving
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: MijanoTheme.ink))
+                  : const Text('Guardar Plan', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

@@ -4,6 +4,7 @@ import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+
 import 'firebase_options.dart';
 import 'theme.dart';
 import 'admin/admin_app.dart' as admin;
@@ -22,6 +23,9 @@ import 'screens/passenger/chat_screen.dart';
 import 'screens/shared/profile_screen.dart';
 import 'screens/auth/role-select.dart';
 import 'screens/driver/driver_main_layout.dart';
+
+// 1. LLAVE GLOBAL DE NAVEGACIÓN PARA LAS NOTIFICACIONES
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
