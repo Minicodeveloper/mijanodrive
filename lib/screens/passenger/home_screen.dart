@@ -769,6 +769,34 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ChoiceChip(
+                            label: const Center(
+                              child: Text('Programar viaje'),
+                            ),
+                            selected:
+                                _selectedServiceType == 'Programar viaje',
+                            selectedColor: const Color(0xFFF9D408),
+                            backgroundColor: const Color(0xFF2A2A2A),
+                            labelStyle: TextStyle(
+                              color:
+                                  _selectedServiceType == 'Programar viaje'
+                                  ? Colors.black
+                                  : Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            onSelected: (bool selected) {
+                              setModalState(() {
+                                _selectedServiceType = 'Programar viaje';
+                              });
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 20),
                     const Text(
                       'Método de pago:',
