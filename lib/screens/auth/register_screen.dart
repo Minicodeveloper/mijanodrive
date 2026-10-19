@@ -30,6 +30,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _passwordController = TextEditingController();
   final _dniController = TextEditingController();
   final _cityController = TextEditingController();
+  final _birthDateController = TextEditingController();
+  final _ageController = TextEditingController();
+  DateTime? _selectedBirthDate;
   File? _imageFile;
 
   
@@ -82,6 +85,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _passwordController.dispose();
     _dniController.dispose();
     _cityController.dispose();
+    _birthDateController.dispose();
+    _ageController.dispose();
     _licenseController.dispose();
     _brandController.dispose();
     _modelController.dispose();
@@ -148,6 +153,48 @@ class _RegisterScreenState extends State<RegisterScreen> {
         );
       },
     );
+  }
+
+  Future<void> _selectBirthDate(BuildContext context) async {
+    final now = DateTime.now();
+    final defaultInitial = DateTime(now.year - 18, now.month, now.day);
+    final initial = _selectedBirthDate ?? defaultInitial;
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial.isBefore(now) ? initial : now,
+      firstDate: DateTime(1920),
+      lastDate: now,
+      helpText: 'Selecciona tu fecha de nacimiento',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: Color(0xFFF9D408),
+              onPrimary: Colors.black,
+              onSurface: Colors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _selectedBirthDate = picked;
+        final day = picked.day.toString().padLeft(2, '0');
+        final month = picked.month.toString().padLeft(2, '0');
+        _birthDateController.text = '$day/$month/${picked.year}';
+
+        // Cálculo automático de la edad
+        int calculatedAge = now.year - picked.year;
+        if (now.month < picked.month || (now.month == picked.month && now.day < picked.day)) {
+          calculatedAge--;
+        }
+        _ageController.text = '$calculatedAge';
+      });
+    }
   }
 
   bool _validateStep1() {
@@ -345,6 +392,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 dni: _dniController.text.trim(),
                 city: _cityController.text.trim(),
                 role: roleEnum,
+                birthDate: _selectedBirthDate,
+                age: int.tryParse(_ageController.text.trim()),
                 profileImage: _imageFile,
                 vehiclePlate: _plateController.text.trim(),
                 vehicleBrand: _brandController.text.trim(),
@@ -577,6 +626,44 @@ class _RegisterScreenState extends State<RegisterScreen> {
             controller: _cityController,
             validator: (v) => v == null || v.isEmpty ? 'Ciudad es obligatoria' : null,
             decoration: const InputDecoration(labelText: 'Ciudad', prefixIcon: Icon(Icons.location_city_outlined), border: OutlineInputBorder()),
+          ),
+          const SizedBox(height: 15),
+          TextFormField(
+            controller: _birthDateController,
+            readOnly: true,
+            onTap: () => _selectBirthDate(context),
+            validator: (v) => v == null || v.trim().isEmpty ? 'Selecciona tu fecha de nacimiento' : null,
+            decoration: const InputDecoration(
+              labelText: 'Fecha de nacimiento',
+              hintText: 'DD/MM/AAAA',
+              prefixIcon: Icon(Icons.calendar_month_outlined),
+              suffixIcon: Icon(Icons.calendar_today, size: 18),
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 15),
+          TextFormField(
+            controller: _ageController,
+            readOnly: true,
+            keyboardType: TextInputType.number,
+            validator: (v) {
+              if (v == null || v.trim().isEmpty) return 'La edad es obligatoria';
+              final ageNum = int.tryParse(v.trim());
+              if (ageNum == null) return 'Edad no válida';
+              if (widget.initialRole == 'driver' && ageNum < 18) {
+                return 'Debes tener al menos 18 años para ser conductor';
+              }
+              if (ageNum < 14) {
+                return 'Debes tener al menos 14 años';
+              }
+              return null;
+            },
+            decoration: const InputDecoration(
+              labelText: 'Edad',
+              prefixIcon: Icon(Icons.cake_outlined),
+              suffixText: 'años',
+              border: OutlineInputBorder(),
+            ),
           ),
           const SizedBox(height: 30),
           ElevatedButton(

@@ -4,7 +4,7 @@ import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-
+import 'services/notification_service.dart';
 import 'firebase_options.dart';
 import 'theme.dart';
 import 'admin/admin_app.dart' as admin;
@@ -41,6 +41,11 @@ Future<void> main() async {
   try {
     await Hive.initFlutter();
   } catch (_) {}
+
+  try {
+    await NotificationService.init();
+    await NotificationService.requestPermissions();
+  } catch (_) {}
   
   runApp(const MijanoDriveApp());
 }
@@ -54,6 +59,7 @@ class MijanoDriveApp extends StatelessWidget {
       title: 'Mijano Drive',
       debugShowCheckedModeBanner: false,
       theme: MijanoTheme.light,
+      navigatorKey: NotificationService.navigatorKey,
       home: const SplashScreen(),
       onGenerateRoute: _onGenerateRoute,
     );

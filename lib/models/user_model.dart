@@ -15,6 +15,8 @@ class User {
   bool biometricEnabled;
   final String? city;
   final String status;
+  final DateTime? birthDate;
+  final int? age;
 
   // Campos específicos para conductores y sus vehículos
   final String? vehiclePlate;
@@ -38,6 +40,8 @@ class User {
     this.biometricEnabled = false,
     this.city,
     this.status = 'approved',
+    this.birthDate,
+    this.age,
     this.vehiclePlate,
     this.vehicleBrand,
     this.vehicleModel,
@@ -61,6 +65,8 @@ class User {
       'biometricEnabled': biometricEnabled,
       'city': city,
       'status': status,
+      'birthDate': birthDate != null ? Timestamp.fromDate(birthDate!) : null,
+      'age': age,
       'vehiclePlate': vehiclePlate,
       'vehicleBrand': vehicleBrand,
       'vehicleModel': vehicleModel,
@@ -103,6 +109,10 @@ class User {
       biometricEnabled: map['biometricEnabled'] ?? false,
       city: map['city'],
       status: map['status'] ?? 'approved',
+      birthDate: (map['birthDate'] as Timestamp?)?.toDate(),
+      age: map['age'] is int
+          ? map['age'] as int
+          : (map['age'] != null ? int.tryParse(map['age'].toString()) : null),
       vehiclePlate: map['vehiclePlate'],
       vehicleBrand: map['vehicleBrand'],
       vehicleModel: map['vehicleModel'],
@@ -130,6 +140,8 @@ class User {
     bool? biometricEnabled,
     String? city,
     String? status,
+    DateTime? birthDate,
+    int? age,
     String? vehiclePlate,
     String? vehicleBrand,
     String? vehicleModel,
@@ -151,6 +163,8 @@ class User {
       biometricEnabled: biometricEnabled ?? this.biometricEnabled,
       city: city ?? this.city,
       status: status ?? this.status,
+      birthDate: birthDate ?? this.birthDate,
+      age: age ?? this.age,
       vehiclePlate: vehiclePlate ?? this.vehiclePlate,
       vehicleBrand: vehicleBrand ?? this.vehicleBrand,
       vehicleModel: vehicleModel ?? this.vehicleModel,

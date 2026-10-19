@@ -17,6 +17,7 @@ import 'widgets/document_viewer_dialog.dart';
 import 'utils/driver_docs.dart';
 import '../widgets/mijano_icon.dart';
 import '../admin/modules/drivers_module.dart';
+import 'modules/notifications_module.dart';
 
 enum AdminRole { superAdmin, operator, support, control }
 
@@ -334,6 +335,12 @@ class _AdminShellState extends State<AdminShell> {
                               },
                             ),
                           ),
+                        if (canAccess(role, 'Notificaciones'))
+                          _buildNavItem(
+                            Icons.notifications,
+                            'Notificaciones',
+                            closeDrawer: closeDrawer,
+                          ),  
                       ],
                     ),
                   ),
@@ -427,6 +434,8 @@ class _AdminShellState extends State<AdminShell> {
         return const AdsModule();
       case 'Planes':
         return PlansModule(canEdit: role == AdminRole.superAdmin);
+      case 'Notificaciones':
+        return const AdminNotificationsScreen();
       case 'Soporte':
         return ReportsModule(canSeeMoney: canSeeMoney);
       case 'Alertas S.O.S.':

@@ -37,8 +37,7 @@ dependencies:
   url_launcher: ^6.3.0
 
   # Notificaciones Locales
-  
-
+  flutter_local_notifications: ^21.0.0
   # Firebase
   firebase_core: ^2.27.0
   firebase_app_check: ^0.2.2+7

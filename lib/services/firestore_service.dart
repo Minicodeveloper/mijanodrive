@@ -872,6 +872,13 @@ class FirestoreService {
         data['driverPhone'] = userData['phone'] ?? '';
       }
     }
+    
+    // Asegurar compatibilidad de duración si el plan usa horas o días
+    if (!data.containsKey('durationValue')) {
+      data['durationValue'] = data['days'] ?? 1;
+      data['durationUnit'] = 'days';
+    }
+
     data['createdAt'] = FieldValue.serverTimestamp();
     data['status'] = 'pending';
     await _db.collection('plan_requests').add(data);
@@ -913,15 +920,33 @@ class FirestoreService {
         priority = (planData['priority'] as num?)?.toInt() ?? priority;
       }
 
-      DateTime startsAt = DateTime.now();
-      DateTime expiresAt = DateTime.now().add(Duration(days: days));
+      // Extraer la cantidad y la unidad (horas o días)
+      final int durationValue = (request['durationValue'] as num?)?.toInt() 
+          ?? (request['days'] as num?)?.toInt() 
+          ?? 1;
+      final String durationUnit = request['durationUnit']?.toString() ?? 'days';
 
+      DateTime startsAt = DateTime.now();
+      DateTime expiresAt = DateTime.now();
+
+      // Calcular fecha de expiración según la unidad
+      if (durationUnit == 'hours') {
+        expiresAt = startsAt.add(Duration(hours: durationValue));
+      } else {
+        expiresAt = startsAt.add(Duration(days: durationValue));
+      }
+
+      // Si el conductor ya cuenta con un plan activo que no ha vencido, acumulamos el tiempo
       if (driverPlanDoc.exists && driverPlanDoc.data() != null) {
         final currentData = driverPlanDoc.data()!;
         final currentExpires = (currentData['expiresAt'] as Timestamp?)?.toDate();
         if (currentExpires != null && currentExpires.isAfter(DateTime.now())) {
           startsAt = (currentData['startsAt'] as Timestamp?)?.toDate() ?? startsAt;
-          expiresAt = currentExpires.add(Duration(days: days));
+          if (durationUnit == 'hours') {
+            expiresAt = currentExpires.add(Duration(hours: durationValue));
+          } else {
+            expiresAt = currentExpires.add(Duration(days: durationValue));
+          }
         }
       }
 
@@ -935,7 +960,7 @@ class FirestoreService {
         'reviewedAt': FieldValue.serverTimestamp(),
       });
 
-      
+      // Actualizar el plan del conductor
       transaction.set(driverPlanRef, {
         'planId': planId,
         'planName': planName,
@@ -947,7 +972,7 @@ class FirestoreService {
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      
+      // Actualizar el estado general en el perfil del conductor
       if (driverId.isNotEmpty) {
         final driverRef = _db.collection('drivers').doc(driverId);
         transaction.set(driverRef, {
@@ -956,16 +981,6 @@ class FirestoreService {
           'planExpiresAt': expiresAt,
         }, SetOptions(merge: true));
       }
-
-      // Notificar al conductor
-      final notifRef = _db.collection('notifications').doc();
-      transaction.set(notifRef, {
-        'userId': driverId,
-        'title': 'Plan activado',
-        'body': 'Tu plan $planName de$days días ha sido aprobado y activado.',
-        'createdAt': FieldValue.serverTimestamp(),
-        'isRead': false,
-      });
     });
   }
 
@@ -1082,5 +1097,12 @@ class FirestoreService {
     if (oldStoragePath != null && oldStoragePath.isNotEmpty) {
       await DocumentService.instance.deleteStorageFile(oldStoragePath);
     }
+  }
+  Stream<QuerySnapshot<Map<String, dynamic>>> streamPushCampaigns() {
+    return _db
+        .collection('push_campaigns')
+        .orderBy('createdAt', descending: true)
+        .limit(1)
+        .snapshots();
   }
 }

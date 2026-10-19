@@ -546,13 +546,15 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
                       onPressed: isProcessing ? null : () async {
                         setStateDialog(() => isProcessing = true);
                         try {
+                          // Se delega la aprobación y creación de notificación al servicio
                           await fs.approvePlanRequest(req, 'Admin');
+
                           if (dialogCtx.mounted) {
                             Navigator.pop(dialogCtx);
                           }
                           if (parentContext.mounted) {
                             ScaffoldMessenger.of(parentContext).showSnackBar(
-                              const SnackBar(content: Text('Plan activado correctamente'), backgroundColor: Colors.green),
+                              const SnackBar(content: Text('Plan activado y notificación enviada correctamente'), backgroundColor: Colors.green),
                             );
                           }
                         } catch (e) {
@@ -647,7 +649,12 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
                             leading: const CircleAvatar(backgroundColor: MijanoTheme.cream, child: Icon(Icons.two_wheeler, color: MijanoTheme.ink)),
                             title: Text('Conductor ID: ${p.driverId}'),
                             subtitle: Text('Plan: ${p.planName} · Vence: ${_formatDate(p.expiresAt)}'),
-                            trailing: AdminBadge(statusText, statusColor),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                AdminBadge(statusText, statusColor),
+                              ],
+                            ),
                           );
                         },
                       ),
@@ -862,6 +869,9 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
     final priceController = TextEditingController();
     final durationController = TextEditingController();
     final benefitsController = TextEditingController();
+    
+    // Variables para manejar la unidad de tiempo (Horas o Días)
+    String durationUnit = 'days';
     bool isActive = true;
     bool isSaving = false;
 
@@ -880,7 +890,7 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
                   TextField(
                     controller: nameController,
                     decoration: const InputDecoration(
-                      labelText: 'Nombre del plan (ej. Quincenal, Anual)',
+                      labelText: 'Nombre del plan (ej. Prueba 1 Hora, Diario)',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -894,14 +904,40 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
                     ),
                   ),
                   const SizedBox(height: 15),
-                  TextField(
-                    controller: durationController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Duración en días (ej. 15, 30, 365)',
-                      border: OutlineInputBorder(),
-                    ),
+                  
+                  // Fila con cantidad de duración y selector de unidad (Horas / Días)
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: TextField(
+                          controller: durationController,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'Cantidad (ej. 1, 24, 7)',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 2,
+                        child: DropdownButtonFormField<String>(
+                          value: durationUnit,
+                          decoration: const InputDecoration(
+                            labelText: 'Unidad',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 'hours', child: Text('Hora(s)')),
+                            DropdownMenuItem(value: 'days', child: Text('Día(s)')),
+                          ],
+                          onChanged: (val) => setStateDialog(() => durationUnit = val ?? 'days'),
+                        ),
+                      ),
+                    ],
                   ),
+
                   const SizedBox(height: 15),
                   TextField(
                     controller: benefitsController,
@@ -935,10 +971,10 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
               onPressed: isSaving ? null : () async {
                 final name = nameController.text.trim();
                 final price = double.tryParse(priceController.text.trim()) ?? 0.0;
-                final duration = int.tryParse(durationController.text.trim()) ?? 0;
+                final durationValue = int.tryParse(durationController.text.trim()) ?? 0;
                 final benefitsRaw = benefitsController.text.trim();
 
-                if (name.isEmpty || price <= 0 || duration <= 0) {
+                if (name.isEmpty || price <= 0 || durationValue <= 0) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Por favor completa todos los campos obligatorios correctamente')),
                   );
@@ -953,10 +989,14 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
 
                 setStateDialog(() => isSaving = true);
                 try {
+                  // Guardamos en Firestore con los campos listos para horas o días
                   await FirebaseFirestore.instance.collection('plans').add({
                     'name': name,
                     'price': price,
-                    'durationDays': duration,
+                    'durationValue': durationValue,
+                    'durationUnit': durationUnit, // 'hours' o 'days'
+                    'durationDays': durationUnit == 'hours' ? 1 : durationValue, // Valor de respaldo
+                    'priority': 99,
                     'benefits': benefitsList.isEmpty ? ['Acceso general'] : benefitsList,
                     'isActive': isActive,
                     'createdAt': FieldValue.serverTimestamp(),

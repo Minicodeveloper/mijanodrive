@@ -11,6 +11,7 @@ import '../../services/firestore_service.dart';
 import 'passenger_account_screen.dart';
 import 'passenger_history_screen.dart';
 import 'active_trip_screen.dart';
+import '../../services/notification_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -52,6 +53,8 @@ class _HomeScreenState extends State<HomeScreen> {
   String _durationText = '';
 
   String? _activeTripId;
+  StreamSubscription<DocumentSnapshot>? _activeTripSubscription;
+  bool _hasNotifiedAccepted = false;
 
   Timer? _searchTimer;
   int _remainingSeconds = 549;
@@ -92,6 +95,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _originFocus.dispose();
     _destinationFocus.dispose();
     _searchTimer?.cancel();
+    _activeTripSubscription?.cancel();
     super.dispose();
   }
 
@@ -297,6 +301,7 @@ class _HomeScreenState extends State<HomeScreen> {
           if (data['status'] == 'pending') {
             _isSearchingDriver = true;
             _startSearchTimer();
+            _listenToTripUpdates(doc.id);
           }
           _tripSelected = true;
         });
@@ -317,7 +322,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _startSearchTimer() {
     _searchTimer?.cancel();
     setState(() {
-      _remainingSeconds = 549;
+      _remainingSeconds = 180;
     });
 
     _searchTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -904,6 +909,16 @@ class _HomeScreenState extends State<HomeScreen> {
                                   _isSearchingDriver = true;
                                 });
 
+                                _listenToTripUpdates(tripRef.id);
+
+                                // Notificación flotante de confirmación para el pasajero
+                                NotificationService.showSearchingDriverToPassenger(
+                                  tripId: tripRef.id,
+                                  destinationAddress: _destinationController.text.isNotEmpty
+                                      ? _destinationController.text
+                                      : 'Destino solicitado',
+                                );
+
                                 _startSearchTimer();
                               } catch (e) {}
                             },
@@ -928,8 +943,53 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _listenToTripUpdates(String tripId) {
+    _activeTripSubscription?.cancel();
+    _hasNotifiedAccepted = false;
+
+    _activeTripSubscription = FirebaseFirestore.instance
+        .collection('trips')
+        .doc(tripId)
+        .snapshots()
+        .listen((snapshot) {
+      if (!snapshot.exists || !mounted) return;
+      final data = snapshot.data();
+      if (data == null) return;
+
+      final status = data['status'];
+
+      // Notificar al pasajero en cuanto el conductor acepta el viaje
+      if (status == 'accepted' && !_hasNotifiedAccepted) {
+        _hasNotifiedAccepted = true;
+        _searchTimer?.cancel();
+
+        final driverName = data['driverName'] ?? 'Tu conductor';
+        final vehicleBrand = data['driverVehicleBrand'] ?? '';
+        final vehicleModel = data['driverVehicleModel'] ?? '';
+        final vehiclePlate = data['driverPlate'] ?? '';
+        final parts = [vehicleBrand, vehicleModel, if (vehiclePlate.isNotEmpty) '($vehiclePlate)'].where((s) => s.isNotEmpty).join(' ');
+        final vehicleInfo = parts.isNotEmpty ? parts : 'MotoTaxi asignado';
+        final pickupAddress = data['originAddress'] ?? 'Tu ubicación';
+
+        NotificationService.showTripAcceptedToPassenger(
+          tripId: tripId,
+          driverName: driverName,
+          vehicleInfo: vehicleInfo,
+          pickupAddress: pickupAddress,
+        );
+
+        if (mounted) {
+          setState(() {
+            _isSearchingDriver = false;
+          });
+        }
+      }
+    });
+  }
+
   void _cancelSearch() async {
     _searchTimer?.cancel();
+    _activeTripSubscription?.cancel();
 
     if (_activeTripId != null) {
       try {

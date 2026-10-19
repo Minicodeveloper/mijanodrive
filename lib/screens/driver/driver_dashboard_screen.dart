@@ -9,6 +9,7 @@ import '../../models/trip_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
 import '../../services/location_service.dart';
+import '../../services/notification_service.dart';
 import '../../theme.dart';
 import '../../widgets/mijano_icon.dart';
 import '../../config/app_config.dart';
@@ -44,6 +45,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   final Set<String> _shownAlertTripIds = {};
 
   final Set<String> _rejectedTripIds = {};
+  final Set<String> _shownNotificationIds = {};
 
   static const CameraPosition _initialPosition = CameraPosition(
     target: LatLng(-6.48694, -76.36472),
@@ -62,6 +64,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     _setInitialUnavailable();
     _watchDriverPlan();
     _startLocationTracking();
+    _listenToPushAlerts();
   }
 
   @override
@@ -70,6 +73,54 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     _driverPlanSubscription?.cancel();
     _planExpiryTimer?.cancel();
     super.dispose();
+  }
+
+  final DateTime _sessionStartTime = DateTime.now();
+
+  void _listenToPushAlerts() {
+    debugPrint('🔔 [DEBUG] Iniciando escucha de push_campaigns...');
+    
+    _fs.streamPushCampaigns().listen((snapshot) {
+      debugPrint('🔔 [DEBUG] Snapshot recibido con ${snapshot.docs.length} documentos.');
+      
+      for (var change in snapshot.docChanges) {
+        debugPrint('🔔 [DEBUG] Cambio detectado: ${change.type} en doc ID: ${change.doc.id}');
+        
+        if (change.type == DocumentChangeType.added) {
+          final data = change.doc.data();
+          final docId = change.doc.id;
+          final audience = data?['audience'] ?? '';
+          
+          debugPrint('🔔 [DEBUG] Audiencia de la campaña: "$audience"');
+          
+          if (audience != 'DRIVER' && audience != 'ALL') {
+            debugPrint('❌ [DEBUG] Campaña descartada por audiencia (no es para DRIVER ni ALL)');
+            continue;
+          }
+
+          if (_shownNotificationIds.contains(docId)) {
+            debugPrint('❌ [DEBUG] Esta campaña ya fue mostrada antes en esta sesión');
+            continue;
+          }
+
+          final filterDetails = data?['filterDetails'] as Map<String, dynamic>?;
+          final title = filterDetails?['title'] ?? data?['title'] ?? 'Nueva Campaña';
+          final body = filterDetails?['message'] ?? filterDetails?['body'] ?? data?['body'] ?? '';
+
+          debugPrint('✅ [DEBUG] ¡Campaña válida! Título: "$title" | Cuerpo: "$body"');
+          
+          _shownNotificationIds.add(docId);
+
+          // Disparar la notificación nativa del sistema
+          NotificationService.showGeneralCampaignNotification(
+            title: title,
+            body: body,
+          );
+        }
+      }
+    }, onError: (error) {
+      debugPrint('🚨 [DEBUG ERROR en Stream]: $error');
+    });
   }
 
   Future<void> _setInitialUnavailable() async {
@@ -337,6 +388,14 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
       _shownAlertTripIds.add(trip.id);
 
+      // Enviar notificación local con banner flotante, sonido y vibración
+      NotificationService.showNewTripRequestToDriver(
+        tripId: trip.id,
+        passengerName: trip.passengerName ?? 'Pasajero',
+        price: trip.fareAmount,
+        pickupAddress: trip.originAddress ?? 'Cerca de ti',
+      );
+
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || !_available) return;
 
@@ -511,7 +570,12 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
             stream: _fs.userNotifications(_uid),
             builder: (context, snapshot) {
               final notifs = snapshot.data ?? [];
-              final unread = notifs.where((n) => n['isRead'] == false).toList();
+              
+              // Filtro explícito: solo 'plan_warning' para el banner interno
+              final unread = notifs.where((n) => 
+                n['isRead'] == false && n['type'] == 'plan_warning'
+              ).toList();
+
               if (unread.isEmpty) return const SizedBox.shrink();
 
               return Container(
@@ -595,20 +659,66 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                   color: MijanoTheme.ink,
                   size: 20,
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 Expanded(
-                  child: Text(
-                    _available
-                        ? 'Disponible para viajes'
-                        : _planPaymentPending
-                        ? 'Pago pendiente de validación'
-                        : _planPaymentRejected
-                            ? 'Pago rechazado · Intenta de nuevo'
-                        : 'No disponible',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      color: MijanoTheme.ink,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _available
+                            ? 'Disponible para viajes'
+                            : _planPaymentPending
+                            ? 'Pago pendiente de validación'
+                            : _planPaymentRejected
+                                ? 'Pago rechazado · Intenta de nuevo'
+                            : 'No disponible',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: MijanoTheme.ink,
+                          fontSize: 13,
+                        ),
+                      ),
+                      if (_hasActivePlan) ...[
+                        const SizedBox(height: 2),
+                        StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                          stream: FirebaseFirestore.instance.collection('drivers').doc(_uid).snapshots(),
+                          builder: (context, snapshot) {
+                            final data = snapshot.data?.data();
+                            final planName = data?['planName'] ?? 'Plan Activo';
+                            final expiresAt = (data?['planExpiresAt'] as Timestamp?)?.toDate();
+                            
+                            String timeRemainingText = '';
+                            if (expiresAt != null) {
+                              final diff = expiresAt.difference(DateTime.now());
+                              if (!diff.isNegative) {
+                                final days = diff.inDays;
+                                final hours = diff.inHours % 24;
+                                timeRemainingText = days > 0 ? '$days d $hours h restantes' : '$hours horas restantes';
+                              } else {
+                                timeRemainingText = 'Plan expirado';
+                              }
+                            }
+
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.85),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                '$planName · $timeRemainingText',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ],
                   ),
                 ),
                 Switch(

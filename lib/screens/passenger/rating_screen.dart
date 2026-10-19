@@ -20,6 +20,31 @@ class _RatingScreenState extends State<RatingScreen> {
   final _feedbackController = TextEditingController();
   bool _isSubmitting = false;
 
+  // Lista de comentarios rápidos predefinidos
+  final List<String> _quickComments = [
+    'Cumpita Gracias!!🌟',
+    'Chévere chochera!!',
+    'Te falta cumpa!! ',
+    'Muchas gracias…!',
+    'Excelente servicio!!',
+    'Mas o menos…',
+    'No pasa nada cumpa…',
+  ];
+
+  // Método para agregar o alternar comentarios rápidos en el TextField
+  void _toggleQuickComment(String comment) {
+    final currentText = _feedbackController.text.trim();
+    if (currentText.isEmpty) {
+      _feedbackController.text = comment;
+    } else {
+      // Si ya contiene texto, lo agregamos separado por una coma o espacio
+      if (!currentText.contains(comment)) {
+        _feedbackController.text = '$currentText. $comment';
+      }
+    }
+    setState(() {});
+  }
+
   @override
   void dispose() {
     _feedbackController.dispose();
@@ -108,7 +133,6 @@ class _RatingScreenState extends State<RatingScreen> {
                       const SizedBox(height: 20),
                       LayoutBuilder(
                         builder: (context, constraints) {
-                          // Allow 5 stars, spacing is handled by MainAxisAlignment or padding, max width 50
                           final maxStarWidth = ((constraints.maxWidth - 20) / 5).clamp(20.0, 50.0);
                           return Row(
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -145,10 +169,37 @@ class _RatingScreenState extends State<RatingScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 40),
+                const SizedBox(height: 30),
+                
+                // --- SECCIÓN DE COMENTARIOS RÁPIDOS (CHIPS) ---
+                const Text(
+                  'Comentarios rápidos',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8.0,
+                  runSpacing: 4.0,
+                  children: _quickComments.map((comment) {
+                    return ActionChip(
+                      backgroundColor: Colors.grey[100],
+                      side: BorderSide(color: Colors.grey[300]!),
+                      label: Text(
+                        comment,
+                        style: const TextStyle(fontSize: 12, color: Colors.black87),
+                      ),
+                      onPressed: () => _toggleQuickComment(comment),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 20),
+
                 // Feedback textarea
                 const Text(
-                  'Comentarios (opcional)',
+                  'Comentarios adicionales (opcional)',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
@@ -159,7 +210,7 @@ class _RatingScreenState extends State<RatingScreen> {
                   controller: _feedbackController,
                   maxLines: 4,
                   decoration: InputDecoration(
-                    hintText: 'Comparte tu experiencia...',
+                    hintText: 'Comparte tu experiencia o selecciona arriba...',
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
