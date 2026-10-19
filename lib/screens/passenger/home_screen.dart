@@ -10,6 +10,7 @@ import '../../services/location_service.dart';
 import '../../services/firestore_service.dart';
 import 'passenger_account_screen.dart';
 import 'passenger_history_screen.dart';
+import 'passenger_reserved_trips_screen.dart';
 import 'active_trip_screen.dart';
 import '../../services/notification_service.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -1229,6 +1230,20 @@ class _HomeScreenState extends State<HomeScreen> {
               onTap: () {
                 Navigator.pop(context);
                 setState(() => _selectedIndex = 1);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.event_available),
+              title: const Text('Viajes reservados'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (context) =>
+                        const PassengerReservedTripsScreen(),
+                  ),
+                );
               },
             ),
             ListTile(
