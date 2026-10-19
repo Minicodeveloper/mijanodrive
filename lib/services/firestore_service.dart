@@ -11,6 +11,7 @@ import '../utils/role_helper.dart';
 import '../admin/utils/driver_docs.dart';
 import 'auth_service.dart';
 import 'document_service.dart';
+import 'location_service.dart';
 
 // ============================================================================
 // CONTRATO DE DATOS: PLANES Y SOLICITUDES
@@ -102,8 +103,83 @@ class FirestoreService {
 
   // ---- Viajes ----
   Future<String> createTrip(Trip trip) async {
-    final ref = await _db.collection('trips').add(trip.toMap());
+    final tripData = trip.toMap();
+    
+    // 1. Buscar conductores con Plan Mensual disponibles y cercanos consultando la colección 'users'
+    final usersSnapshot = await _db.collection('users').get();
+    List<String> monthlyQueue = [];
+
+    for (var doc in usersSnapshot.docs) {
+      final data = doc.data();
+      final role = RoleHelper.normalizeRole(data['role']);
+      
+      // Validar que realmente sea un conductor
+      if (role != 'driver') continue;
+
+      final isAvailable = data['isAvailable'] ?? false;
+      final planName = (data['planName'] ?? '').toString().toLowerCase();
+      final planStatus = data['planPaymentStatus'] ?? '';
+      
+      // Validar si el plan no ha expirado
+      final expiresAt = (data['planExpiresAt'] as Timestamp?)?.toDate();
+      final hasNotExpired = expiresAt?.isAfter(DateTime.now()) ?? false;
+
+      // Validar si es un conductor mensual activo, disponible y con plan vigente
+      if (isAvailable && planStatus == 'active' && hasNotExpired && planName.contains('mensual')) {
+        final double? lat = data['currentLatitude'];
+        final double? lng = data['currentLongitude'];
+
+        if (lat != null && lng != null) {
+          // Calcular distancia al origen del viaje (300 km para tus pruebas o 3.0 para producción)
+          final distance = LocationService.instance.distanceKm(
+            lat,
+            lng,
+            trip.origin.latitude,
+            trip.origin.longitude,
+          );
+
+          if (distance <= 300.0) { 
+            monthlyQueue.add(doc.id);
+          }
+        }
+      }
+    }
+
+    // 2. Configurar los campos de control secuencial para el Plan Mensual
+    tripData['monthlyQueue'] = monthlyQueue;
+    tripData['currentMonthlyIndex'] = 0;
+    tripData['currentMonthlyDriverId'] = monthlyQueue.isNotEmpty ? monthlyQueue.first : null;
+    tripData['monthlyDeadline'] = Timestamp.fromDate(DateTime.now().add(const Duration(seconds: 30)));
+    tripData['rejectedMonthlyDriverIds'] = [];
+
+    final ref = await _db.collection('trips').add(tripData);
     return ref.id;
+  }
+  Future<void> advanceMonthlyQueue(String tripId) async {
+    final tripRef = _db.collection('trips').doc(tripId);
+    final tripDoc = await tripRef.get();
+    if (!tripDoc.exists) return;
+
+    final data = tripDoc.data()!;
+    List<dynamic> queueDyn = data['monthlyQueue'] ?? [];
+    List<String> queue = queueDyn.map((e) => e.toString()).toList();
+    int currentIndex = data['currentMonthlyIndex'] ?? 0;
+
+    currentIndex++; // Avanzar al siguiente índice
+
+    if (currentIndex < queue.length) {
+      // Todavía hay conductores mensuales en la cola
+      await tripRef.update({
+        'currentMonthlyIndex': currentIndex,
+        'currentMonthlyDriverId': queue[currentIndex],
+        'monthlyDeadline': Timestamp.fromDate(DateTime.now().add(const Duration(seconds: 30))),
+      });
+    } else {
+      // Se acabaron los conductores mensuales -> Abrir para todos (Overflow: Semanal y Diario)
+      await tripRef.update({
+        'currentMonthlyDriverId': null, // Nulo indica que la fase mensual terminó y se abre al resto
+      });
+    }
   }
 
   Future<void> updateTrip(String id, Map<String, dynamic> data) =>

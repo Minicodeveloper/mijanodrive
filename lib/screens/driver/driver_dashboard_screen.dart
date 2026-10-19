@@ -32,6 +32,9 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   bool _planPaymentPending = false;
   bool _planPaymentRejected = false;
 
+  // Variable para almacenar el tipo de plan actual del conductor (ej. 'Mensual', 'Semanal', 'Diario')
+  String _myPlanName = 'Diario'; 
+
   final Completer<GoogleMapController> _mapController = Completer();
 
   Position? _driverPosition;
@@ -40,7 +43,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   _driverPlanSubscription;
   Timer? _planExpiryTimer;
 
-  static const double _maxTripDistanceKm = 3.0;
+  static const double _maxTripDistanceKm = 300.0;
 
   final Set<String> _shownAlertTripIds = {};
 
@@ -74,8 +77,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     _planExpiryTimer?.cancel();
     super.dispose();
   }
-
-  final DateTime _sessionStartTime = DateTime.now();
 
   void _listenToPushAlerts() {
     debugPrint('🔔 [DEBUG] Iniciando escucha de push_campaigns...');
@@ -153,6 +154,9 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                 data?['planPaymentStatus'] == 'active' && hasNotExpired;
             final isPending = data?['planPaymentStatus'] == 'pending';
             final isRejected = data?['planPaymentStatus'] == 'rejected';
+            
+            // Capturar el nombre del plan actual del conductor
+            final fetchedPlanName = data?['planName'] ?? 'Diario';
 
             _planExpiryTimer?.cancel();
             if (hasActivePlan && expiryDate != null) {
@@ -181,6 +185,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
               _hasActivePlan = hasActivePlan;
               _planPaymentPending = isPending;
               _planPaymentRejected = isRejected;
+              _myPlanName = fetchedPlanName;
               if (!hasActivePlan) _available = false;
             });
 
@@ -210,7 +215,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         );
   }
 
-  /// la ubicación del conductor.
+  /// La ubicación del conductor.
   Future<void> _startLocationTracking() async {
     try {
       final pos = await LocationService.instance.current();
@@ -337,10 +342,22 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     }
   }
 
-  Future<void> _reject(Trip trip) async {
+  // Método actualizado para registrar el rechazo con soporte de Plan Mensual
+  Future<void> _rejectMonthlyTrip(Trip trip) async {
     setState(() {
       _rejectedTripIds.add(trip.id);
     });
+
+    final bool isMonthlyPlan = _myPlanName.toLowerCase().contains('mensual');
+    if (isMonthlyPlan) {
+      // Registrar su rechazo en la lista del viaje
+      await FirebaseFirestore.instance.collection('trips').doc(trip.id).update({
+        'rejectedMonthlyDriverIds': FieldValue.arrayUnion([_uid]),
+      });
+
+      // Invocar el método en Firestore para pasarle el turno al siguiente conductor mensual
+      await _fs.advanceMonthlyQueue(trip.id);
+    }
   }
 
   double? _tripDistanceKm(Trip trip) {
@@ -358,19 +375,40 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     );
   }
 
+  // Lógica de elegibilidad y prioridad para los 3 km y el Plan Mensual
+  bool _isDriverEligibleForTrip(Trip trip) {
+    if (_driverPosition == null) return false;
+
+    // 1. Validar estrictamente el rango de distancia (ej. 300 km para tus pruebas)
+    final distance = _tripDistanceKm(trip);
+    if (distance == null || distance > _maxTripDistanceKm) return false;
+
+    // 2. Verificar si este conductor ya rechazó este viaje previamente
+    if (_rejectedTripIds.contains(trip.id)) return false;
+
+    final tripMap = trip.toMap();
+    final bool isMonthlyPlan = _myPlanName.toLowerCase().contains('mensual');
+    final String? currentMonthlyDriverId = tripMap['currentMonthlyDriverId'] as String?;
+
+    if (currentMonthlyDriverId != null) {
+      // FASE 1: La cola mensual está activa. El viaje SOLO pertenece al conductor en turno exacto.
+      if (!isMonthlyPlan) {
+        return false; // Los planes semanales y diarios aún no ven el viaje
+      }
+      return currentMonthlyDriverId == _uid; // Solo es elegible si es SU turno
+    } else {
+      // FASE 2 (Overflow): Todos los mensuales rechazaron o expiró la cola. Abierto para Semanal y Diario.
+      return true; 
+    }
+  }
+
   List<Trip> _nearbyTrips(List<Trip> trips) {
     if (_driverPosition == null) {
       return [];
     }
 
     return trips.where((trip) {
-      if (_rejectedTripIds.contains(trip.id)) {
-        return false;
-      }
-
-      final distance = _tripDistanceKm(trip);
-
-      return distance != null && distance <= _maxTripDistanceKm;
+      return _isDriverEligibleForTrip(trip);
     }).toList();
   }
 
@@ -407,75 +445,122 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   }
 
   Future<void> _showTripAlert(Trip trip) async {
-    final distance = _tripDistanceKm(trip);
+  final distance = _tripDistanceKm(trip);
 
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.notifications_active, color: MijanoTheme.sol),
-              SizedBox(width: 8),
-              Expanded(child: Text('Nuevo viaje cercano')),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Hay un pasajero solicitando un viaje cerca de tu ubicación.',
-              ),
-              const SizedBox(height: 16),
-              _alertInfoRow(
-                Icons.trip_origin,
-                'Origen',
-                trip.originAddress ?? 'Origen no disponible',
-              ),
-              const SizedBox(height: 10),
-              _alertInfoRow(
-                Icons.location_on,
-                'Destino',
-                trip.destinationAddress ?? 'Destino no disponible',
-              ),
-              const SizedBox(height: 10),
-              _alertInfoRow(
-                Icons.payments,
-                'Tarifa',
-                'S/ ${trip.fareAmount.toStringAsFixed(2)}',
-              ),
-              if (distance != null) ...[
-                const SizedBox(height: 10),
-                _alertInfoRow(
-                  Icons.near_me,
-                  'Distancia',
-                  '${distance.toStringAsFixed(2)} km',
+  // Calcular segundos restantes basados en la fecha límite del viaje
+  final tripMap = trip.toMap();
+  final Timestamp? deadlineTs = tripMap['monthlyDeadline'] as Timestamp?;
+  final DateTime deadline = deadlineTs?.toDate() ?? DateTime.now().add(const Duration(seconds: 30));
+  
+  int secondsRemaining = deadline.difference(DateTime.now()).inSeconds;
+  if (secondsRemaining <= 0) secondsRemaining = 30; // Fallback predeterminado
+
+  await showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (dialogContext) {
+      return StatefulBuilder(
+        builder: (context, setDialogState) {
+          Timer? alertTimer;
+
+          // Iniciar el conteo regresivo si no se ha iniciado
+          alertTimer ??= Timer.periodic(const Duration(seconds: 1), (timer) {
+            if (secondsRemaining > 1) {
+              setDialogState(() {
+                secondsRemaining--;
+              });
+            } else {
+              timer.cancel();
+              if (Navigator.canPop(dialogContext)) {
+                Navigator.pop(dialogContext); // Cierra el cuadro automáticamente al llegar a 0
+              }
+              _rejectMonthlyTrip(trip); // Registra el rechazo automático por tiempo agotado
+            }
+          });
+
+          return AlertDialog(
+            title: Row(
+              children: [
+                const Icon(Icons.notifications_active, color: MijanoTheme.sol),
+                const SizedBox(width: 8),
+                const Expanded(child: Text('Nuevo viaje cercano')),
+                // Contador visual decreciente
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade100,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${secondsRemaining}s',
+                    style: const TextStyle(
+                      color: Colors.red,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
                 ),
               ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Hay un pasajero solicitando un viaje cerca de tu ubicación.',
+                ),
+                const SizedBox(height: 16),
+                _alertInfoRow(
+                  Icons.trip_origin,
+                  'Origen',
+                  trip.originAddress ?? 'Origen no disponible',
+                ),
+                const SizedBox(height: 10),
+                _alertInfoRow(
+                  Icons.location_on,
+                  'Destino',
+                  trip.destinationAddress ?? 'Destino no disponible',
+                ),
+                const SizedBox(height: 10),
+                _alertInfoRow(
+                  Icons.payments,
+                  'Tarifa',
+                  'S/ ${trip.fareAmount.toStringAsFixed(2)}',
+                ),
+                if (distance != null) ...[
+                  const SizedBox(height: 10),
+                  _alertInfoRow(
+                    Icons.near_me,
+                    'Distancia',
+                    '${distance.toStringAsFixed(2)} km',
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  alertTimer?.cancel();
+                  Navigator.pop(dialogContext);
+                  _rejectMonthlyTrip(trip);
+                },
+                child: const Text('Rechazar'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  alertTimer?.cancel();
+                  Navigator.pop(dialogContext);
+                  await _accept(trip);
+                },
+                child: const Text('Aceptar'),
+              ),
             ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                _reject(trip);
-              },
-              child: const Text('Rechazar'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                Navigator.pop(dialogContext);
-                await _accept(trip);
-              },
-              child: const Text('Aceptar'),
-            ),
-          ],
-        );
-      },
-    );
-  }
+          );
+        },
+      );
+    },
+  );
+}
 
   Widget _alertInfoRow(IconData icon, String title, String value) {
     return Row(
