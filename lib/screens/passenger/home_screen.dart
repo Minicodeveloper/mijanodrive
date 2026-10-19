@@ -658,6 +658,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _showRequestModal() {
     DateTime scheduledTripAt = DateTime.now().add(const Duration(hours: 1));
+    bool isSubmitting = false;
 
     showModalBottomSheet(
       context: context,
@@ -988,7 +989,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                 borderRadius: BorderRadius.circular(12),
                               ),
                             ),
-                            onPressed: () async {
+                            onPressed: isSubmitting
+                                ? null
+                                : () async {
                               if (_selectedServiceType == 'Programar viaje' &&
                                   !scheduledTripAt.isAfter(DateTime.now())) {
                                 ScaffoldMessenger.of(context).showSnackBar(
@@ -1001,9 +1004,21 @@ class _HomeScreenState extends State<HomeScreen> {
                                 return;
                               }
 
-                              Navigator.pop(context);
-
                               final user = AuthService.instance.currentUser;
+                              if (user == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Inicia sesión para solicitar un viaje.',
+                                    ),
+                                  ),
+                                );
+                                return;
+                              }
+
+                              setModalState(() => isSubmitting = true);
+                              final isScheduled =
+                                  _selectedServiceType == 'Programar viaje';
 
                               try {
                                 LatLng? originCoords =
@@ -1029,7 +1044,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 tripRef = await FirebaseFirestore.instance
                                     .collection('trips')
                                     .add({
-                                      'passengerId': user!.uid,
+                                      'passengerId': user.uid,
                                       'passengerName': user.name,
                                       'passengerPhone': user.phone,
                                       'originAddress':
@@ -1064,6 +1079,31 @@ class _HomeScreenState extends State<HomeScreen> {
                                       'createdAt': FieldValue.serverTimestamp(),
                                     });
 
+                                if (!mounted || !context.mounted) return;
+                                Navigator.pop(context);
+
+                                if (isScheduled) {
+                                  ScaffoldMessenger.of(
+                                    this.context,
+                                  ).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Viaje reservado correctamente.',
+                                      ),
+                                    ),
+                                  );
+                                  Navigator.of(this.context).push(
+                                    MaterialPageRoute<void>(
+                                      builder: (context) =>
+                                          PassengerReservedTripsScreen(
+                                            initialTripId: tripRef.id,
+                                          ),
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                if (!mounted) return;
                                 setState(() {
                                   _activeTripId = tripRef.id;
                                   _isSearchingDriver = true;
@@ -1081,10 +1121,29 @@ class _HomeScreenState extends State<HomeScreen> {
                                 );
 
                                 _startSearchTimer();
-                              } catch (e) {}
+                              } catch (e) {
+                                if (context.mounted) {
+                                  setModalState(() => isSubmitting = false);
+                                }
+                                if (mounted) {
+                                  ScaffoldMessenger.of(
+                                    this.context,
+                                  ).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'No se pudo guardar el viaje: $e',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              }
                             },
-                            child: const Text(
-                              'Solicitar viaje',
+                            child: Text(
+                              isSubmitting
+                                  ? _selectedServiceType == 'Programar viaje'
+                                        ? 'Reservando viaje...'
+                                        : 'Solicitando viaje...'
+                                  : 'Solicitar viaje',
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,

@@ -5,7 +5,9 @@ import '../../services/auth_service.dart';
 import '../../theme.dart';
 
 class PassengerReservedTripsScreen extends StatelessWidget {
-  const PassengerReservedTripsScreen({super.key});
+  const PassengerReservedTripsScreen({super.key, this.initialTripId});
+
+  final String? initialTripId;
 
   @override
   Widget build(BuildContext context) {
@@ -55,6 +57,8 @@ class PassengerReservedTripsScreen extends StatelessWidget {
                     [];
 
                 reservations.sort((a, b) {
+                  if (a.id == initialTripId) return -1;
+                  if (b.id == initialTripId) return 1;
                   final dateA = a.data()['scheduledAt'];
                   final dateB = b.data()['scheduledAt'];
                   if (dateA is Timestamp && dateB is Timestamp) {
