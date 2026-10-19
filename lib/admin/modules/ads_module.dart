@@ -491,6 +491,7 @@ class _AdsModuleState extends State<AdsModule> {
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
             value: _targetAudience,
+            isExpanded: true,
             decoration: const InputDecoration(
               labelText: 'Dirigido a (Audiencia)',
               border: OutlineInputBorder(),

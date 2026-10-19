@@ -72,6 +72,7 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
             const SizedBox(width: 8),
             DropdownButton<String>(
               value: _requestsFilter,
+              isExpanded: false,
               items: const [
                 DropdownMenuItem(value: 'pending', child: Text('Pendientes')),
                 DropdownMenuItem(value: 'approved', child: Text('Aprobadas')),
@@ -924,6 +925,7 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
                         flex: 2,
                         child: DropdownButtonFormField<String>(
                           value: durationUnit,
+                          isExpanded: true,
                           decoration: const InputDecoration(
                             labelText: 'Unidad',
                             border: OutlineInputBorder(),

@@ -183,9 +183,10 @@ class _AlertsModuleState extends State<AlertsModule> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
         title: Text('Detalle · S.O.S. de ${_who(a).toLowerCase()}'),
-        content: SizedBox(
-          width: 440,
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440),
           child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

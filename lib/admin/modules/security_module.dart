@@ -896,9 +896,10 @@ class _CreateStaffDialogState extends State<_CreateStaffDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       title: const Text('Nueva cuenta del panel'),
-      content: SizedBox(
-        width: 420,
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
         child: SingleChildScrollView(
           child: Form(
             key: _formKey,
@@ -945,6 +946,7 @@ class _CreateStaffDialogState extends State<_CreateStaffDialog> {
                 const SizedBox(height: 14),
                 DropdownButtonFormField<String>(
                   initialValue: _role,
+                  isExpanded: true,
                   decoration: const InputDecoration(
                     labelText: 'Rol',
                     border: OutlineInputBorder(),

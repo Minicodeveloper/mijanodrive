@@ -85,6 +85,9 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isBlocked','isApproved','isRejected','isReported','status','documents'])
       ) || (
         request.auth.uid == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fcmTokens'])
+      ) || (
+        request.auth.uid == userId
         && request.resource.data.get('isBlocked', false) == resource.data.get('isBlocked', false)
         && request.resource.data.get('isApproved', false) == resource.data.get('isApproved', false)
         && request.resource.data.get('isRejected', false) == resource.data.get('isRejected', false)
@@ -279,6 +282,14 @@ service cloud.firestore {
       allow read: if isSuperAdmin() || isManager() || resource.data.get('driverId', '') == request.auth.uid;
       allow update: if isSuperAdmin() || isManager();
       allow delete: if isSuperAdmin();
+    }
+
+    match /push_campaigns/{campaignId} {
+      allow read, create, delete: if isStaff();
+    }
+
+    match /dni_index/{dni} {
+      allow read, write: if isStaff() || isAuth();
     }
 
     match /driver_plans/{driverId} {
