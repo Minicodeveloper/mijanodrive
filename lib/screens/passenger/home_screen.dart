@@ -10,6 +10,7 @@ import '../../services/location_service.dart';
 import '../../services/firestore_service.dart';
 import 'passenger_account_screen.dart';
 import 'passenger_history_screen.dart';
+import 'passenger_reserved_trips_screen.dart';
 import 'active_trip_screen.dart';
 import '../../services/notification_service.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -82,7 +83,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     _checkActiveTrip();
-    
+
     // Verificamos y mostramos los pop-ups programados para nuevos usuarios al iniciar
     _checkAndShowPopupAds();
   }
@@ -116,7 +117,8 @@ class _HomeScreenState extends State<HomeScreen> {
       for (var doc in querySnapshot.docs) {
         final adId = doc.id;
         final adData = doc.data();
-        final String audience = adData['targetAudience'] ?? 'Todos los usuarios';
+        final String audience =
+            adData['targetAudience'] ?? 'Todos los usuarios';
 
         bool shouldShow = false;
 
@@ -124,7 +126,7 @@ class _HomeScreenState extends State<HomeScreen> {
           shouldShow = true;
         } else if (audience == 'Recién registrados') {
           // Validamos si es recién registrado (puedes ajustar esta regla según la fecha de creación del usuario)
-          shouldShow = true; 
+          shouldShow = true;
         }
 
         if (shouldShow) {
@@ -155,7 +157,10 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (BuildContext context) {
         return Dialog(
           backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 24,
+            vertical: 24,
+          ),
           child: Stack(
             clipBehavior: Clip.none,
             alignment: Alignment.topRight,
@@ -197,9 +202,17 @@ class _HomeScreenState extends State<HomeScreen> {
                           if (!context.mounted) return;
                           Navigator.of(context).pop();
                           if (phone.isNotEmpty) {
-                            final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
-                            final uri = Uri.parse('https://wa.me/51$cleanPhone');
-                            launchUrl(uri, mode: LaunchMode.externalApplication);
+                            final cleanPhone = phone.replaceAll(
+                              RegExp(r'\D'),
+                              '',
+                            );
+                            final uri = Uri.parse(
+                              'https://wa.me/51$cleanPhone',
+                            );
+                            launchUrl(
+                              uri,
+                              mode: LaunchMode.externalApplication,
+                            );
                           }
                         },
                         child: ClipRRect(
@@ -242,10 +255,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       color: Color(0xFFF9D408),
                       shape: BoxShape.circle,
                       boxShadow: [
-                        BoxShadow(
-                          color: Colors.black38,
-                          blurRadius: 6,
-                        ),
+                        BoxShadow(color: Colors.black38, blurRadius: 6),
                       ],
                     ),
                     child: const Icon(
@@ -647,6 +657,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showRequestModal() {
+    DateTime scheduledTripAt = DateTime.now().add(const Duration(hours: 1));
+    bool isSubmitting = false;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -769,6 +782,137 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ChoiceChip(
+                            label: const Center(child: Text('Programar viaje')),
+                            selected: _selectedServiceType == 'Programar viaje',
+                            selectedColor: const Color(0xFFF9D408),
+                            backgroundColor: const Color(0xFF2A2A2A),
+                            labelStyle: TextStyle(
+                              color: _selectedServiceType == 'Programar viaje'
+                                  ? Colors.black
+                                  : Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            onSelected: (bool selected) {
+                              setModalState(() {
+                                _selectedServiceType = 'Programar viaje';
+                              });
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_selectedServiceType == 'Programar viaje') ...[
+                      const SizedBox(height: 20),
+                      const Text(
+                        'Fecha y hora del viaje:',
+                        style: TextStyle(color: Colors.white70, fontSize: 14),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                side: const BorderSide(
+                                  color: Color(0xFFF9D408),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                              ),
+                              onPressed: () async {
+                                final today = DateTime.now();
+                                final selectedDate = await showDatePicker(
+                                  context: context,
+                                  initialDate: scheduledTripAt,
+                                  firstDate: DateTime(
+                                    today.year,
+                                    today.month,
+                                    today.day,
+                                  ),
+                                  lastDate: DateTime(
+                                    today.year,
+                                    today.month,
+                                    today.day + 7,
+                                  ),
+                                  helpText: 'Selecciona el día del viaje',
+                                );
+                                if (selectedDate != null) {
+                                  setModalState(() {
+                                    scheduledTripAt = DateTime(
+                                      selectedDate.year,
+                                      selectedDate.month,
+                                      selectedDate.day,
+                                      scheduledTripAt.hour,
+                                      scheduledTripAt.minute,
+                                    );
+                                  });
+                                }
+                              },
+                              icon: const Icon(Icons.calendar_today),
+                              label: Text(
+                                MaterialLocalizations.of(
+                                  context,
+                                ).formatMediumDate(scheduledTripAt),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                side: const BorderSide(
+                                  color: Color(0xFFF9D408),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                              ),
+                              onPressed: () async {
+                                final selectedTime = await showTimePicker(
+                                  context: context,
+                                  initialTime: TimeOfDay.fromDateTime(
+                                    scheduledTripAt,
+                                  ),
+                                  helpText: 'Selecciona la hora del viaje',
+                                );
+                                if (selectedTime != null) {
+                                  setModalState(() {
+                                    scheduledTripAt = DateTime(
+                                      scheduledTripAt.year,
+                                      scheduledTripAt.month,
+                                      scheduledTripAt.day,
+                                      selectedTime.hour,
+                                      selectedTime.minute,
+                                    );
+                                  });
+                                }
+                              },
+                              icon: const Icon(Icons.access_time),
+                              label: Text(
+                                MaterialLocalizations.of(
+                                  context,
+                                ).formatTimeOfDay(
+                                  TimeOfDay.fromDateTime(scheduledTripAt),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Puedes programar desde hoy hasta dentro de 7 días.',
+                        style: TextStyle(color: Colors.white54, fontSize: 12),
+                      ),
+                    ],
                     const SizedBox(height: 20),
                     const Text(
                       'Método de pago:',
@@ -845,10 +989,36 @@ class _HomeScreenState extends State<HomeScreen> {
                                 borderRadius: BorderRadius.circular(12),
                               ),
                             ),
-                            onPressed: () async {
-                              Navigator.pop(context);
+                            onPressed: isSubmitting
+                                ? null
+                                : () async {
+                              if (_selectedServiceType == 'Programar viaje' &&
+                                  !scheduledTripAt.isAfter(DateTime.now())) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Selecciona una hora futura para tu viaje.',
+                                    ),
+                                  ),
+                                );
+                                return;
+                              }
 
                               final user = AuthService.instance.currentUser;
+                              if (user == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Inicia sesión para solicitar un viaje.',
+                                    ),
+                                  ),
+                                );
+                                return;
+                              }
+
+                              setModalState(() => isSubmitting = true);
+                              final isScheduled =
+                                  _selectedServiceType == 'Programar viaje';
 
                               try {
                                 LatLng? originCoords =
@@ -874,7 +1044,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 tripRef = await FirebaseFirestore.instance
                                     .collection('trips')
                                     .add({
-                                      'passengerId': user!.uid,
+                                      'passengerId': user.uid,
                                       'passengerName': user.name,
                                       'passengerPhone': user.phone,
                                       'originAddress':
@@ -898,12 +1068,42 @@ class _HomeScreenState extends State<HomeScreen> {
                                       'durationText': _durationText,
                                       'paymentMethod': _selectedPaymentMethod,
                                       'serviceType': _selectedServiceType,
+                                      if (_selectedServiceType ==
+                                          'Programar viaje')
+                                        'scheduledAt': Timestamp.fromDate(
+                                          scheduledTripAt,
+                                        ),
                                       'status': 'pending',
                                       'driverId': null,
                                       'completedAt': null,
                                       'createdAt': FieldValue.serverTimestamp(),
                                     });
 
+                                if (!mounted || !context.mounted) return;
+                                Navigator.pop(context);
+
+                                if (isScheduled) {
+                                  ScaffoldMessenger.of(
+                                    this.context,
+                                  ).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Viaje reservado correctamente.',
+                                      ),
+                                    ),
+                                  );
+                                  Navigator.of(this.context).push(
+                                    MaterialPageRoute<void>(
+                                      builder: (context) =>
+                                          PassengerReservedTripsScreen(
+                                            initialTripId: tripRef.id,
+                                          ),
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                if (!mounted) return;
                                 setState(() {
                                   _activeTripId = tripRef.id;
                                   _isSearchingDriver = true;
@@ -914,16 +1114,36 @@ class _HomeScreenState extends State<HomeScreen> {
                                 // Notificación flotante de confirmación para el pasajero
                                 NotificationService.showSearchingDriverToPassenger(
                                   tripId: tripRef.id,
-                                  destinationAddress: _destinationController.text.isNotEmpty
+                                  destinationAddress:
+                                      _destinationController.text.isNotEmpty
                                       ? _destinationController.text
                                       : 'Destino solicitado',
                                 );
 
                                 _startSearchTimer();
-                              } catch (e) {}
+                              } catch (e) {
+                                if (context.mounted) {
+                                  setModalState(() => isSubmitting = false);
+                                }
+                                if (mounted) {
+                                  ScaffoldMessenger.of(
+                                    this.context,
+                                  ).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'No se pudo guardar el viaje: $e',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              }
                             },
-                            child: const Text(
-                              'Solicitar viaje',
+                            child: Text(
+                              isSubmitting
+                                  ? _selectedServiceType == 'Programar viaje'
+                                        ? 'Reservando viaje...'
+                                        : 'Solicitando viaje...'
+                                  : 'Solicitar viaje',
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
@@ -952,39 +1172,43 @@ class _HomeScreenState extends State<HomeScreen> {
         .doc(tripId)
         .snapshots()
         .listen((snapshot) {
-      if (!snapshot.exists || !mounted) return;
-      final data = snapshot.data();
-      if (data == null) return;
+          if (!snapshot.exists || !mounted) return;
+          final data = snapshot.data();
+          if (data == null) return;
 
-      final status = data['status'];
+          final status = data['status'];
 
-      // Notificar al pasajero en cuanto el conductor acepta el viaje
-      if (status == 'accepted' && !_hasNotifiedAccepted) {
-        _hasNotifiedAccepted = true;
-        _searchTimer?.cancel();
+          // Notificar al pasajero en cuanto el conductor acepta el viaje
+          if (status == 'accepted' && !_hasNotifiedAccepted) {
+            _hasNotifiedAccepted = true;
+            _searchTimer?.cancel();
 
-        final driverName = data['driverName'] ?? 'Tu conductor';
-        final vehicleBrand = data['driverVehicleBrand'] ?? '';
-        final vehicleModel = data['driverVehicleModel'] ?? '';
-        final vehiclePlate = data['driverPlate'] ?? '';
-        final parts = [vehicleBrand, vehicleModel, if (vehiclePlate.isNotEmpty) '($vehiclePlate)'].where((s) => s.isNotEmpty).join(' ');
-        final vehicleInfo = parts.isNotEmpty ? parts : 'MotoTaxi asignado';
-        final pickupAddress = data['originAddress'] ?? 'Tu ubicación';
+            final driverName = data['driverName'] ?? 'Tu conductor';
+            final vehicleBrand = data['driverVehicleBrand'] ?? '';
+            final vehicleModel = data['driverVehicleModel'] ?? '';
+            final vehiclePlate = data['driverPlate'] ?? '';
+            final parts = [
+              vehicleBrand,
+              vehicleModel,
+              if (vehiclePlate.isNotEmpty) '($vehiclePlate)',
+            ].where((s) => s.isNotEmpty).join(' ');
+            final vehicleInfo = parts.isNotEmpty ? parts : 'MotoTaxi asignado';
+            final pickupAddress = data['originAddress'] ?? 'Tu ubicación';
 
-        NotificationService.showTripAcceptedToPassenger(
-          tripId: tripId,
-          driverName: driverName,
-          vehicleInfo: vehicleInfo,
-          pickupAddress: pickupAddress,
-        );
+            NotificationService.showTripAcceptedToPassenger(
+              tripId: tripId,
+              driverName: driverName,
+              vehicleInfo: vehicleInfo,
+              pickupAddress: pickupAddress,
+            );
 
-        if (mounted) {
-          setState(() {
-            _isSearchingDriver = false;
-          });
-        }
-      }
-    });
+            if (mounted) {
+              setState(() {
+                _isSearchingDriver = false;
+              });
+            }
+          }
+        });
   }
 
   void _cancelSearch() async {
@@ -1068,6 +1292,20 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.event_available),
+              title: const Text('Viajes reservados'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (context) =>
+                        const PassengerReservedTripsScreen(),
+                  ),
+                );
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.settings),
               title: const Text('Configuración'),
               onTap: () {
@@ -1112,10 +1350,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     final String status = tripData['status'] ?? 'pending';
 
                     if (status == 'accepted' ||
-                      status == 'arrived' ||
-                      status == 'active' ||
-                      status == 'in_progress' ||
-                      status == 'completed') {
+                        status == 'arrived' ||
+                        status == 'active' ||
+                        status == 'in_progress' ||
+                        status == 'completed') {
                       return ActiveTripScreen(
                         tripId: _activeTripId!,
                         tripData: tripData,
@@ -1787,7 +2025,7 @@ class _DynamicCarouselState extends State<_DynamicCarousel> {
   @override
   void initState() {
     super.initState();
-    
+
     // Al iniciar el carrusel, registramos la vista del primer banner por defecto
     if (widget.ads.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1880,19 +2118,13 @@ class _DynamicCarouselState extends State<_DynamicCarousel> {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(12),
-                    child: Image.network(
-                      imageUrl,
-                      fit: BoxFit.contain,
-                    ),
+                    child: Image.network(imageUrl, fit: BoxFit.contain),
                   ),
                 ),
               const SizedBox(height: 12),
               Text(
                 description,
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: Colors.white70,
-                ),
+                style: const TextStyle(fontSize: 14, color: Colors.white70),
               ),
               const SizedBox(height: 20),
               Row(
