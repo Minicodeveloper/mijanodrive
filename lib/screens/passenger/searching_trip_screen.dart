@@ -6,6 +6,7 @@ import '../../models/trip_model.dart';
 import '../../services/firestore_service.dart';
 import '../../theme.dart';
 import '../../widgets/mijano_icon.dart';
+import '../../config/app_config.dart';
 
 /// Pantalla "radar" de espera que se muestra mientras el viaje está en
 /// estado [TripStatus.pending].  Escucha en tiempo real el documento
@@ -35,6 +36,8 @@ class _SearchingTripScreenState extends State<SearchingTripScreen>
   Timer? _dispatchTimer;
   Trip? _currentTrip;
   bool _isRetrying = false;
+
+  String? _lastDispatchKey;
 
   // Animaciones del radar
   late AnimationController _pulseController;
@@ -107,21 +110,23 @@ class _SearchingTripScreenState extends State<SearchingTripScreen>
   }
 
   void _scheduleDispatchTimer(Trip trip) {
-    _dispatchTimer?.cancel();
-    if (trip.dispatchExhausted) return;
-
-    final deadline = trip.dispatchDeadline;
-    if (deadline == null) return;
-
-    final delay = deadline.difference(DateTime.now());
-    if (delay.isNegative) {
-      // Si ya venció, avanzamos inmediatamente
-      _advanceDispatch(trip.id, trip.dispatchIndex);
-    } else {
-      _dispatchTimer = Timer(delay, () {
-        _advanceDispatch(trip.id, trip.dispatchIndex);
-      });
+    if (trip.dispatchExhausted) {
+      _dispatchTimer?.cancel();
+      _lastDispatchKey = null;
+      return;
     }
+
+    final String currentKey = '${trip.id}_${trip.dispatchIndex}';
+    if (_lastDispatchKey == currentKey) {
+      return; // Ya está programado para este turno
+    }
+
+    _dispatchTimer?.cancel();
+    _lastDispatchKey = currentKey;
+
+    _dispatchTimer = Timer(const Duration(seconds: AppConfig.kDispatchTimeoutSeconds + 3), () {
+      _advanceDispatch(trip.id, trip.dispatchIndex);
+    });
   }
 
   Future<void> _advanceDispatch(String tripId, int expectedIndex) async {

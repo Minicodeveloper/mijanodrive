@@ -14,6 +14,7 @@ import 'passenger_reserved_trips_screen.dart';
 import 'active_trip_screen.dart';
 import '../../services/notification_service.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../config/app_config.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -1258,7 +1259,7 @@ class _HomeScreenState extends State<HomeScreen> {
               if (_lastDispatchKey != dispatchKey) {
                 _dispatchTimer?.cancel();
                 _lastDispatchKey = dispatchKey;
-                _dispatchTimer = Timer(const Duration(seconds: 33), () {
+                _dispatchTimer = Timer(const Duration(seconds: AppConfig.kDispatchTimeoutSeconds + 3), () {
                   FirestoreService.instance.advanceDispatch(tripId, expectedIndex: dIndex);
                 });
               }

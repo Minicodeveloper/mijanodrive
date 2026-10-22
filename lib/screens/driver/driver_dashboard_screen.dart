@@ -421,9 +421,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
   Future<void> _showTripAlert(Trip trip) async {
     final distance = _tripDistanceKm(trip);
-    final DateTime deadline = trip.dispatchDeadline ?? DateTime.now();
-
-    if (deadline.difference(DateTime.now()).inSeconds <= 0) return; // No mostrar si ya venció
 
     await showDialog<void>(
       context: context,
@@ -432,7 +429,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         return _TripAlertDialog(
           trip: trip,
           distance: distance,
-          deadline: deadline,
           onAccept: () async {
             await _accept(trip);
           },
@@ -890,14 +886,12 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 class _TripAlertDialog extends StatefulWidget {
   final Trip trip;
   final double? distance;
-  final DateTime deadline;
   final VoidCallback onAccept;
   final VoidCallback onReject;
 
   const _TripAlertDialog({
     required this.trip,
     this.distance,
-    required this.deadline,
     required this.onAccept,
     required this.onReject,
   });
@@ -914,7 +908,7 @@ class _TripAlertDialogState extends State<_TripAlertDialog> {
   @override
   void initState() {
     super.initState();
-    _calculateSecondsRemaining();
+    _secondsRemaining = AppConfig.kDispatchTimeoutSeconds;
 
     if (_secondsRemaining > 0) {
       _alertTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -922,7 +916,8 @@ class _TripAlertDialogState extends State<_TripAlertDialog> {
           timer.cancel();
           return;
         }
-        _calculateSecondsRemaining();
+        
+        _secondsRemaining--;
         if (_secondsRemaining <= 0) {
           timer.cancel();
           if (Navigator.canPop(context)) {
@@ -945,12 +940,6 @@ class _TripAlertDialogState extends State<_TripAlertDialog> {
         }
       }
     });
-  }
-
-  void _calculateSecondsRemaining() {
-    _secondsRemaining = widget.deadline.difference(DateTime.now()).inSeconds;
-    if (_secondsRemaining < 0) _secondsRemaining = 0;
-    if (_secondsRemaining > 30) _secondsRemaining = 30;
   }
 
   @override
