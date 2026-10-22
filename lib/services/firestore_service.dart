@@ -110,7 +110,7 @@ class FirestoreService {
     return 'diario';
   }
 
-  Future<Map<String, dynamic>> _buildDispatchData(Trip trip) async {
+  Future<Map<String, dynamic>> _buildDispatchData(GeoPoint origin) async {
     final driversSnapshot = await _db.collection('drivers')
         .where('isAvailable', isEqualTo: true)
         .where('planPaymentStatus', isEqualTo: 'active')
@@ -125,15 +125,15 @@ class FirestoreService {
       final hasNotExpired = expiresAt?.isAfter(DateTime.now()) ?? false;
 
       if (hasNotExpired) {
-        final double? lat = data['currentLatitude'];
-        final double? lng = data['currentLongitude'];
+        final double? lat = (data['currentLatitude'] as num?)?.toDouble();
+        final double? lng = (data['currentLongitude'] as num?)?.toDouble();
 
         if (lat != null && lng != null) {
           final distance = LocationService.instance.distanceKm(
             lat,
             lng,
-            trip.origin.latitude,
-            trip.origin.longitude,
+            origin.latitude,
+            origin.longitude,
           );
 
           if (distance <= AppConfig.kMaxDispatchRadiusKm) {
@@ -189,7 +189,7 @@ class FirestoreService {
   Future<String> createTrip(Trip trip) async {
     final tripData = trip.toMap();
     
-    final dispatchData = await _buildDispatchData(trip);
+    final dispatchData = await _buildDispatchData(trip.origin);
     tripData.addAll(dispatchData);
 
     // cleanup
@@ -201,6 +201,12 @@ class FirestoreService {
 
     final ref = await _db.collection('trips').add(tripData);
     return ref.id;
+  }
+
+  Future<DocumentReference> createTripWithDispatch(Map<String, dynamic> tripData, {required GeoPoint origin}) async {
+    final dispatchData = await _buildDispatchData(origin);
+    tripData.addAll(dispatchData);
+    return await _db.collection('trips').add(tripData);
   }
 
   Future<void> advanceDispatch(String tripId, {required int expectedIndex}) async {
@@ -293,7 +299,7 @@ class FirestoreService {
     if (!doc.exists) return;
 
     final trip = Trip.fromMap(doc.data()!, doc.id);
-    final dispatchData = await _buildDispatchData(trip);
+    final dispatchData = await _buildDispatchData(trip.origin);
     await tripRef.update(dispatchData);
   }
 

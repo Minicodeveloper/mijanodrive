@@ -58,6 +58,14 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _hasNotifiedAccepted = false;
 
   Timer? _searchTimer;
+  Timer? _dispatchTimer;
+  String? _lastDispatchKey;
+  bool _dispatchExhaustedUI = false;
+  int _dispatchQueueLength = 0;
+  int _currentDispatchIndex = 0;
+  Timer? _dispatchTimer;
+  String? _lastDispatchKey;
+  bool _dispatchExhaustedUI = false;
   int _remainingSeconds = 549;
 
   final Set<Polyline> _polylines = {};
@@ -1040,44 +1048,52 @@ class _HomeScreenState extends State<HomeScreen> {
                                   );
                                 }
 
-                                DocumentReference
-                                tripRef = await FirebaseFirestore.instance
-                                    .collection('trips')
-                                    .add({
-                                      'passengerId': user.uid,
-                                      'passengerName': user.name,
-                                      'passengerPhone': user.phone,
-                                      'originAddress':
-                                          _originController.text.isNotEmpty
-                                          ? _originController.text
-                                          : 'Mi ubicación actual',
-                                      'destinationAddress':
-                                          _destinationController.text,
-                                      'origin': GeoPoint(
-                                        originCoords.latitude,
-                                        originCoords.longitude,
-                                      ),
-                                      'destination': destCoords != null
-                                          ? GeoPoint(
-                                              destCoords.latitude,
-                                              destCoords.longitude,
-                                            )
-                                          : null,
-                                      'fareAmount': _estimatedFare,
-                                      'distanceKm': _distanceKm,
-                                      'durationText': _durationText,
-                                      'paymentMethod': _selectedPaymentMethod,
-                                      'serviceType': _selectedServiceType,
-                                      if (_selectedServiceType ==
-                                          'Programar viaje')
-                                        'scheduledAt': Timestamp.fromDate(
-                                          scheduledTripAt,
-                                        ),
-                                      'status': 'pending',
-                                      'driverId': null,
-                                      'completedAt': null,
-                                      'createdAt': FieldValue.serverTimestamp(),
-                                    });
+                              final tripData = {
+                                'passengerId': user.uid,
+                                'passengerName': user.name,
+                                'passengerPhone': user.phone,
+                                'originAddress':
+                                    _originController.text.isNotEmpty
+                                    ? _originController.text
+                                    : 'Mi ubicación actual',
+                                'destinationAddress':
+                                    _destinationController.text,
+                                'origin': GeoPoint(
+                                  originCoords.latitude,
+                                  originCoords.longitude,
+                                ),
+                                'destination': destCoords != null
+                                    ? GeoPoint(
+                                        destCoords.latitude,
+                                        destCoords.longitude,
+                                      )
+                                    : null,
+                                'fareAmount': _estimatedFare,
+                                'distanceKm': _distanceKm,
+                                'durationText': _durationText,
+                                'paymentMethod': _selectedPaymentMethod,
+                                'serviceType': _selectedServiceType,
+                                if (_selectedServiceType ==
+                                    'Programar viaje')
+                                  'scheduledAt': Timestamp.fromDate(
+                                    scheduledTripAt,
+                                  ),
+                                'status': 'pending',
+                                'driverId': null,
+                                'completedAt': null,
+                                'createdAt': FieldValue.serverTimestamp(),
+                              };
+                              
+                              DocumentReference tripRef;
+                              if (_selectedServiceType == 'Programar viaje') {
+                                // TODO: Las reservas necesitan su propio flujo de despacho
+                                tripRef = await FirebaseFirestore.instance.collection('trips').add(tripData);
+                              } else {
+                                tripRef = await FirestoreService.instance.createTripWithDispatch(
+                                  tripData,
+                                  origin: GeoPoint(originCoords.latitude, originCoords.longitude),
+                                );
+                              }
 
                                 if (!mounted || !context.mounted) return;
                                 Navigator.pop(context);
@@ -1205,14 +1221,60 @@ class _HomeScreenState extends State<HomeScreen> {
             if (mounted) {
               setState(() {
                 _isSearchingDriver = false;
+                _dispatchExhaustedUI = false;
               });
             }
+          } else if (status == 'pending') {
+            final dispatchExhausted = data['dispatchExhausted'] ?? false;
+            final queue = data['dispatchQueue'] as List<dynamic>? ?? [];
+            final dIndex = data['dispatchIndex'] ?? 0;
+            
+            if (mounted) {
+              setState(() {
+                _dispatchQueueLength = queue.length;
+                _currentDispatchIndex = dIndex;
+              });
+            }
+            
+            final requiredSeconds = queue.length * 33;
+            if (_remainingSeconds < requiredSeconds && !dispatchExhausted) {
+              _remainingSeconds = requiredSeconds < 180 ? 180 : requiredSeconds;
+            }
+
+            if (dispatchExhausted || queue.isEmpty) {
+              _dispatchTimer?.cancel();
+              _searchTimer?.cancel();
+              if (mounted) {
+                setState(() {
+                  _dispatchExhaustedUI = true;
+                });
+              }
+            } else {
+              if (mounted) {
+                setState(() {
+                  _dispatchExhaustedUI = false;
+                });
+              }
+              final tripId = snapshot.id;
+              final dispatchKey = '${tripId}_$dIndex';
+              if (_lastDispatchKey != dispatchKey) {
+                _dispatchTimer?.cancel();
+                _lastDispatchKey = dispatchKey;
+                _dispatchTimer = Timer(const Duration(seconds: 33), () {
+                  FirestoreService.instance.advanceDispatch(tripId, expectedIndex: dIndex);
+                });
+              }
+            }
+          } else if (status == 'cancelled') {
+             _dispatchTimer?.cancel();
+             _searchTimer?.cancel();
           }
         });
   }
 
   void _cancelSearch() async {
     _searchTimer?.cancel();
+    _dispatchTimer?.cancel();
     _activeTripSubscription?.cancel();
 
     if (_activeTripId != null) {
@@ -1587,38 +1649,83 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ],
                               ),
                               const SizedBox(height: 6),
-                              const Text(
-                                'Buscando conductor cercano...',
-                                style: TextStyle(
-                                  color: Colors.grey,
-                                  fontSize: 12,
+                              if (_dispatchExhaustedUI) ...[
+                                const Text(
+                                  'No hay conductores disponibles en este momento.',
+                                  style: TextStyle(
+                                    color: Colors.redAccent,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 15),
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF1E1E1E),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
+                                const SizedBox(height: 15),
+                                Row(
                                   children: [
-                                    const Icon(
-                                      Icons.timer,
-                                      color: Color(0xFFF9D408),
-                                      size: 18,
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        onPressed: () {
+                                          FirestoreService.instance.resetDispatch(_activeTripId!);
+                                          _startSearchTimer();
+                                          setState(() {
+                                            _dispatchExhaustedUI = false;
+                                          });
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFFF9D408),
+                                          foregroundColor: Colors.black,
+                                        ),
+                                        child: const Text('Reintentar'),
+                                      ),
                                     ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'La solicitud se cerrará en $_formattedTimer',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 13,
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: OutlinedButton(
+                                        onPressed: _cancelSearch,
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: Colors.redAccent,
+                                          side: const BorderSide(color: Colors.redAccent),
+                                        ),
+                                        child: const Text('Cancelar'),
                                       ),
                                     ),
                                   ],
                                 ),
-                              ),
+                              ] else ...[
+                                Text(
+                                  _dispatchQueueLength > 0 
+                                      ? 'Buscando conductor… (${_currentDispatchIndex + 1} de $_dispatchQueueLength)'
+                                      : 'Buscando conductor cercano...',
+                                  style: const TextStyle(
+                                    color: Colors.grey,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                const SizedBox(height: 15),
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF1E1E1E),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.timer,
+                                        color: Color(0xFFF9D408),
+                                        size: 18,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'La solicitud se cerrará en $_formattedTimer',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                               const SizedBox(height: 15),
                               Row(
                                 children: [
@@ -1664,23 +1771,24 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ],
                               ),
                               const SizedBox(height: 20),
-                              SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.red,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 12,
+                              if (!_dispatchExhaustedUI)
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.red,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 12,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
                                     ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                  onPressed: _cancelSearch,
-                                  child: const Text(
-                                    'Cancelar Viaje',
-                                    style: TextStyle(
+                                    onPressed: _cancelSearch,
+                                    child: const Text(
+                                      'Cancelar Viaje',
+                                      style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
