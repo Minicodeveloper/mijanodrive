@@ -12,6 +12,7 @@ import '../admin/utils/driver_docs.dart';
 import 'auth_service.dart';
 import 'document_service.dart';
 import 'location_service.dart';
+import '../config/app_config.dart';
 
 // ============================================================================
 // CONTRATO DE DATOS: PLANES Y SOLICITUDES
@@ -102,35 +103,32 @@ class FirestoreService {
       }, SetOptions(merge: true));
 
   // ---- Viajes ----
-  Future<String> createTrip(Trip trip) async {
-    final tripData = trip.toMap();
-    
-    // 1. Buscar conductores con Plan Mensual disponibles y cercanos consultando la colección 'users'
-    final usersSnapshot = await _db.collection('users').get();
-    List<String> monthlyQueue = [];
+  String _planGroupOf(String planName) {
+    final lower = planName.toLowerCase();
+    if (lower.contains('mensual')) return 'mensual';
+    if (lower.contains('semanal')) return 'semanal';
+    return 'diario';
+  }
 
-    for (var doc in usersSnapshot.docs) {
+  Future<Map<String, dynamic>> _buildDispatchData(Trip trip) async {
+    final driversSnapshot = await _db.collection('drivers')
+        .where('isAvailable', isEqualTo: true)
+        .where('planPaymentStatus', isEqualTo: 'active')
+        .get();
+        
+    final List<Map<String, dynamic>> candidatos = [];
+
+    for (var doc in driversSnapshot.docs) {
       final data = doc.data();
-      final role = RoleHelper.normalizeRole(data['role']);
       
-      // Validar que realmente sea un conductor
-      if (role != 'driver') continue;
-
-      final isAvailable = data['isAvailable'] ?? false;
-      final planName = (data['planName'] ?? '').toString().toLowerCase();
-      final planStatus = data['planPaymentStatus'] ?? '';
-      
-      // Validar si el plan no ha expirado
       final expiresAt = (data['planExpiresAt'] as Timestamp?)?.toDate();
       final hasNotExpired = expiresAt?.isAfter(DateTime.now()) ?? false;
 
-      // Validar si es un conductor mensual activo, disponible y con plan vigente
-      if (isAvailable && planStatus == 'active' && hasNotExpired && planName.contains('mensual')) {
+      if (hasNotExpired) {
         final double? lat = data['currentLatitude'];
         final double? lng = data['currentLongitude'];
 
         if (lat != null && lng != null) {
-          // Calcular distancia al origen del viaje (300 km para tus pruebas o 3.0 para producción)
           final distance = LocationService.instance.distanceKm(
             lat,
             lng,
@@ -138,48 +136,165 @@ class FirestoreService {
             trip.origin.longitude,
           );
 
-          if (distance <= 300.0) { 
-            monthlyQueue.add(doc.id);
+          if (distance <= AppConfig.kMaxDispatchRadiusKm) {
+            candidatos.add({
+              'id': doc.id,
+              'distance': distance,
+              'planName': (data['planName'] ?? '').toString(),
+            });
           }
         }
       }
     }
 
-    // 2. Configurar los campos de control secuencial para el Plan Mensual
-    tripData['monthlyQueue'] = monthlyQueue;
-    tripData['currentMonthlyIndex'] = 0;
-    tripData['currentMonthlyDriverId'] = monthlyQueue.isNotEmpty ? monthlyQueue.first : null;
-    tripData['monthlyDeadline'] = Timestamp.fromDate(DateTime.now().add(const Duration(seconds: 30)));
-    tripData['rejectedMonthlyDriverIds'] = [];
+    final mensual = <Map<String, dynamic>>[];
+    final semanal = <Map<String, dynamic>>[];
+    final diario = <Map<String, dynamic>>[];
+
+    for (var c in candidatos) {
+      final grupo = _planGroupOf(c['planName']);
+      if (grupo == 'mensual') mensual.add(c);
+      else if (grupo == 'semanal') semanal.add(c);
+      else diario.add(c);
+    }
+
+    mensual.sort((a, b) => (a['distance'] as double).compareTo(b['distance'] as double));
+    semanal.sort((a, b) => (a['distance'] as double).compareTo(b['distance'] as double));
+    diario.sort((a, b) => (a['distance'] as double).compareTo(b['distance'] as double));
+
+    final dispatchQueue = [
+      ...mensual.map((e) => e['id'] as String),
+      ...semanal.map((e) => e['id'] as String),
+      ...diario.map((e) => e['id'] as String),
+    ];
+    
+    final currentDispatchDriverId = dispatchQueue.isNotEmpty ? dispatchQueue.first : null;
+    String? currentDispatchPlan;
+    if (currentDispatchDriverId != null) {
+       final firstDriver = candidatos.firstWhere((c) => c['id'] == currentDispatchDriverId);
+       currentDispatchPlan = _planGroupOf(firstDriver['planName']);
+    }
+
+    return {
+      'dispatchQueue': dispatchQueue,
+      'dispatchIndex': 0,
+      'currentDispatchDriverId': currentDispatchDriverId,
+      'currentDispatchPlan': currentDispatchPlan,
+      'dispatchDeadline': Timestamp.fromDate(DateTime.now().add(const Duration(seconds: AppConfig.kDispatchTimeoutSeconds))),
+      'rejectedDriverIds': [],
+      'dispatchExhausted': dispatchQueue.isEmpty,
+    };
+  }
+
+  Future<String> createTrip(Trip trip) async {
+    final tripData = trip.toMap();
+    
+    final dispatchData = await _buildDispatchData(trip);
+    tripData.addAll(dispatchData);
+
+    // cleanup
+    tripData.remove('monthlyQueue');
+    tripData.remove('currentMonthlyIndex');
+    tripData.remove('currentMonthlyDriverId');
+    tripData.remove('monthlyDeadline');
+    tripData.remove('rejectedMonthlyDriverIds');
 
     final ref = await _db.collection('trips').add(tripData);
     return ref.id;
   }
-  Future<void> advanceMonthlyQueue(String tripId) async {
+
+  Future<void> advanceDispatch(String tripId, {required int expectedIndex}) async {
     final tripRef = _db.collection('trips').doc(tripId);
-    final tripDoc = await tripRef.get();
-    if (!tripDoc.exists) return;
+    
+    await _db.runTransaction((tx) async {
+      final doc = await tx.get(tripRef);
+      if (!doc.exists) return;
+      
+      final data = doc.data()!;
+      if (data['status'] != 'pending') return;
+      
+      final currentIndex = data['dispatchIndex'] ?? 0;
+      if (currentIndex != expectedIndex) return;
 
-    final data = tripDoc.data()!;
-    List<dynamic> queueDyn = data['monthlyQueue'] ?? [];
-    List<String> queue = queueDyn.map((e) => e.toString()).toList();
-    int currentIndex = data['currentMonthlyIndex'] ?? 0;
+      List<dynamic> queueDyn = data['dispatchQueue'] ?? [];
+      final int nextIndex = currentIndex + 1;
 
-    currentIndex++; // Avanzar al siguiente índice
+      if (nextIndex < queueDyn.length) {
+        final nextDriverId = queueDyn[nextIndex].toString();
+        final nextDriverDoc = await tx.get(_db.collection('drivers').doc(nextDriverId));
+        String planGrupo = 'diario';
+        if (nextDriverDoc.exists) {
+          planGrupo = _planGroupOf(nextDriverDoc.data()?['planName'] ?? '');
+        }
 
-    if (currentIndex < queue.length) {
-      // Todavía hay conductores mensuales en la cola
-      await tripRef.update({
-        'currentMonthlyIndex': currentIndex,
-        'currentMonthlyDriverId': queue[currentIndex],
-        'monthlyDeadline': Timestamp.fromDate(DateTime.now().add(const Duration(seconds: 30))),
+        tx.update(tripRef, {
+          'dispatchIndex': nextIndex,
+          'currentDispatchDriverId': nextDriverId,
+          'currentDispatchPlan': planGrupo,
+          'dispatchDeadline': Timestamp.fromDate(DateTime.now().add(const Duration(seconds: AppConfig.kDispatchTimeoutSeconds))),
+        });
+      } else {
+        tx.update(tripRef, {
+          'currentDispatchDriverId': null,
+          'dispatchExhausted': true,
+        });
+      }
+    });
+  }
+
+  Future<void> rejectDispatch(String tripId, String driverUid) async {
+    final tripRef = _db.collection('trips').doc(tripId);
+    
+    await _db.runTransaction((tx) async {
+      final doc = await tx.get(tripRef);
+      if (!doc.exists) return;
+      
+      final data = doc.data()!;
+      if (data['status'] != 'pending') return;
+      
+      final currentDriverId = data['currentDispatchDriverId'];
+      final currentIndex = data['dispatchIndex'] ?? 0;
+      
+      tx.update(tripRef, {
+        'rejectedDriverIds': FieldValue.arrayUnion([driverUid])
       });
-    } else {
-      // Se acabaron los conductores mensuales -> Abrir para todos (Overflow: Semanal y Diario)
-      await tripRef.update({
-        'currentMonthlyDriverId': null, // Nulo indica que la fase mensual terminó y se abre al resto
-      });
-    }
+      
+      if (currentDriverId == driverUid) {
+        List<dynamic> queueDyn = data['dispatchQueue'] ?? [];
+        final int nextIndex = currentIndex + 1;
+
+        if (nextIndex < queueDyn.length) {
+          final nextDriverId = queueDyn[nextIndex].toString();
+          final nextDriverDoc = await tx.get(_db.collection('drivers').doc(nextDriverId));
+          String planGrupo = 'diario';
+          if (nextDriverDoc.exists) {
+            planGrupo = _planGroupOf(nextDriverDoc.data()?['planName'] ?? '');
+          }
+
+          tx.update(tripRef, {
+            'dispatchIndex': nextIndex,
+            'currentDispatchDriverId': nextDriverId,
+            'currentDispatchPlan': planGrupo,
+            'dispatchDeadline': Timestamp.fromDate(DateTime.now().add(const Duration(seconds: AppConfig.kDispatchTimeoutSeconds))),
+          });
+        } else {
+          tx.update(tripRef, {
+            'currentDispatchDriverId': null,
+            'dispatchExhausted': true,
+          });
+        }
+      }
+    });
+  }
+
+  Future<void> resetDispatch(String tripId) async {
+    final tripRef = _db.collection('trips').doc(tripId);
+    final doc = await tripRef.get();
+    if (!doc.exists) return;
+
+    final trip = Trip.fromMap(doc.data()!, doc.id);
+    final dispatchData = await _buildDispatchData(trip);
+    await tripRef.update(dispatchData);
   }
 
   Future<void> updateTrip(String id, Map<String, dynamic> data) =>
@@ -969,7 +1084,6 @@ class FirestoreService {
       final driverId = request['driverId']?.toString() ?? '';
       final planId = request['planId']?.toString() ?? '';
       final planName = request['planName']?.toString() ?? '';
-      final int days = (request['days'] as num?)?.toInt() ?? 1;
 
       // =====================================================================
       // 1. TODAS LAS LECTURAS (READS) PRIMERO
@@ -1054,6 +1168,8 @@ class FirestoreService {
         transaction.set(driverRef, {
           'planPaymentStatus': 'active',
           'activePlanId': planId,
+          'planName': planName,
+          'planPriority': priority,
           'planExpiresAt': expiresAt,
         }, SetOptions(merge: true));
       }

@@ -158,12 +158,26 @@ service cloud.firestore {
         request.resource.data.get('passengerId', '') == resource.data.get('passengerId', '')
         && request.resource.data.get('fareAmount', 0) == resource.data.get('fareAmount', 0)
         && (
+          // Pasajero dueño actualiza (incluye campos de despacho y temporizador)
           request.auth.uid == resource.data.get('passengerId', '')
           ||
+          // Conductor acepta su turno
           (resource.data.get('status', '') == 'pending'
            && request.resource.data.get('driverId', '') == request.auth.uid
+           && request.auth.uid == resource.data.get('currentDispatchDriverId', '')
+           && resource.data.get('dispatchExhausted', false) == false
            && isApprovedDriver())
           ||
+          // Conductor rechaza su turno (actualiza solo despacho)
+          (resource.data.get('status', '') == 'pending'
+           && request.auth.uid == resource.data.get('currentDispatchDriverId', '')
+           && isApprovedDriver()
+           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+             'dispatchIndex', 'currentDispatchDriverId', 'currentDispatchPlan',
+             'dispatchDeadline', 'rejectedDriverIds', 'dispatchExhausted'
+           ]))
+          ||
+          // Conductor asignado actualiza estado del viaje
           (resource.data.get('driverId', '') == request.auth.uid
            && request.resource.data.get('driverId', '') == resource.data.get('driverId', ''))
         )

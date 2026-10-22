@@ -24,4 +24,10 @@ class AppConfig {
 
   /// Umbral para considerar inactiva/caduca la ubicación de un conductor (3 veces el intervalo).
   static const Duration staleLocationThreshold = Duration(seconds: 90);
+
+  /// Radio máximo para el despacho (en kilómetros).
+  static const double kMaxDispatchRadiusKm = 300.0; // Cambiar a 3.0 en producción
+
+  /// Tiempo de espera por conductor para que acepte un viaje.
+  static const int kDispatchTimeoutSeconds = 30;
 }

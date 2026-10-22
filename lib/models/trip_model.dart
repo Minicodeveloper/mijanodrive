@@ -27,6 +27,13 @@ class Trip {
   double? rating;
   String? feedback;
   final double distanceKm;
+  final List<String> dispatchQueue;
+  final int dispatchIndex;
+  final String? currentDispatchDriverId;
+  final String? currentDispatchPlan;
+  final DateTime? dispatchDeadline;
+  final List<String> rejectedDriverIds;
+  final bool dispatchExhausted;
 
   Trip({
     required this.id,
@@ -51,6 +58,13 @@ class Trip {
     this.rating,
     this.feedback,
     required this.distanceKm,
+    this.dispatchQueue = const [],
+    this.dispatchIndex = 0,
+    this.currentDispatchDriverId,
+    this.currentDispatchPlan,
+    this.dispatchDeadline,
+    this.rejectedDriverIds = const [],
+    this.dispatchExhausted = false,
   });
 
   Map<String, dynamic> toMap() {
@@ -76,6 +90,13 @@ class Trip {
       'rating': rating,
       'feedback': feedback,
       'distanceKm': distanceKm,
+      'dispatchQueue': dispatchQueue,
+      'dispatchIndex': dispatchIndex,
+      'currentDispatchDriverId': currentDispatchDriverId,
+      'currentDispatchPlan': currentDispatchPlan,
+      'dispatchDeadline': dispatchDeadline,
+      'rejectedDriverIds': rejectedDriverIds,
+      'dispatchExhausted': dispatchExhausted,
     };
   }
 
@@ -103,6 +124,13 @@ class Trip {
       rating: (map['rating'] ?? 0).toDouble(),
       feedback: map['feedback'],
       distanceKm: (map['distanceKm'] ?? 0).toDouble(),
+      dispatchQueue: List<String>.from(map['dispatchQueue'] ?? []),
+      dispatchIndex: map['dispatchIndex'] ?? 0,
+      currentDispatchDriverId: map['currentDispatchDriverId'],
+      currentDispatchPlan: map['currentDispatchPlan'],
+      dispatchDeadline: (map['dispatchDeadline'] as Timestamp?)?.toDate(),
+      rejectedDriverIds: List<String>.from(map['rejectedDriverIds'] ?? []),
+      dispatchExhausted: map['dispatchExhausted'] ?? false,
     );
   }
 
@@ -161,6 +189,13 @@ class Trip {
     double? rating,
     String? feedback,
     double? distanceKm,
+    List<String>? dispatchQueue,
+    int? dispatchIndex,
+    String? currentDispatchDriverId,
+    String? currentDispatchPlan,
+    DateTime? dispatchDeadline,
+    List<String>? rejectedDriverIds,
+    bool? dispatchExhausted,
   }) {
     return Trip(
       id: id ?? this.id,
@@ -185,6 +220,13 @@ class Trip {
       rating: rating ?? this.rating,
       feedback: feedback ?? this.feedback,
       distanceKm: distanceKm ?? this.distanceKm,
+      dispatchQueue: dispatchQueue ?? this.dispatchQueue,
+      dispatchIndex: dispatchIndex ?? this.dispatchIndex,
+      currentDispatchDriverId: currentDispatchDriverId ?? this.currentDispatchDriverId,
+      currentDispatchPlan: currentDispatchPlan ?? this.currentDispatchPlan,
+      dispatchDeadline: dispatchDeadline ?? this.dispatchDeadline,
+      rejectedDriverIds: rejectedDriverIds ?? this.rejectedDriverIds,
+      dispatchExhausted: dispatchExhausted ?? this.dispatchExhausted,
     );
   }
 }

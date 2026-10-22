@@ -32,6 +32,9 @@ class _SearchingTripScreenState extends State<SearchingTripScreen>
   StreamSubscription<Trip?>? _tripSub;
   bool _isCancelling = false;
   bool _hasNavigated = false;
+  Timer? _dispatchTimer;
+  Trip? _currentTrip;
+  bool _isRetrying = false;
 
   // Animaciones del radar
   late AnimationController _pulseController;
@@ -65,6 +68,10 @@ class _SearchingTripScreenState extends State<SearchingTripScreen>
 
   void _onTripChanged(Trip? trip) {
     if (!mounted || _hasNavigated || trip == null) return;
+    
+    setState(() {
+      _currentTrip = trip;
+    });
 
     if (trip.status == TripStatus.accepted ||
         trip.status == TripStatus.arrived ||
@@ -72,6 +79,7 @@ class _SearchingTripScreenState extends State<SearchingTripScreen>
         trip.status == TripStatus.completed) {
       _hasNavigated = true;
       _tripSub?.cancel();
+      _dispatchTimer?.cancel();
 
       Navigator.of(context).pushReplacementNamed(
         '/active-trip',
@@ -84,7 +92,60 @@ class _SearchingTripScreenState extends State<SearchingTripScreen>
     } else if (trip.status == TripStatus.cancelled) {
       // Alguien canceló el viaje externamente
       _tripSub?.cancel();
+      _dispatchTimer?.cancel();
       if (mounted) Navigator.of(context).pop();
+    } else if (trip.status == TripStatus.pending) {
+      _scheduleDispatchTimer(trip);
+      if (trip.dispatchExhausted) {
+        _pulseController.stop();
+        _rotationController.stop();
+      } else {
+        if (!_pulseController.isAnimating) _pulseController.repeat();
+        if (!_rotationController.isAnimating) _rotationController.repeat();
+      }
+    }
+  }
+
+  void _scheduleDispatchTimer(Trip trip) {
+    _dispatchTimer?.cancel();
+    if (trip.dispatchExhausted) return;
+
+    final deadline = trip.dispatchDeadline;
+    if (deadline == null) return;
+
+    final delay = deadline.difference(DateTime.now());
+    if (delay.isNegative) {
+      // Si ya venció, avanzamos inmediatamente
+      _advanceDispatch(trip.id, trip.dispatchIndex);
+    } else {
+      _dispatchTimer = Timer(delay, () {
+        _advanceDispatch(trip.id, trip.dispatchIndex);
+      });
+    }
+  }
+
+  Future<void> _advanceDispatch(String tripId, int expectedIndex) async {
+    try {
+      await FirestoreService.instance.advanceDispatch(tripId, expectedIndex: expectedIndex);
+    } catch (e) {
+      debugPrint('Error advancing dispatch: $e');
+    }
+  }
+
+  Future<void> _retryDispatch() async {
+    setState(() => _isRetrying = true);
+    try {
+      await FirestoreService.instance.resetDispatch(widget.tripId);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al reintentar: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isRetrying = false);
+      }
     }
   }
 
@@ -97,6 +158,7 @@ class _SearchingTripScreenState extends State<SearchingTripScreen>
         'status': 'cancelled',
       });
       _tripSub?.cancel();
+      _dispatchTimer?.cancel();
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
@@ -109,6 +171,7 @@ class _SearchingTripScreenState extends State<SearchingTripScreen>
 
   @override
   void dispose() {
+    _dispatchTimer?.cancel();
     _tripSub?.cancel();
     _pulseController.dispose();
     _rotationController.dispose();
@@ -118,6 +181,12 @@ class _SearchingTripScreenState extends State<SearchingTripScreen>
   // ─── UI ──────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    final bool isExhausted = _currentTrip?.dispatchExhausted ?? false;
+    final int queueLength = _currentTrip?.dispatchQueue.length ?? 0;
+    final bool isQueueEmpty = queueLength == 0 && _currentTrip != null;
+
+    final bool showExhaustedUI = isExhausted || isQueueEmpty;
+
     return PopScope(
       canPop: false, // Evita gestos de retroceso accidentales
       child: Scaffold(
@@ -128,9 +197,9 @@ class _SearchingTripScreenState extends State<SearchingTripScreen>
               const SizedBox(height: 30),
 
               // ── Título ──
-              const Text(
-                'Buscando mototaxi cercano…',
-                style: TextStyle(
+              Text(
+                showExhaustedUI ? 'Sin conductores' : 'Buscando mototaxi cercano…',
+                style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w800,
                   color: MijanoTheme.ink,
@@ -138,15 +207,40 @@ class _SearchingTripScreenState extends State<SearchingTripScreen>
               ),
 
               const SizedBox(height: 8),
-              Text(
-                'Espera un momento, estamos buscando\nun conductor disponible para ti.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                  height: 1.5,
+              if (showExhaustedUI)
+                Text(
+                  'No hay conductores disponibles en este momento.\nPuedes reintentar o cancelar tu solicitud.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.red.shade700,
+                    fontWeight: FontWeight.bold,
+                    height: 1.5,
+                  ),
+                )
+              else
+                Text(
+                  'Espera un momento, estamos buscando\nun conductor disponible para ti.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                    height: 1.5,
+                  ),
                 ),
-              ),
+                
+              if (!showExhaustedUI && _currentTrip != null && queueLength > 0)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Text(
+                    'Buscando conductor… (${_currentTrip!.dispatchIndex + 1} de $queueLength)',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[500],
+                    ),
+                  ),
+                ),
 
               // ── Radar animado ──
               Expanded(
@@ -219,6 +313,41 @@ class _SearchingTripScreenState extends State<SearchingTripScreen>
               ),
 
               const SizedBox(height: 24),
+
+              if (showExhaustedUI)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _isRetrying || _isCancelling ? null : _retryDispatch,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: MijanoTheme.sol,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: _isRetrying
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation(Colors.white),
+                              ),
+                            )
+                          : const Text(
+                              'Reintentar',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                    ),
+                  ),
+                ),
 
               // ── Botón cancelar ──
               Padding(

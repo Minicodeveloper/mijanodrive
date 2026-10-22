@@ -32,9 +32,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   bool _planPaymentPending = false;
   bool _planPaymentRejected = false;
 
-  // Variable para almacenar el tipo de plan actual del conductor (ej. 'Mensual', 'Semanal', 'Diario')
-  String _myPlanName = 'Diario'; 
-
   final Completer<GoogleMapController> _mapController = Completer();
 
   Position? _driverPosition;
@@ -47,7 +44,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
   final Set<String> _shownAlertTripIds = {};
 
-  final Set<String> _rejectedTripIds = {};
   final Set<String> _shownNotificationIds = {};
 
   static const CameraPosition _initialPosition = CameraPosition(
@@ -154,9 +150,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                 data?['planPaymentStatus'] == 'active' && hasNotExpired;
             final isPending = data?['planPaymentStatus'] == 'pending';
             final isRejected = data?['planPaymentStatus'] == 'rejected';
-            
-            // Capturar el nombre del plan actual del conductor
-            final fetchedPlanName = data?['planName'] ?? 'Diario';
 
             _planExpiryTimer?.cancel();
             if (hasActivePlan && expiryDate != null) {
@@ -185,7 +178,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
               _hasActivePlan = hasActivePlan;
               _planPaymentPending = isPending;
               _planPaymentRejected = isRejected;
-              _myPlanName = fetchedPlanName;
               if (!hasActivePlan) _available = false;
             });
 
@@ -312,6 +304,18 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
   Future<void> _accept(Trip trip) async {
     try {
+      final tripDoc = await FirebaseFirestore.instance.collection('trips').doc(trip.id).get();
+      if (!tripDoc.exists) return;
+      final currentTrip = Trip.fromMap(tripDoc.data()!, tripDoc.id);
+
+      if (currentTrip.status != TripStatus.pending || currentTrip.currentDispatchDriverId != _uid) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Este viaje ya no está disponible')),
+        );
+        return;
+      }
+
       final user = _auth.currentUser;
       await _fs.updateTrip(trip.id, {
         'driverId': _uid,
@@ -342,23 +346,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     }
   }
 
-  // Método actualizado para registrar el rechazo con soporte de Plan Mensual
-  Future<void> _rejectMonthlyTrip(Trip trip) async {
-    setState(() {
-      _rejectedTripIds.add(trip.id);
-    });
-
-    final bool isMonthlyPlan = _myPlanName.toLowerCase().contains('mensual');
-    if (isMonthlyPlan) {
-      // Registrar su rechazo en la lista del viaje
-      await FirebaseFirestore.instance.collection('trips').doc(trip.id).update({
-        'rejectedMonthlyDriverIds': FieldValue.arrayUnion([_uid]),
-      });
-
-      // Invocar el método en Firestore para pasarle el turno al siguiente conductor mensual
-      await _fs.advanceMonthlyQueue(trip.id);
-    }
-  }
 
   double? _tripDistanceKm(Trip trip) {
     final position = _driverPosition;
@@ -375,31 +362,18 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     );
   }
 
-  // Lógica de elegibilidad y prioridad para los 3 km y el Plan Mensual
+  // Lógica de elegibilidad y prioridad
   bool _isDriverEligibleForTrip(Trip trip) {
     if (_driverPosition == null) return false;
+    if (!_available || !_hasActivePlan) return false;
 
-    // 1. Validar estrictamente el rango de distancia (ej. 300 km para tus pruebas)
+    if (trip.dispatchExhausted) return false;
+    if (trip.currentDispatchDriverId != _uid) return false;
+
     final distance = _tripDistanceKm(trip);
     if (distance == null || distance > _maxTripDistanceKm) return false;
 
-    // 2. Verificar si este conductor ya rechazó este viaje previamente
-    if (_rejectedTripIds.contains(trip.id)) return false;
-
-    final tripMap = trip.toMap();
-    final bool isMonthlyPlan = _myPlanName.toLowerCase().contains('mensual');
-    final String? currentMonthlyDriverId = tripMap['currentMonthlyDriverId'] as String?;
-
-    if (currentMonthlyDriverId != null) {
-      // FASE 1: La cola mensual está activa. El viaje SOLO pertenece al conductor en turno exacto.
-      if (!isMonthlyPlan) {
-        return false; // Los planes semanales y diarios aún no ven el viaje
-      }
-      return currentMonthlyDriverId == _uid; // Solo es elegible si es SU turno
-    } else {
-      // FASE 2 (Overflow): Todos los mensuales rechazaron o expiró la cola. Abierto para Semanal y Diario.
-      return true; 
-    }
+    return true;
   }
 
   List<Trip> _nearbyTrips(List<Trip> trips) {
@@ -420,11 +394,12 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     final nearbyTrips = _nearbyTrips(trips);
 
     for (final trip in nearbyTrips) {
-      if (_shownAlertTripIds.contains(trip.id)) {
+      final tripKey = '${trip.id}_${trip.dispatchIndex}';
+      if (_shownAlertTripIds.contains(tripKey)) {
         continue;
       }
 
-      _shownAlertTripIds.add(trip.id);
+      _shownAlertTripIds.add(tripKey);
 
       // Enviar notificación local con banner flotante, sonido y vibración
       NotificationService.showNewTripRequestToDriver(
@@ -445,144 +420,27 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   }
 
   Future<void> _showTripAlert(Trip trip) async {
-  final distance = _tripDistanceKm(trip);
+    final distance = _tripDistanceKm(trip);
+    final DateTime deadline = trip.dispatchDeadline ?? DateTime.now();
 
-  // Calcular segundos restantes basados en la fecha límite del viaje
-  final tripMap = trip.toMap();
-  final Timestamp? deadlineTs = tripMap['monthlyDeadline'] as Timestamp?;
-  final DateTime deadline = deadlineTs?.toDate() ?? DateTime.now().add(const Duration(seconds: 30));
-  
-  int secondsRemaining = deadline.difference(DateTime.now()).inSeconds;
-  if (secondsRemaining <= 0) secondsRemaining = 30; // Fallback predeterminado
+    if (deadline.difference(DateTime.now()).inSeconds <= 0) return; // No mostrar si ya venció
 
-  await showDialog<void>(
-    context: context,
-    barrierDismissible: false,
-    builder: (dialogContext) {
-      return StatefulBuilder(
-        builder: (context, setDialogState) {
-          Timer? alertTimer;
-
-          // Iniciar el conteo regresivo si no se ha iniciado
-          alertTimer ??= Timer.periodic(const Duration(seconds: 1), (timer) {
-            if (secondsRemaining > 1) {
-              setDialogState(() {
-                secondsRemaining--;
-              });
-            } else {
-              timer.cancel();
-              if (Navigator.canPop(dialogContext)) {
-                Navigator.pop(dialogContext); // Cierra el cuadro automáticamente al llegar a 0
-              }
-              _rejectMonthlyTrip(trip); // Registra el rechazo automático por tiempo agotado
-            }
-          });
-
-          return AlertDialog(
-            title: Row(
-              children: [
-                const Icon(Icons.notifications_active, color: MijanoTheme.sol),
-                const SizedBox(width: 8),
-                const Expanded(child: Text('Nuevo viaje cercano')),
-                // Contador visual decreciente
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade100,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '${secondsRemaining}s',
-                    style: const TextStyle(
-                      color: Colors.red,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Hay un pasajero solicitando un viaje cerca de tu ubicación.',
-                ),
-                const SizedBox(height: 16),
-                _alertInfoRow(
-                  Icons.trip_origin,
-                  'Origen',
-                  trip.originAddress ?? 'Origen no disponible',
-                ),
-                const SizedBox(height: 10),
-                _alertInfoRow(
-                  Icons.location_on,
-                  'Destino',
-                  trip.destinationAddress ?? 'Destino no disponible',
-                ),
-                const SizedBox(height: 10),
-                _alertInfoRow(
-                  Icons.payments,
-                  'Tarifa',
-                  'S/ ${trip.fareAmount.toStringAsFixed(2)}',
-                ),
-                if (distance != null) ...[
-                  const SizedBox(height: 10),
-                  _alertInfoRow(
-                    Icons.near_me,
-                    'Distancia',
-                    '${distance.toStringAsFixed(2)} km',
-                  ),
-                ],
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  alertTimer?.cancel();
-                  Navigator.pop(dialogContext);
-                  _rejectMonthlyTrip(trip);
-                },
-                child: const Text('Rechazar'),
-              ),
-              ElevatedButton(
-                onPressed: () async {
-                  alertTimer?.cancel();
-                  Navigator.pop(dialogContext);
-                  await _accept(trip);
-                },
-                child: const Text('Aceptar'),
-              ),
-            ],
-          );
-        },
-      );
-    },
-  );
-}
-
-  Widget _alertInfoRow(IconData icon, String title, String value) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 20),
-        const SizedBox(width: 8),
-        Expanded(
-          child: RichText(
-            text: TextSpan(
-              style: const TextStyle(color: Colors.black87, fontSize: 14),
-              children: [
-                TextSpan(
-                  text: '$title: ',
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-                TextSpan(text: value),
-              ],
-            ),
-          ),
-        ),
-      ],
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return _TripAlertDialog(
+          trip: trip,
+          distance: distance,
+          deadline: deadline,
+          onAccept: () async {
+            await _accept(trip);
+          },
+          onReject: () {
+            _fs.rejectDispatch(trip.id, _uid);
+          },
+        );
+      },
     );
   }
 
@@ -919,20 +777,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                             children: [
                               const MototaxiIcon(size: 56, opacity: 0.35),
                               const SizedBox(height: 12),
-                              Text(
-                                trips.isEmpty
-                                    ? 'No hay solicitudes pendientes en $_city'
-                                    : 'Hay ${trips.length} solicitud(es), pero ninguna está dentro de 3 km',
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(color: Colors.black54),
-                              ),
-                              const SizedBox(height: 4),
                               const Text(
-                                'Se muestran viajes dentro de 3 km',
-                                style: TextStyle(
-                                  color: Colors.black38,
-                                  fontSize: 12,
-                                ),
+                                'No hay solicitudes por ahora',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.black54),
                               ),
                             ],
                           ),
@@ -1035,6 +883,185 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _TripAlertDialog extends StatefulWidget {
+  final Trip trip;
+  final double? distance;
+  final DateTime deadline;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+
+  const _TripAlertDialog({
+    required this.trip,
+    this.distance,
+    required this.deadline,
+    required this.onAccept,
+    required this.onReject,
+  });
+
+  @override
+  State<_TripAlertDialog> createState() => _TripAlertDialogState();
+}
+
+class _TripAlertDialogState extends State<_TripAlertDialog> {
+  Timer? _alertTimer;
+  late int _secondsRemaining;
+  StreamSubscription<Trip?>? _tripSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _calculateSecondsRemaining();
+
+    if (_secondsRemaining > 0) {
+      _alertTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
+        _calculateSecondsRemaining();
+        if (_secondsRemaining <= 0) {
+          timer.cancel();
+          if (Navigator.canPop(context)) {
+            Navigator.pop(context);
+          }
+          widget.onReject();
+        } else {
+          setState(() {}); // Actualiza la UI
+        }
+      });
+    }
+
+    _tripSub = FirestoreService.instance.tripStream(widget.trip.id).listen((updatedTrip) {
+      if (!mounted) return;
+      if (updatedTrip == null || 
+          updatedTrip.status != TripStatus.pending || 
+          updatedTrip.currentDispatchDriverId != AuthService.instance.currentUser?.uid) {
+        if (Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+      }
+    });
+  }
+
+  void _calculateSecondsRemaining() {
+    _secondsRemaining = widget.deadline.difference(DateTime.now()).inSeconds;
+    if (_secondsRemaining < 0) _secondsRemaining = 0;
+    if (_secondsRemaining > 30) _secondsRemaining = 30;
+  }
+
+  @override
+  void dispose() {
+    _alertTimer?.cancel();
+    _tripSub?.cancel();
+    super.dispose();
+  }
+
+  Widget _alertInfoRow(IconData icon, String title, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 20),
+        const SizedBox(width: 8),
+        Expanded(
+          child: RichText(
+            text: TextSpan(
+              style: const TextStyle(color: Colors.black87, fontSize: 14),
+              children: [
+                TextSpan(
+                  text: '$title: ',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                TextSpan(text: value),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Row(
+        children: [
+          const Icon(Icons.notifications_active, color: MijanoTheme.sol),
+          const SizedBox(width: 8),
+          const Expanded(child: Text('Nuevo viaje cercano')),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.red.shade100,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '${_secondsRemaining}s',
+              style: const TextStyle(
+                color: Colors.red,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Hay un pasajero solicitando un viaje cerca de tu ubicación.',
+          ),
+          const SizedBox(height: 16),
+          _alertInfoRow(
+            Icons.trip_origin,
+            'Origen',
+            widget.trip.originAddress ?? 'Origen no disponible',
+          ),
+          const SizedBox(height: 10),
+          _alertInfoRow(
+            Icons.location_on,
+            'Destino',
+            widget.trip.destinationAddress ?? 'Destino no disponible',
+          ),
+          const SizedBox(height: 10),
+          _alertInfoRow(
+            Icons.payments,
+            'Tarifa',
+            'S/ ${widget.trip.fareAmount.toStringAsFixed(2)}',
+          ),
+          if (widget.distance != null) ...[
+            const SizedBox(height: 10),
+            _alertInfoRow(
+              Icons.near_me,
+              'Distancia',
+              '${widget.distance!.toStringAsFixed(2)} km',
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            _alertTimer?.cancel();
+            if (Navigator.canPop(context)) Navigator.pop(context);
+            widget.onReject();
+          },
+          child: const Text('Rechazar'),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            _alertTimer?.cancel();
+            if (Navigator.canPop(context)) Navigator.pop(context);
+            widget.onAccept();
+          },
+          child: const Text('Aceptar'),
+        ),
+      ],
     );
   }
 }
