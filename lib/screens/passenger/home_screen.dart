@@ -63,9 +63,6 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _dispatchExhaustedUI = false;
   int _dispatchQueueLength = 0;
   int _currentDispatchIndex = 0;
-  Timer? _dispatchTimer;
-  String? _lastDispatchKey;
-  bool _dispatchExhaustedUI = false;
   int _remainingSeconds = 549;
 
   final Set<Polyline> _polylines = {};
@@ -104,6 +101,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _originFocus.dispose();
     _destinationFocus.dispose();
     _searchTimer?.cancel();
+    _dispatchTimer?.cancel();
     _activeTripSubscription?.cancel();
     super.dispose();
   }

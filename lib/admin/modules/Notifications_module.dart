@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-import '../../services/notification_service.dart';
 
 class AdminNotificationsScreen extends StatefulWidget {
   const AdminNotificationsScreen({super.key});
@@ -16,10 +15,6 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen> {
       context: context,
       builder: (context) => const NewCampaignDialog(),
     );
-  }
-
-  void _showEditScheduleModal(BuildContext context, String docId, Map<String, dynamic> data) {
-    // A simplified modal just to update the scheduled time, could be fully implemented later or just cancel and create new
   }
 
   Future<void> _updateCampaignStatus(String docId, String status) async {
