@@ -13,6 +13,7 @@ import 'auth_service.dart';
 import 'document_service.dart';
 import 'location_service.dart';
 import '../config/app_config.dart';
+import '../models/plan_tier.dart';
 
 // ============================================================================
 // CONTRATO DE DATOS: PLANES Y SOLICITUDES
@@ -103,20 +104,14 @@ class FirestoreService {
       }, SetOptions(merge: true));
 
   // ---- Viajes ----
-  String _planGroupOf(String planName) {
-    final lower = planName.toLowerCase();
-    if (lower.contains('mensual')) return 'mensual';
-    if (lower.contains('semanal')) return 'semanal';
-    return 'diario';
-  }
-
   Future<Map<String, dynamic>> _buildDispatchData(GeoPoint origin) async {
     final driversSnapshot = await _db.collection('drivers')
         .where('isAvailable', isEqualTo: true)
         .where('planPaymentStatus', isEqualTo: 'active')
         .get();
         
-    final List<Map<String, dynamic>> candidatos = [];
+    final List<DispatchCandidate> candidates = [];
+    final Map<String, PlanTier> candidateTiers = {};
 
     for (var doc in driversSnapshot.docs) {
       final data = doc.data();
@@ -137,42 +132,24 @@ class FirestoreService {
           );
 
           if (distance <= AppConfig.kMaxDispatchRadiusKm) {
-            candidatos.add({
-              'id': doc.id,
-              'distance': distance,
-              'planName': (data['planName'] ?? '').toString(),
-            });
+            final tier = PlanTier.resolve(data);
+            candidates.add(DispatchCandidate(
+              id: doc.id,
+              distanceKm: distance,
+              tier: tier,
+            ));
+            candidateTiers[doc.id] = tier;
           }
         }
       }
     }
 
-    final mensual = <Map<String, dynamic>>[];
-    final semanal = <Map<String, dynamic>>[];
-    final diario = <Map<String, dynamic>>[];
-
-    for (var c in candidatos) {
-      final grupo = _planGroupOf(c['planName']);
-      if (grupo == 'mensual') mensual.add(c);
-      else if (grupo == 'semanal') semanal.add(c);
-      else diario.add(c);
-    }
-
-    mensual.sort((a, b) => (a['distance'] as double).compareTo(b['distance'] as double));
-    semanal.sort((a, b) => (a['distance'] as double).compareTo(b['distance'] as double));
-    diario.sort((a, b) => (a['distance'] as double).compareTo(b['distance'] as double));
-
-    final dispatchQueue = [
-      ...mensual.map((e) => e['id'] as String),
-      ...semanal.map((e) => e['id'] as String),
-      ...diario.map((e) => e['id'] as String),
-    ];
+    final dispatchQueue = buildDispatchOrder(candidates);
     
     final currentDispatchDriverId = dispatchQueue.isNotEmpty ? dispatchQueue.first : null;
     String? currentDispatchPlan;
     if (currentDispatchDriverId != null) {
-       final firstDriver = candidatos.firstWhere((c) => c['id'] == currentDispatchDriverId);
-       currentDispatchPlan = _planGroupOf(firstDriver['planName']);
+       currentDispatchPlan = candidateTiers[currentDispatchDriverId]?.key;
     }
 
     return {
@@ -209,6 +186,31 @@ class FirestoreService {
     return await _db.collection('trips').add(tripData);
   }
 
+  Future<void> _advanceDispatchInTx(Transaction tx, DocumentReference tripRef, Map<String, dynamic> data, int nextIndex) async {
+    List<dynamic> queueDyn = data['dispatchQueue'] ?? [];
+    if (nextIndex < queueDyn.length) {
+      final nextDriverId = queueDyn[nextIndex].toString();
+      final nextDriverDoc = await tx.get(_db.collection('drivers').doc(nextDriverId));
+      String planKey = 'diario';
+      if (nextDriverDoc.exists) {
+        final driverData = nextDriverDoc.data();
+        planKey = PlanTier.resolve(driverData).key;
+      }
+
+      tx.update(tripRef, {
+        'dispatchIndex': nextIndex,
+        'currentDispatchDriverId': nextDriverId,
+        'currentDispatchPlan': planKey,
+        'dispatchDeadline': Timestamp.fromDate(DateTime.now().add(const Duration(seconds: AppConfig.kDispatchTimeoutSeconds))),
+      });
+    } else {
+      tx.update(tripRef, {
+        'currentDispatchDriverId': null,
+        'dispatchExhausted': true,
+      });
+    }
+  }
+
   Future<void> advanceDispatch(String tripId, {required int expectedIndex}) async {
     final tripRef = _db.collection('trips').doc(tripId);
     
@@ -222,29 +224,7 @@ class FirestoreService {
       final currentIndex = data['dispatchIndex'] ?? 0;
       if (currentIndex != expectedIndex) return;
 
-      List<dynamic> queueDyn = data['dispatchQueue'] ?? [];
-      final int nextIndex = currentIndex + 1;
-
-      if (nextIndex < queueDyn.length) {
-        final nextDriverId = queueDyn[nextIndex].toString();
-        final nextDriverDoc = await tx.get(_db.collection('drivers').doc(nextDriverId));
-        String planGrupo = 'diario';
-        if (nextDriverDoc.exists) {
-          planGrupo = _planGroupOf(nextDriverDoc.data()?['planName'] ?? '');
-        }
-
-        tx.update(tripRef, {
-          'dispatchIndex': nextIndex,
-          'currentDispatchDriverId': nextDriverId,
-          'currentDispatchPlan': planGrupo,
-          'dispatchDeadline': Timestamp.fromDate(DateTime.now().add(const Duration(seconds: AppConfig.kDispatchTimeoutSeconds))),
-        });
-      } else {
-        tx.update(tripRef, {
-          'currentDispatchDriverId': null,
-          'dispatchExhausted': true,
-        });
-      }
+      await _advanceDispatchInTx(tx, tripRef, data, currentIndex + 1);
     });
   }
 
@@ -266,29 +246,7 @@ class FirestoreService {
       });
       
       if (currentDriverId == driverUid) {
-        List<dynamic> queueDyn = data['dispatchQueue'] ?? [];
-        final int nextIndex = currentIndex + 1;
-
-        if (nextIndex < queueDyn.length) {
-          final nextDriverId = queueDyn[nextIndex].toString();
-          final nextDriverDoc = await tx.get(_db.collection('drivers').doc(nextDriverId));
-          String planGrupo = 'diario';
-          if (nextDriverDoc.exists) {
-            planGrupo = _planGroupOf(nextDriverDoc.data()?['planName'] ?? '');
-          }
-
-          tx.update(tripRef, {
-            'dispatchIndex': nextIndex,
-            'currentDispatchDriverId': nextDriverId,
-            'currentDispatchPlan': planGrupo,
-            'dispatchDeadline': Timestamp.fromDate(DateTime.now().add(const Duration(seconds: AppConfig.kDispatchTimeoutSeconds))),
-          });
-        } else {
-          tx.update(tripRef, {
-            'currentDispatchDriverId': null,
-            'dispatchExhausted': true,
-          });
-        }
+        await _advanceDispatchInTx(tx, tripRef, data, currentIndex + 1);
       }
     });
   }
@@ -1004,6 +962,7 @@ class FirestoreService {
       'price': 2.50,
       'durationDays': 1,
       'priority': 1,
+      'tier': 'diario',
       'benefits': ['Carreras ilimitadas', 'Visibilidad normal', 'Soporte estándar'],
       'isActive': true,
     }, SetOptions(merge: true));
@@ -1015,6 +974,7 @@ class FirestoreService {
       'price': 15.00,
       'durationDays': 7,
       'priority': 2,
+      'tier': 'semanal',
       'benefits': ['Ahorras S/2.50', 'Carreras ilimitadas', 'Mayor visibilidad', 'Soporte prioritario'],
       'isActive': true,
     }, SetOptions(merge: true));
@@ -1026,6 +986,7 @@ class FirestoreService {
       'price': 50.00,
       'durationDays': 30,
       'priority': 3,
+      'tier': 'mensual',
       'benefits': ['Ahorras S/25.00', 'Mejor plan valor/precio', 'Visibilidad TOP', 'Prioridad en la asignación de viajes'],
       'isActive': true,
     }, SetOptions(merge: true));
@@ -1111,9 +1072,10 @@ class FirestoreService {
       // 2. CÁLCULOS LÓGICOS Y DE FECHAS
       // =====================================================================
       int priority = (request['priority'] as num?)?.toInt() ?? 1;
+      Map<String, dynamic> planMergeData = {};
       if (planDoc != null && planDoc.exists && planDoc.data() != null) {
-        final planData = planDoc.data() as Map<String, dynamic>;
-        priority = (planData['priority'] as num?)?.toInt() ?? priority;
+        planMergeData = planDoc.data() as Map<String, dynamic>;
+        priority = (planMergeData['priority'] as num?)?.toInt() ?? priority;
       }
 
       // Extraer la cantidad y la unidad (horas o días)
@@ -1121,6 +1083,13 @@ class FirestoreService {
           ?? (request['days'] as num?)?.toInt() 
           ?? 1;
       final String durationUnit = request['durationUnit']?.toString() ?? 'days';
+
+      final planTierKey = PlanTier.resolve({
+        ...planMergeData,
+        'planName': planName,
+        'durationValue': durationValue,
+        'durationUnit': durationUnit,
+      }).key;
 
       DateTime startsAt = DateTime.now();
       DateTime expiresAt = DateTime.now();
@@ -1161,6 +1130,7 @@ class FirestoreService {
         'planId': planId,
         'planName': planName,
         'priority': priority,
+        'tier': planTierKey,
         'startsAt': startsAt,
         'expiresAt': expiresAt,
         'status': 'active',
@@ -1176,6 +1146,7 @@ class FirestoreService {
           'activePlanId': planId,
           'planName': planName,
           'planPriority': priority,
+          'planTier': planTierKey,
           'planExpiresAt': expiresAt,
         }, SetOptions(merge: true));
       }

@@ -33,6 +33,7 @@ class _EditPlanDialogState extends State<EditPlanDialog> {
   late bool _isActive;
   late int _priority;
   late List<String> _benefits;
+  late String _tier;
 
   bool _isSaving = false;
   bool _isDirty = false;
@@ -46,6 +47,7 @@ class _EditPlanDialogState extends State<EditPlanDialog> {
     _isActive = widget.plan.isActive;
     _priority = widget.plan.priority;
     _benefits = List<String>.from(widget.plan.benefits);
+    _tier = widget.plan.tier;
 
     _nameController.addListener(_markDirty);
     _priceController.addListener(_markDirty);
@@ -149,6 +151,7 @@ class _EditPlanDialogState extends State<EditPlanDialog> {
       priority: _priority,
       benefits: _benefits,
       isActive: _isActive,
+      tier: _tier,
     );
 
     setState(() => _isSaving = true);
@@ -267,6 +270,27 @@ class _EditPlanDialogState extends State<EditPlanDialog> {
                               border: OutlineInputBorder(),
                             ),
                             validator: (v) => (v == null || v.trim().isEmpty) ? 'Ingresa un nombre' : null,
+                          ),
+                          const SizedBox(height: 12),
+                          DropdownButtonFormField<String>(
+                            value: _tier,
+                            decoration: const InputDecoration(
+                              labelText: 'Tipo de plan (Tier)',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: const [
+                              DropdownMenuItem(value: 'diario', child: Text('Diario (Tier 1)')),
+                              DropdownMenuItem(value: 'semanal', child: Text('Semanal (Tier 2)')),
+                              DropdownMenuItem(value: 'mensual', child: Text('Mensual (Tier 3)')),
+                            ],
+                            onChanged: (val) {
+                              if (val != null) {
+                                setState(() {
+                                  _tier = val;
+                                  _isDirty = true;
+                                });
+                              }
+                            },
                           ),
                           const SizedBox(height: 12),
                           Row(

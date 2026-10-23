@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'plan_tier.dart';
 
 class PlanModel {
   final String id;
@@ -8,6 +9,7 @@ class PlanModel {
   final int priority; // 1/2/3
   final List<String> benefits;
   final bool isActive;
+  final String tier; // diario / semanal / mensual
 
   PlanModel({
     required this.id,
@@ -17,6 +19,7 @@ class PlanModel {
     required this.priority,
     required this.benefits,
     required this.isActive,
+    required this.tier,
   });
 
   Map<String, dynamic> toMap() {
@@ -27,6 +30,7 @@ class PlanModel {
       'priority': priority,
       'benefits': benefits,
       'isActive': isActive,
+      'tier': tier,
     };
   }
 
@@ -39,6 +43,7 @@ class PlanModel {
       priority: map['priority'] ?? 1,
       benefits: List<String>.from(map['benefits'] ?? []),
       isActive: map['isActive'] ?? true,
+      tier: map['tier']?.toString() ?? PlanTier.resolve(map).key,
     );
   }
 

@@ -873,6 +873,7 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
     
     // Variables para manejar la unidad de tiempo (Horas o Días)
     String durationUnit = 'days';
+    String selectedTier = 'diario';
     bool isActive = true;
     bool isSaving = false;
 
@@ -941,6 +942,20 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
                   ),
 
                   const SizedBox(height: 15),
+                  DropdownButtonFormField<String>(
+                    value: selectedTier,
+                    decoration: const InputDecoration(
+                      labelText: 'Tipo de plan (Tier)',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'diario', child: Text('Diario (Tier 1)')),
+                      DropdownMenuItem(value: 'semanal', child: Text('Semanal (Tier 2)')),
+                      DropdownMenuItem(value: 'mensual', child: Text('Mensual (Tier 3)')),
+                    ],
+                    onChanged: (val) => setStateDialog(() => selectedTier = val ?? 'diario'),
+                  ),
+                  const SizedBox(height: 15),
                   TextField(
                     controller: benefitsController,
                     maxLines: 3,
@@ -999,6 +1014,7 @@ class _PlansModuleState extends State<PlansModule> with SingleTickerProviderStat
                     'durationUnit': durationUnit, // 'hours' o 'days'
                     'durationDays': durationUnit == 'hours' ? 1 : durationValue, // Valor de respaldo
                     'priority': 99,
+                    'tier': selectedTier,
                     'benefits': benefitsList.isEmpty ? ['Acceso general'] : benefitsList,
                     'isActive': isActive,
                     'createdAt': FieldValue.serverTimestamp(),
