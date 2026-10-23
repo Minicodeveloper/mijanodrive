@@ -80,6 +80,9 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         role: _role,
         photoUrl: _selfiePath,
       );
+      if (_role == UserRole.driver && _auth.currentUser != null) {
+        await FirestoreService.instance.setDriverAvailability(_auth.currentUser!.uid, false);
+      }
       if (!mounted) return;
       setState(() => _saving = false);
       Navigator.of(context).pushNamedAndRemoveUntil(

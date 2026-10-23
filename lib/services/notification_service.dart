@@ -251,8 +251,24 @@ class NotificationService {
 
     final type = parts[0]; 
 
-    if (type == 'trip_request') {
-      navigatorKey.currentState?.pushNamed('/driver');
+    if (type == 'trip_request' || type == 'plan_approved' || type == 'general_campaign') {
+      final currentState = navigatorKey.currentState;
+      if (currentState != null) {
+        bool isOnDriver = false;
+        currentState.popUntil((r) {
+          if (r.settings.name == '/driver') {
+            isOnDriver = true;
+            return true;
+          }
+          if (r.isFirst) {
+            return true;
+          }
+          return false;
+        });
+        if (!isOnDriver) {
+          currentState.pushNamed('/driver');
+        }
+      }
     } else if (type == 'trip_accepted') {
       final tripId = parts.length > 1 ? parts[1] : '';
       navigatorKey.currentState?.pushNamed(
@@ -261,11 +277,6 @@ class NotificationService {
       );
     } else if (type == 'trip_searching') {
       navigatorKey.currentState?.pushNamed('/home');
-    } else if (type == 'plan_approved') {
-      // Llevar al panel del conductor al pulsar la notificación de plan aprobado
-      navigatorKey.currentState?.pushNamed('/driver');
-    } else if (type == 'general_campaign') {
-      navigatorKey.currentState?.pushNamed('/driver');
     }
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mijano_drive_app/services/auth_service.dart';
+import 'package:mijano_drive_app/services/firestore_service.dart';
 import 'package:mijano_drive_app/models/user_model.dart';
 import 'package:mijano_drive_app/screens/driver/pending_account_screen.dart';
 import 'package:mijano_drive_app/utils/validators.dart';
@@ -64,7 +65,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void _routeAfterAuth() {
+  Future<void> _routeAfterAuth() async {
     final user = _auth.currentUser;
     if (user == null || user.name == null || user.name!.trim().isEmpty) {
       Navigator.of(context).pushReplacementNamed('/profile-setup');
@@ -72,6 +73,7 @@ class _LoginScreenState extends State<LoginScreen> {
       Navigator.of(context).pushNamedAndRemoveUntil('/admin', (r) => false);
     } else if (user.role == UserRole.driver) {
       if (user.status == 'approved') {
+        await FirestoreService.instance.setDriverAvailability(user.uid, false);
         Navigator.of(context).pushNamedAndRemoveUntil('/driver', (r) => false);
       } else {
         Navigator.of(context).pushAndRemoveUntil(

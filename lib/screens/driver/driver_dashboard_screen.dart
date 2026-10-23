@@ -23,7 +23,7 @@ class DriverDashboardScreen extends StatefulWidget {
   State<DriverDashboardScreen> createState() => _DriverDashboardScreenState();
 }
 
-class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
+class _DriverDashboardScreenState extends State<DriverDashboardScreen> with WidgetsBindingObserver {
   final _fs = FirestoreService.instance;
   final _auth = AuthService.instance;
 
@@ -57,10 +57,32 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
   DateTime? _lastPublishedTime;
 
+  late final Stream<List<Map<String, dynamic>>> _notificationsStream;
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _rejectedPlanRequestsStream;
+  late final Stream<DocumentSnapshot<Map<String, dynamic>>> _driverDocStream;
+  late final Stream<List<Trip>> _pendingTripsStream;
+
+  StreamSubscription<List<Trip>>? _tripAlertSub;
+  bool _isAlertDialogOpen = false;
+
   @override
   void initState() {
     super.initState();
-    _setInitialUnavailable();
+    WidgetsBinding.instance.addObserver(this);
+
+    _notificationsStream = _fs.userNotifications(_uid);
+    _rejectedPlanRequestsStream = FirebaseFirestore.instance
+        .collection('plan_requests')
+        .where('driverId', isEqualTo: _uid)
+        .where('status', isEqualTo: 'rejected')
+        .limit(1)
+        .snapshots();
+    _driverDocStream = FirebaseFirestore.instance
+        .collection('drivers')
+        .doc(_uid)
+        .snapshots();
+    _pendingTripsStream = _fs.pendingTrips();
+
     _watchDriverPlan();
     _startLocationTracking();
     _listenToPushAlerts();
@@ -68,10 +90,111 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _tripAlertSub?.cancel();
     _locationSubscription?.cancel();
     _driverPlanSubscription?.cancel();
     _planExpiryTimer?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint('[DRIVER-DISPATCH] App resumed: limpiando _shownAlertTripIds y reiniciando suscripción');
+      _shownAlertTripIds.clear();
+      _updateTripAlertSubscription();
+    }
+  }
+
+  bool _isDriverEligibleForTripWithLogging(Trip trip) {
+    if (_driverPosition == null) {
+      debugPrint('[DRIVER-DISPATCH] tripId: ${trip.id}, dispatchIndex: ${trip.dispatchIndex}, currentDispatchDriverId: ${trip.currentDispatchDriverId}, mi uid: $_uid -> inelegible: _driverPosition es null');
+      return false;
+    }
+    if (!_available || !_hasActivePlan) {
+      debugPrint('[DRIVER-DISPATCH] tripId: ${trip.id}, dispatchIndex: ${trip.dispatchIndex}, currentDispatchDriverId: ${trip.currentDispatchDriverId}, mi uid: $_uid -> inelegible: _available ($_available) o _hasActivePlan ($_hasActivePlan) es falso');
+      return false;
+    }
+    if (trip.dispatchExhausted) {
+      debugPrint('[DRIVER-DISPATCH] tripId: ${trip.id}, dispatchIndex: ${trip.dispatchIndex}, currentDispatchDriverId: ${trip.currentDispatchDriverId}, mi uid: $_uid -> inelegible: dispatchExhausted es true');
+      return false;
+    }
+    if (trip.currentDispatchDriverId != _uid) {
+      debugPrint('[DRIVER-DISPATCH] tripId: ${trip.id}, dispatchIndex: ${trip.dispatchIndex}, currentDispatchDriverId: ${trip.currentDispatchDriverId}, mi uid: $_uid -> inelegible: currentDispatchDriverId (${trip.currentDispatchDriverId}) no coincide con mi uid ($_uid)');
+      return false;
+    }
+
+    final distance = _tripDistanceKm(trip);
+    if (distance == null || distance > _maxTripDistanceKm) {
+      debugPrint('[DRIVER-DISPATCH] tripId: ${trip.id}, dispatchIndex: ${trip.dispatchIndex}, currentDispatchDriverId: ${trip.currentDispatchDriverId}, mi uid: $_uid -> inelegible: distancia fuera de rango ($distance km)');
+      return false;
+    }
+
+    debugPrint('[DRIVER-DISPATCH] tripId: ${trip.id}, dispatchIndex: ${trip.dispatchIndex}, currentDispatchDriverId: ${trip.currentDispatchDriverId}, mi uid: $_uid -> ¡Elegible!');
+    return true;
+  }
+
+  void _updateTripAlertSubscription() {
+    _tripAlertSub?.cancel();
+    _tripAlertSub = null;
+
+    if (!_available || _driverPosition == null) {
+      debugPrint('[DRIVER-DISPATCH] Suscripción a alertas cancelada (available: $_available, position: $_driverPosition)');
+      _shownAlertTripIds.clear();
+      return;
+    }
+
+    debugPrint('[DRIVER-DISPATCH] Iniciando suscripción a alertas _tripAlertSub...');
+    _tripAlertSub = _pendingTripsStream.listen((trips) {
+      final activeTripIds = trips.where((t) => t.status == TripStatus.pending).map((t) => t.id).toSet();
+      _shownAlertTripIds.removeWhere((key) {
+        final tripId = key.split('_').first;
+        if (!activeTripIds.contains(tripId)) {
+          debugPrint('[DRIVER-DISPATCH] Limpiando clave obsoleta de _shownAlertTripIds: $key');
+          return true;
+        }
+        return false;
+      });
+
+      for (final trip in trips) {
+        final key = '${trip.id}_${trip.dispatchIndex}';
+        final isEligible = _isDriverEligibleForTripWithLogging(trip);
+
+        if (isEligible) {
+          if (!_shownAlertTripIds.contains(key)) {
+            if (_isAlertDialogOpen) {
+              debugPrint('[DRIVER-DISPATCH] Viaje elegible $key detectado pero ya hay un diálogo abierto. Se reintentará.');
+              continue;
+            }
+
+            debugPrint('[DRIVER-DISPATCH] Disparando notificación local para tripId: ${trip.id}, key: $key');
+            NotificationService.showNewTripRequestToDriver(
+              tripId: trip.id,
+              passengerName: trip.passengerName ?? 'Pasajero',
+              price: trip.fareAmount,
+              pickupAddress: trip.originAddress ?? 'Cerca de ti',
+            );
+
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) {
+                debugPrint('[DRIVER-DISPATCH] Widget no montado al intentar abrir diálogo para $key');
+                return;
+              }
+              if (_isAlertDialogOpen) {
+                debugPrint('[DRIVER-DISPATCH] Diálogo ya abierto al intentar procesar postFrameCallback para $key');
+                return;
+              }
+
+              _shownAlertTripIds.add(key);
+              _showTripAlert(trip);
+            });
+          }
+        }
+      }
+    }, onError: (error) {
+      debugPrint('[DRIVER-DISPATCH] Error en _tripAlertSub: $error');
+    });
   }
 
   void _listenToPushAlerts() {
@@ -120,25 +243,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     });
   }
 
-  Future<void> _setInitialUnavailable() async {
-    try {
-      await _fs.setDriverAvailability(_uid, false);
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('No se pudo actualizar tu disponibilidad: $error'),
-        ),
-      );
-    }
-  }
+
 
   void _watchDriverPlan() {
-    _driverPlanSubscription = FirebaseFirestore.instance
-        .collection('drivers')
-        .doc(_uid)
-        .snapshots()
-        .listen(
+    _driverPlanSubscription = _driverDocStream.listen(
           (snapshot) {
             final data = snapshot.data();
             final expiresAt = data?['planExpiresAt'];
@@ -150,6 +258,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                 data?['planPaymentStatus'] == 'active' && hasNotExpired;
             final isPending = data?['planPaymentStatus'] == 'pending';
             final isRejected = data?['planPaymentStatus'] == 'rejected';
+            final dbIsAvailable = data?['isAvailable'] ?? false;
 
             _planExpiryTimer?.cancel();
             if (hasActivePlan && expiryDate != null) {
@@ -159,40 +268,18 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                   _hasActivePlan = false;
                   _available = false;
                 });
-                _fs.setDriverAvailability(_uid, false).catchError((error) {
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'No se pudo pausar tu disponibilidad al vencer el plan: $error',
-                      ),
-                    ),
-                  );
-                });
+                _fs.setDriverAvailability(_uid, false).catchError((error) {});
               });
             }
 
             if (!mounted) return;
-            final wasAvailable = _available;
             setState(() {
               _hasActivePlan = hasActivePlan;
               _planPaymentPending = isPending;
               _planPaymentRejected = isRejected;
-              if (!hasActivePlan) _available = false;
+              _available = hasActivePlan && dbIsAvailable;
             });
-
-            if (wasAvailable && !hasActivePlan) {
-              _fs.setDriverAvailability(_uid, false).catchError((error) {
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      'No se pudo pausar tu disponibilidad: $error',
-                    ),
-                  ),
-                );
-              });
-            }
+            _updateTripAlertSubscription();
           },
           onError: (Object error) {
             if (!mounted) return;
@@ -200,9 +287,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
             if (error.toString().contains('permission-denied')) {
               return;
             }
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('No se pudo verificar tu plan: $error')),
-            );
           },
         );
   }
@@ -217,6 +301,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
       setState(() {
         _driverPosition = pos;
       });
+      _updateTripAlertSubscription();
 
       _publishLocation(pos);
 
@@ -226,6 +311,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         setState(() {
           _driverPosition = pos;
         });
+        _updateTripAlertSubscription();
 
         _publishLocation(pos);
       });
@@ -285,11 +371,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
     try {
       await _fs.setDriverAvailability(_uid, value);
+      _updateTripAlertSubscription();
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _available = false;
       });
+      _updateTripAlertSubscription();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('No se pudo cambiar tu disponibilidad: $error')),
       );
@@ -386,38 +474,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     }).toList();
   }
 
-  void _checkForNewNearbyTripAlerts(List<Trip> trips) {
-    if (!_available || _driverPosition == null || trips.isEmpty) {
-      return;
-    }
 
-    final nearbyTrips = _nearbyTrips(trips);
-
-    for (final trip in nearbyTrips) {
-      final tripKey = '${trip.id}_${trip.dispatchIndex}';
-      if (_shownAlertTripIds.contains(tripKey)) {
-        continue;
-      }
-
-      _shownAlertTripIds.add(tripKey);
-
-      // Enviar notificación local con banner flotante, sonido y vibración
-      NotificationService.showNewTripRequestToDriver(
-        tripId: trip.id,
-        passengerName: trip.passengerName ?? 'Pasajero',
-        price: trip.fareAmount,
-        pickupAddress: trip.originAddress ?? 'Cerca de ti',
-      );
-
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || !_available) return;
-
-        _showTripAlert(trip);
-      });
-
-      break;
-    }
-  }
 
   Future<void> _showTripAlert(Trip trip) async {
     final distance = _tripDistanceKm(trip);
@@ -506,7 +563,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         children: [
           // Notificaciones (banner)
           StreamBuilder<List<Map<String, dynamic>>>(
-            stream: _fs.userNotifications(_uid),
+            stream: _notificationsStream,
             builder: (context, snapshot) {
               final notifs = snapshot.data ?? [];
               
@@ -544,12 +601,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
           if (_planPaymentRejected) ...[
             StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: FirebaseFirestore.instance
-                  .collection('plan_requests')
-                  .where('driverId', isEqualTo: _uid)
-                  .where('status', isEqualTo: 'rejected')
-                  .limit(1)
-                  .snapshots(),
+              stream: _rejectedPlanRequestsStream,
               builder: (context, snap) {
                 final docs = snap.data?.docs ?? [];
                 String reason = '';
@@ -621,7 +673,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                       if (_hasActivePlan) ...[
                         const SizedBox(height: 2),
                         StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                          stream: FirebaseFirestore.instance.collection('drivers').doc(_uid).snapshots(),
+                          stream: _driverDocStream,
                           builder: (context, snapshot) {
                             final data = snapshot.data?.data();
                             final planName = data?['planName'] ?? 'Plan Activo';
@@ -726,7 +778,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                     ),
                   )
                 : StreamBuilder<List<Trip>>(
-                    stream: _fs.pendingTrips(),
+                    stream: _pendingTripsStream,
                     builder: (context, snap) {
                       if (snap.connectionState == ConnectionState.waiting) {
                         return const Center(child: CircularProgressIndicator());
@@ -763,8 +815,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                       final trips = snap.data ?? [];
 
                       final nearbyTrips = _nearbyTrips(trips);
-
-                      _checkForNewNearbyTripAlerts(trips);
 
                       if (nearbyTrips.isEmpty) {
                         return Center(

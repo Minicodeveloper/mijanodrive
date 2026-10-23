@@ -499,6 +499,12 @@ class AuthService {
   }
 
   Future<void> signOut() async {
+    final uid = _fbAuth.currentUser?.uid;
+    if (uid != null) {
+      try {
+        await _firestore.collection('drivers').doc(uid).set({'isAvailable': false}, SetOptions(merge: true));
+      } catch (_) {}
+    }
     await _fbAuth.signOut();
     currentUser = null;
     _verificationId = null;
