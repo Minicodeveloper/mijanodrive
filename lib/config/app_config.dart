@@ -13,11 +13,15 @@ class AppConfig {
   static const List<String> cities = ['Yurimaguas', 'Tarapoto', 'Iquitos'];
 
   /// Tarifa base por ciudad (fallback si Firestore no responde).
+  @Deprecated('Use PricingSettings defaults instead')
   static const Map<String, Map<String, double>> cityTariffs = {
     'Yurimaguas': {'base': 3.5, 'perKm': 2.0},
     'Tarapoto': {'base': 3.0, 'perKm': 1.8},
     'Iquitos': {'base': 3.5, 'perKm': 2.1},
   };
+
+  /// Velocidad promedio en ciudad (km/h) para estimar duración de viajes
+  static const double estimatedCitySpeedKmh = 30.0;
 
   /// Intervalo para publicar la ubicación del conductor a Firestore.
   static const Duration locationPublishInterval = Duration(seconds: 30);

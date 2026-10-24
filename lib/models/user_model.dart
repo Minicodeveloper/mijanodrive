@@ -25,6 +25,9 @@ class User {
   final String? vehicleColor;
   final String? vehicleYear;
   final String? vehicleType;
+  final bool? isAgencyDriver;
+  final String? agencyName;
+  final String? agencyRuc;
   final String? licenseNumber;
   final Map<String, dynamic> documents;
 
@@ -48,6 +51,9 @@ class User {
     this.vehicleColor,
     this.vehicleYear,
     this.vehicleType,
+    this.isAgencyDriver,
+    this.agencyName,
+    this.agencyRuc,
     this.licenseNumber,
     this.documents = const {},
   });
@@ -73,6 +79,9 @@ class User {
       'vehicleColor': vehicleColor,
       'vehicleYear': vehicleYear,
       'vehicleType': vehicleType,
+      'isAgencyDriver': isAgencyDriver,
+      if (agencyName != null) 'agencyName': agencyName,
+      if (agencyRuc != null) 'agencyRuc': agencyRuc,
       'licenseNumber': licenseNumber,
       'documents': documents,
     };
@@ -119,6 +128,9 @@ class User {
       vehicleColor: map['vehicleColor'],
       vehicleYear: map['vehicleYear'],
       vehicleType: map['vehicleType'],
+      isAgencyDriver: map['isAgencyDriver'],
+      agencyName: map['agencyName'],
+      agencyRuc: map['agencyRuc'],
       licenseNumber: map['licenseNumber'],
       documents: Map<String, dynamic>.from(map['documents'] ?? {}),
     );
@@ -148,6 +160,9 @@ class User {
     String? vehicleColor,
     String? vehicleYear,
     String? vehicleType,
+    bool? isAgencyDriver,
+    String? agencyName,
+    String? agencyRuc,
     String? licenseNumber,
     Map<String, dynamic>? documents,
   }) {
@@ -171,6 +186,9 @@ class User {
       vehicleColor: vehicleColor ?? this.vehicleColor,
       vehicleYear: vehicleYear ?? this.vehicleYear,
       vehicleType: vehicleType ?? this.vehicleType,
+      isAgencyDriver: isAgencyDriver ?? this.isAgencyDriver,
+      agencyName: agencyName ?? this.agencyName,
+      agencyRuc: agencyRuc ?? this.agencyRuc,
       licenseNumber: licenseNumber ?? this.licenseNumber,
       documents: documents ?? this.documents,
     );

@@ -15,6 +15,8 @@ import 'active_trip_screen.dart';
 import '../../services/notification_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../config/app_config.dart';
+import '../../widgets/frequent_places_sheet.dart';
+import '../../models/tariff_model.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -589,18 +591,33 @@ class _HomeScreenState extends State<HomeScreen> {
               final distanceMeters = leg['distance']['value'] as int;
               _distanceKm = distanceMeters / 1000.0;
               _durationText = leg['duration']['text'] ?? '';
+              final durationSeconds = leg['duration']['value'] as int;
 
-              _estimatedFare = 5.0 + (_distanceKm * 2.0);
-              if (_estimatedFare < 10.0) _estimatedFare = 10.0;
+              final settings = await FirestoreService.instance.getPricingSettings();
+              final quote = settings.quote(
+                category: VehicleCategory.moto,
+                distanceKm: _distanceKm,
+                durationMin: durationSeconds / 60.0,
+                hour: DateTime.now().hour,
+              );
+              _estimatedFare = quote.total;
             }
           }
         }
 
         if (routePoints.isEmpty) {
           routePoints = [originLatLng, destLatLng];
-          _estimatedFare = 15.00;
           _distanceKm = 5.0;
           _durationText = '15 min';
+          
+          final settings = await FirestoreService.instance.getPricingSettings();
+          final quote = settings.quote(
+            category: VehicleCategory.moto,
+            distanceKm: _distanceKm,
+            durationMin: 15.0,
+            hour: DateTime.now().hour,
+          );
+          _estimatedFare = quote.total;
         }
 
         setState(() {
@@ -1498,7 +1515,7 @@ class _HomeScreenState extends State<HomeScreen> {
           left: 0,
           right: 0,
           child: Container(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 90),
             decoration: BoxDecoration(
               color: _isSearchingDriver
                   ? const Color(0xFF1E1E1E)
@@ -1987,65 +2004,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ],
                         const SizedBox(height: 15),
-                        const Text(
-                          'Lugares frecuentes',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 12,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  side: BorderSide(color: Colors.grey.shade300),
-                                ),
-                                onPressed: () => _selectDestination('Casa'),
-                                icon: const Icon(
-                                  Icons.home,
-                                  color: Colors.amber,
-                                ),
-                                label: const Text(
-                                  'Casa',
-                                  style: TextStyle(color: Colors.black87),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 12,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  side: BorderSide(color: Colors.grey.shade300),
-                                ),
-                                onPressed: () => _selectDestination('Hospital'),
-                                icon: const Icon(
-                                  Icons.local_hospital,
-                                  color: Colors.amber,
-                                ),
-                                label: const Text(
-                                  'Hospital',
-                                  style: TextStyle(color: Colors.black87),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 15),
                         const AdCarouselBanner(),
                         const SizedBox(height: 20),
                         SizedBox(
@@ -2088,6 +2046,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
             ),
           ),
+        ),
+        FrequentPlacesSheet(
+          onPlaceSelected: (place) {
+            _selectDestination(place);
+          },
         ),
       ],
     );

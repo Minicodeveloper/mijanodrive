@@ -11,6 +11,17 @@ enum VehicleCategory {
       minFare: 4.0,
       nightSurcharge: 1.5,
     ),
+  ),
+  auto(
+    'auto_',
+    'Auto',
+    VehicleTariff(
+      baseFare: 5.0,
+      perKm: 2.0,
+      perMinute: 0.3,
+      minFare: 6.0,
+      nightSurcharge: 2.0,
+    ),
   );
 
   final String prefix;

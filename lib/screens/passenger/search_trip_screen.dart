@@ -7,7 +7,10 @@ import '../../config/app_config.dart';
 import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
 import '../../services/location_service.dart';
+import '../../models/tariff_model.dart';
 import 'package:geocoding/geocoding.dart' as geo;
+import 'map_picker_screen.dart';
+import '../../widgets/frequent_places_sheet.dart';
 
 class SearchTripScreen extends StatefulWidget {
   const SearchTripScreen({super.key});
@@ -17,7 +20,6 @@ class SearchTripScreen extends StatefulWidget {
 }
 
 class _SearchTripScreenState extends State<SearchTripScreen> {
-  
   final _originController = TextEditingController(text: 'Mi ubicación actual');
   final _destinationController = TextEditingController();
 
@@ -25,14 +27,59 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
   double _estimatedFare = 15.00;
   bool _isSearching = false;
 
-  
   double? _destinationLat;
   double? _destinationLng;
   double? _originLat;
   double? _originLng;
 
+  String _lastOriginText = 'Mi ubicación actual';
+  String _lastDestinationText = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _originController.addListener(_onOriginChanged);
+    _destinationController.addListener(_onDestinationChanged);
+  }
+
+  void _onOriginChanged() {
+    if (_originController.text != _lastOriginText) {
+      _originLat = null;
+      _originLng = null;
+    }
+  }
+
+  void _onDestinationChanged() {
+    if (_destinationController.text != _lastDestinationText) {
+      _destinationLat = null;
+      _destinationLng = null;
+    }
+  }
+
+  void _setOrigin(double lat, double lng, String address) {
+    _originLat = lat;
+    _originLng = lng;
+    _lastOriginText = address;
+    _originController.text = address;
+    _originController.selection = TextSelection.fromPosition(
+      TextPosition(offset: _originController.text.length),
+    );
+  }
+
+  void _setDestination(double lat, double lng, String address) {
+    _destinationLat = lat;
+    _destinationLng = lng;
+    _lastDestinationText = address;
+    _destinationController.text = address;
+    _destinationController.selection = TextSelection.fromPosition(
+      TextPosition(offset: _destinationController.text.length),
+    );
+  }
+
   @override
   void dispose() {
+    _originController.removeListener(_onOriginChanged);
+    _destinationController.removeListener(_onDestinationChanged);
     _originController.dispose();
     _destinationController.dispose();
     super.dispose();
@@ -51,16 +98,25 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
     setState(() => _isSearching = true);
 
     try {
+      double realOriginLat = _originLat ?? 0.0;
+      double realOriginLng = _originLng ?? 0.0;
       
-      final originPosition = await LocationService.instance.current();
-      final realOriginLat = _originLat ?? originPosition.latitude;
-      final realOriginLng = _originLng ?? originPosition.longitude;
+      if (realOriginLat == 0.0 || realOriginLng == 0.0) {
+        if (_originController.text.trim().toLowerCase() == 'mi ubicación actual' || _originController.text.trim().isEmpty) {
+          final originPosition = await LocationService.instance.current();
+          realOriginLat = originPosition.latitude;
+          realOriginLng = originPosition.longitude;
+        } else {
+          final locs = await geo.locationFromAddress(_originController.text.trim());
+          if (locs.isEmpty) throw Exception('Dirección de origen no encontrada');
+          realOriginLat = locs.first.latitude;
+          realOriginLng = locs.first.longitude;
+        }
+      }
 
-      
       double destLat = _destinationLat ?? 0.0;
       double destLng = _destinationLng ?? 0.0;
 
-      
       if (destLat == 0.0 || destLng == 0.0) {
         final locations = await geo.locationFromAddress(destinationText);
         if (locations.isEmpty) {
@@ -70,7 +126,6 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
         destLng = locations.first.longitude;
       }
 
-      
       final distanceKm = LocationService.instance.distanceKm(
         realOriginLat,
         realOriginLng,
@@ -78,25 +133,24 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
         destLng,
       );
 
-      
       final user = AuthService.instance.currentUser;
       final city = user?.city ?? 'Tarapoto';
 
+      // Estimar duración basada en velocidad promedio (ej: 30 km/h)
+      final durationMin = (distanceKm / AppConfig.estimatedCitySpeedKmh) * 60.0;
+
+      // Obtener settings de precios de Firestore
+      final settings = await FirestoreService.instance.getPricingSettings();
       
-      final firestoreTariff = await FirestoreService.instance.getCityTariff(
-        city,
+      // Calcular tarifa usando quote
+      final quote = settings.quote(
+        category: VehicleCategory.moto,
+        distanceKm: distanceKm,
+        durationMin: durationMin,
+        hour: DateTime.now().hour,
       );
 
-      final tariffData =
-          firestoreTariff ??
-          AppConfig.cityTariffs[city] ??
-          AppConfig.cityTariffs['Tarapoto']!;
-
-      final baseFare = (tariffData['base'] as num?)?.toDouble() ?? 3.0;
-      final perKm = (tariffData['perKm'] as num?)?.toDouble() ?? 1.8;
-
-      // 6. Calcular tarifa.
-      final fare = baseFare + (distanceKm * perKm);
+      final fare = quote.total;
 
       if (!mounted) return;
 
@@ -150,16 +204,18 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
         ),
         title: const Text('Nuevo viaje', style: TextStyle(color: Colors.black)),
       ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 10),
+      body: Stack(
+        children: [
+          SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.only(left: 20.0, right: 20.0, top: 20.0, bottom: 120.0), // Padding extra abajo para el sheet
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 10),
 
-              // Contenedor unificado para Origen y Destino (De y A)
-              Container(
+                  // Contenedor unificado para Origen y Destino (De y A)
+                  Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: const Color(0xFFF9D408).withOpacity(0.15),
@@ -184,6 +240,24 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                           labelText: 'De:',
                           hintText: 'Mi ubicación actual',
                           prefixIcon: const Icon(Icons.trip_origin, color: Colors.black87),
+                          suffixIcon: IconButton(
+                            icon: const Icon(Icons.map_outlined),
+                            tooltip: 'Elegir en el mapa',
+                            onPressed: () async {
+                              final picked = await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => MapPickerScreen(
+                                    initialLat: _originLat,
+                                    initialLng: _originLng,
+                                  ),
+                                ),
+                              );
+                              if (picked is PickedLocation) {
+                                _setOrigin(picked.lat, picked.lng, picked.address);
+                              }
+                            },
+                          ),
                           filled: true,
                           fillColor: Colors.white,
                           border: OutlineInputBorder(
@@ -193,7 +267,9 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                         ),
                         itemClick: (Prediction prediction) {
-                          _originController.text = prediction.description ?? "";
+                          final text = prediction.description ?? "";
+                          _lastOriginText = text;
+                          _originController.text = text;
                           _originController.selection = TextSelection.fromPosition(
                             TextPosition(offset: _originController.text.length),
                           );
@@ -242,6 +318,24 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                         countries: const ["pe"], // Restricción solo a Perú
                         inputDecoration: InputDecoration(
                           hintText: 'A: ¿A dónde vas?',
+                          suffixIcon: IconButton(
+                            icon: const Icon(Icons.map_outlined),
+                            tooltip: 'Elegir en el mapa',
+                            onPressed: () async {
+                              final picked = await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => MapPickerScreen(
+                                    initialLat: _destinationLat,
+                                    initialLng: _destinationLng,
+                                  ),
+                                ),
+                              );
+                              if (picked is PickedLocation) {
+                                _setDestination(picked.lat, picked.lng, picked.address);
+                              }
+                            },
+                          ),
                           filled: true,
                           fillColor: Colors.white,
                           border: OutlineInputBorder(
@@ -251,7 +345,9 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                         ),
                         itemClick: (Prediction prediction) async {
-                          _destinationController.text = prediction.description ?? "";
+                          final text = prediction.description ?? "";
+                          _lastDestinationText = text;
+                          _destinationController.text = text;
                           _destinationController.selection = TextSelection.fromPosition(
                             TextPosition(offset: _destinationController.text.length),
                           );
@@ -296,29 +392,6 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                     ),
                   ],
                 ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // Lugares frecuentes.
-              const Text(
-                'Lugares frecuentes',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-              ),
-
-              const SizedBox(height: 10),
-
-              GridView.count(
-                crossAxisCount: 2,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                childAspectRatio: 2.5,
-                children: [
-                  _buildQuickButton('Casa', Icons.home),
-                  _buildQuickButton('Trabajo', Icons.work),
-                  _buildQuickButton('Supermercado', Icons.shopping_cart),
-                  _buildQuickButton('Hospital', Icons.local_hospital),
-                ],
               ),
 
               const SizedBox(height: 25),
@@ -420,36 +493,16 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildQuickButton(String label, IconData icon) {
-    return InkWell(
-      onTap: () async {
-        _destinationController.text = label;
-        
-        _destinationLat = null;
-        _destinationLng = null;
-      },
-      child: Container(
-        margin: const EdgeInsets.all(5),
-        decoration: BoxDecoration(
-          border: Border.all(color: Colors.grey[300]!),
-          borderRadius: BorderRadius.circular(8),
+        FrequentPlacesSheet(
+          onPlaceSelected: (place) {
+            _lastDestinationText = place;
+            _destinationController.text = place;
+            _destinationLat = null;
+            _destinationLng = null;
+          },
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: const Color(0xFFE5B800)),
-            const SizedBox(height: 5),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 12),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+      ],
+    ),
+  );
+}
 }

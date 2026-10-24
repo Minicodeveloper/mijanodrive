@@ -25,6 +25,8 @@ extension _VehicleCategoryUi on VehicleCategory {
     switch (this) {
       case VehicleCategory.moto:
         return Icons.two_wheeler;
+      case VehicleCategory.auto:
+        return Icons.directions_car;
     }
   }
 }

@@ -236,7 +236,7 @@ class _DriversModuleState extends State<DriversModule> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '${list[i].vehicleModel.isNotEmpty ? list[i].vehicleModel : 'N/A'} · Placa: ${list[i].plate}',
+                        '${list[i].vehicleType == "auto" ? "Auto" : "Motocar"} ${list[i].vehicleModel} · Placa: ${list[i].plate}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -244,6 +244,17 @@ class _DriversModuleState extends State<DriversModule> {
                           color: Colors.black87,
                         ),
                       ),
+                      if (list[i].isAgencyDriver)
+                        Text(
+                          'Agencia: ${list[i].agencyName ?? ""}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.orange,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       const SizedBox(height: 2),
                       Text(
                         list[i].email.isNotEmpty ? list[i].email : 'Sin correo',
@@ -310,7 +321,7 @@ class _DriversModuleState extends State<DriversModule> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          d.vehicleModel.isNotEmpty ? d.vehicleModel : 'N/A',
+          '${d.vehicleType == "auto" ? "Auto" : "Motocar"} ${d.vehicleModel.isNotEmpty ? d.vehicleModel : "N/A"}',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -320,6 +331,13 @@ class _DriversModuleState extends State<DriversModule> {
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontSize: 10, color: Colors.black54),
         ),
+        if (d.isAgencyDriver)
+          Text(
+            'Agencia: ${d.agencyName ?? ""}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 10, color: Colors.orange, fontWeight: FontWeight.bold),
+          ),
       ],
     );
   }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -808,6 +809,10 @@ class _DashboardModule extends StatelessWidget {
                             },
                           ),
                         ),
+                        if (role == AdminRole.superAdmin) ...[
+                          const SizedBox(height: 24),
+                          const _LiveRequestsSection(),
+                        ],
                       ],
                     ),
                   ),
@@ -857,7 +862,7 @@ class _DashboardModule extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          'Placa: ${d.plate} · Vehículo: ${d.vehicleModel}',
+          'Placa: ${d.plate} · Vehículo: ${d.vehicleType == "auto" ? "Auto" : "Motocar"} ${d.vehicleModel}',
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
@@ -866,6 +871,18 @@ class _DashboardModule extends StatelessWidget {
             color: MijanoTheme.ink,
           ),
         ),
+        if (d.isAgencyDriver)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              'Agencia: ${d.agencyName ?? ""}',
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+                color: Colors.orange,
+              ),
+            ),
+          ),
       ],
     );
 
@@ -1285,3 +1302,290 @@ Widget _buildDocItem({
     ),
   );
 }
+
+class _LiveRequestsSection extends StatefulWidget {
+  const _LiveRequestsSection();
+
+  @override
+  State<_LiveRequestsSection> createState() => _LiveRequestsSectionState();
+}
+
+class _LiveRequestsSectionState extends State<_LiveRequestsSection> {
+  final ValueNotifier<int> _limit = ValueNotifier<int>(10);
+  final ValueNotifier<DateTime> _now = ValueNotifier<DateTime>(DateTime.now());
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      _now.value = DateTime.now();
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _limit.dispose();
+    _now.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          "Solicitudes en vivo",
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: MijanoTheme.ink,
+          ),
+        ),
+        const SizedBox(height: 12),
+        _card(
+          child: ValueListenableBuilder<int>(
+            valueListenable: _limit,
+            builder: (context, limit, _) {
+              return StreamBuilder<List<Driver>>(
+                stream: FirestoreService.instance.allDrivers(),
+                builder: (context, driversSnap) {
+                  final Map<String, Driver> driversMap = {};
+                  if (driversSnap.hasData) {
+                    for (var d in driversSnap.data!) {
+                      driversMap[d.uid] = d;
+                    }
+                  }
+
+                  return StreamBuilder<List<Trip>>(
+                    stream: FirestoreService.instance.liveRequestsStream(limit: limit),
+                    builder: (context, requestsSnap) {
+                      if (requestsSnap.connectionState == ConnectionState.waiting) {
+                        return const Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Center(child: CircularProgressIndicator()),
+                        );
+                      }
+
+                      final trips = requestsSnap.data ?? [];
+                      if (trips.isEmpty) {
+                        return const Padding(
+                          padding: EdgeInsets.all(32),
+                          child: Center(
+                            child: Column(
+                              children: [
+                                Icon(Icons.history, size: 40, color: Colors.black26),
+                                SizedBox(height: 8),
+                                Text(
+                                  "No hay solicitudes activas",
+                                  style: TextStyle(color: Colors.black54),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (final t in trips)
+                            _LiveRequestItem(
+                              trip: t,
+                              driver: t.currentDispatchDriverId != null ? driversMap[t.currentDispatchDriverId!] : null,
+                              nowNotifier: _now,
+                            ),
+                          if (trips.length >= limit)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 16),
+                              child: OutlinedButton(
+                                onPressed: () {
+                                  _limit.value += 10;
+                                },
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: MijanoTheme.ink,
+                                  side: const BorderSide(color: Colors.black12),
+                                ),
+                                child: const Text("Ver más"),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LiveRequestItem extends StatelessWidget {
+  final Trip trip;
+  final Driver? driver;
+  final ValueNotifier<DateTime> nowNotifier;
+
+  const _LiveRequestItem({
+    required this.trip,
+    this.driver,
+    required this.nowNotifier,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAF6EE),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.brown.withValues(alpha: 0.12)),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth >= 600;
+          
+          final content = [
+            Expanded(
+              flex: isWide ? 3 : 0,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    trip.passengerName ?? "Pasajero desconocido",
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    "${trip.originAddress ?? "Origen"} → ${trip.destinationAddress ?? "Destino"}",
+                    style: const TextStyle(fontSize: 13, color: Colors.black87),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            if (isWide) const SizedBox(width: 16) else const SizedBox(height: 12),
+            
+            Expanded(
+              flex: isWide ? 2 : 0,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text("Conductor actual:", style: TextStyle(fontSize: 11, color: Colors.black54)),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          driver?.name ?? "Sin asignar",
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: driver != null ? MijanoTheme.ink : Colors.black38,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (trip.currentDispatchPlan != null) ...[
+                        const SizedBox(width: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: MijanoTheme.sol,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            trip.currentDispatchPlan!,
+                            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ]
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (isWide) const SizedBox(width: 16) else const SizedBox(height: 12),
+            
+            Expanded(
+              flex: isWide ? 1 : 0,
+              child: Align(
+                alignment: isWide ? Alignment.centerRight : Alignment.centerLeft,
+                child: ValueListenableBuilder<DateTime>(
+                  valueListenable: nowNotifier,
+                  builder: (context, now, _) {
+                    final deadline = trip.dispatchDeadline;
+                    if (trip.dispatchExhausted) {
+                      return const Text(
+                        "Sin conductores disponibles",
+                        style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 13),
+                        textAlign: TextAlign.right,
+                      );
+                    }
+                    if (deadline == null) {
+                      return const Text(
+                        "Calculando...",
+                        style: TextStyle(color: Colors.black54, fontSize: 13),
+                      );
+                    }
+                    
+                    final diff = deadline.difference(now);
+                    final seconds = diff.inSeconds;
+                    
+                    if (seconds <= 0) {
+                      return const Text(
+                        "Reasignando...",
+                        style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 13),
+                      );
+                    }
+                    
+                    final mm = (seconds / 60).floor().toString().padLeft(2, "0");
+                    final ss = (seconds % 60).toString().padLeft(2, "0");
+                    
+                    final isUrgent = seconds < 10;
+                    final color = isUrgent ? MijanoTheme.signal : (seconds < 20 ? Colors.orange : Colors.green);
+                    
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.timer, size: 16, color: color),
+                        const SizedBox(width: 4),
+                        Text(
+                          "$mm:$ss",
+                          style: TextStyle(
+                            color: color,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+          ];
+
+          if (isWide) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: content,
+            );
+          } else {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: content,
+            );
+          }
+        },
+      ),
+    );
+  }
+}
+

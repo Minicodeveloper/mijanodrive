@@ -174,6 +174,9 @@ class AuthService {
     String? vehicleColor,
     String? vehicleYear,
     String? vehicleType,
+    bool? isAgencyDriver,
+    String? agencyName,
+    String? agencyRuc,
     String? licenseNumber,
   }) async {
     try {
@@ -198,6 +201,9 @@ class AuthService {
         vehicleColor: vehicleColor,
         vehicleYear: vehicleYear,
         vehicleType: vehicleType,
+        isAgencyDriver: isAgencyDriver,
+        agencyName: agencyName,
+        agencyRuc: agencyRuc,
         licenseNumber: licenseNumber,
       );
     } on fb.FirebaseAuthException catch (e) {
@@ -227,6 +233,9 @@ class AuthService {
     String? vehicleColor,
     String? vehicleYear,
     String? vehicleType,
+    bool? isAgencyDriver,
+    String? agencyName,
+    String? agencyRuc,
     String? licenseNumber,
   }) async {
     return await _createAccountInFirebase(
@@ -246,6 +255,9 @@ class AuthService {
       vehicleColor: vehicleColor,
       vehicleYear: vehicleYear,
       vehicleType: vehicleType,
+      isAgencyDriver: isAgencyDriver,
+      agencyName: agencyName,
+      agencyRuc: agencyRuc,
       licenseNumber: licenseNumber,
     );
   }
@@ -315,6 +327,9 @@ class AuthService {
     String? vehicleColor,
     String? vehicleYear,
     String? vehicleType,
+    bool? isAgencyDriver,
+    String? agencyName,
+    String? agencyRuc,
     String? licenseNumber,
   }) async {
     try {
@@ -352,6 +367,9 @@ class AuthService {
         vehicleColor: vehicleColor,
         vehicleYear: vehicleYear,
         vehicleType: vehicleType,
+        isAgencyDriver: isAgencyDriver,
+        agencyName: agencyName,
+        agencyRuc: agencyRuc,
         licenseNumber: licenseNumber,
       );
 

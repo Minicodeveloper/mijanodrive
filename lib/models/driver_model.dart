@@ -8,7 +8,11 @@ class Driver {
   final String licenseNumber;
   final String plate;
   final String vehicleBrand; 
-  final String vehicleModel; 
+  final String vehicleModel;
+  final String vehicleType;
+  final bool isAgencyDriver;
+  final String? agencyName;
+  final String? agencyRuc;
   final String? photoUrl;
   final String? soatPhotoUrl;
   final String? licensePhotoUrl;
@@ -27,11 +31,15 @@ class Driver {
     required this.uid,
     required this.name,
     required this.email,
-    required this.phone, // <--- Añadido al constructor
+    required this.phone,
     required this.licenseNumber,
     required this.plate,
     required this.vehicleBrand,
     required this.vehicleModel,
+    this.vehicleType = 'moto',
+    this.isAgencyDriver = false,
+    this.agencyName,
+    this.agencyRuc,
     this.photoUrl,
     this.soatPhotoUrl,
     this.licensePhotoUrl,
@@ -52,11 +60,15 @@ class Driver {
       'uid': uid,
       'name': name,
       'email': email,
-      'phone': phone, // <--- Añadido a toMap
+      'phone': phone,
       'licenseNumber': licenseNumber,
       'plate': plate,
       'vehicleBrand': vehicleBrand,
       'vehicleModel': vehicleModel,
+      'vehicleType': vehicleType,
+      'isAgencyDriver': isAgencyDriver,
+      if (agencyName != null) 'agencyName': agencyName,
+      if (agencyRuc != null) 'agencyRuc': agencyRuc,
       'photoUrl': photoUrl,
       'soatPhotoUrl': soatPhotoUrl,
       'licensePhotoUrl': licensePhotoUrl,
@@ -147,6 +159,10 @@ class Driver {
       plate: map['plate'] ?? map['vehiclePlate'] ?? '',
       vehicleBrand: map['vehicleBrand'] ?? '',
       vehicleModel: map['vehicleModel'] ?? map['vehicle'] ?? 'N/A',
+      vehicleType: map['vehicleType'] ?? 'moto',
+      isAgencyDriver: map['isAgencyDriver'] ?? false,
+      agencyName: map['agencyName'],
+      agencyRuc: map['agencyRuc'],
       photoUrl: map['photoUrl'],
       soatPhotoUrl: map['soatPhotoUrl'],
       licensePhotoUrl: map['licensePhotoUrl'],
@@ -176,6 +192,10 @@ class Driver {
     String? plate,
     String? vehicleBrand,
     String? vehicleModel,
+    String? vehicleType,
+    bool? isAgencyDriver,
+    String? agencyName,
+    String? agencyRuc,
     String? photoUrl,
     String? soatPhotoUrl,
     String? licensePhotoUrl,
@@ -194,11 +214,15 @@ class Driver {
       uid: uid ?? this.uid,
       name: name ?? this.name,
       email: email ?? this.email,
-      phone: phone ?? this.phone, // <--- Añadido aquí
+      phone: phone ?? this.phone,
       licenseNumber: licenseNumber ?? this.licenseNumber,
       plate: plate ?? this.plate,
       vehicleBrand: vehicleBrand ?? this.vehicleBrand,
       vehicleModel: vehicleModel ?? this.vehicleModel,
+      vehicleType: vehicleType ?? this.vehicleType,
+      isAgencyDriver: isAgencyDriver ?? this.isAgencyDriver,
+      agencyName: agencyName ?? this.agencyName,
+      agencyRuc: agencyRuc ?? this.agencyRuc,
       photoUrl: photoUrl ?? this.photoUrl,
       soatPhotoUrl: soatPhotoUrl ?? this.soatPhotoUrl,
       licensePhotoUrl: licensePhotoUrl ?? this.licensePhotoUrl,

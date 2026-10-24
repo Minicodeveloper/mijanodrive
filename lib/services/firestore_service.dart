@@ -289,6 +289,17 @@ class FirestoreService {
       });
 }
 
+  /// Solicitudes en vivo (para el admin)
+  Stream<List<Trip>> liveRequestsStream({required int limit}) {
+    return _db
+        .collection('trips')
+        .where('status', isEqualTo: 'pending')
+        .orderBy('createdAt', descending: true)
+        .limit(limit)
+        .snapshots()
+        .map((q) => q.docs.map((d) => Trip.fromFirestore(d)).toList());
+  }
+
   Stream<List<Trip>> tripsForPassenger(String uid) => _db
       .collection('trips')
       .where('passengerId', isEqualTo: uid)
@@ -329,6 +340,7 @@ class FirestoreService {
       .map((q) => q.docs.map((d) => d.data()).toList());
 
   // ---- Ciudades / tarifas ----
+  @Deprecated('Use getPricingSettings() instead')
   Future<Map<String, dynamic>?> getCityTariff(String city) async {
     try {
       final q = await _db
@@ -811,6 +823,17 @@ class FirestoreService {
       .orderBy('scheduledAt', descending: false)
       .snapshots()
       .map((q) => q.docs.map((d) => {'id': d.id, ...d.data()}).toList());
+
+  /// Lee `settings/pricing`; si no existe o falla (por reglas), retorna valores por defecto (solo lectura).
+  Future<PricingSettings> getPricingSettings() async {
+    try {
+      final doc = await _db.collection('settings').doc('pricing').get();
+      if (doc.exists) {
+        return PricingSettings.fromMap(doc.data());
+      }
+    } catch (_) {}
+    return PricingSettings.fromMap(null);
+  }
 
   /// Lee `settings/pricing`; si no existe lo crea con los valores por defecto.
   Future<({PricingSettings settings, bool created})> ensurePricingSettings() {

@@ -47,6 +47,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _acceptedTerms = false;
   bool _acceptedPrivacy = false;
 
+  String _vehicleType = 'moto';
+  bool _isAgencyDriver = false;
+  final _agencyNameController = TextEditingController();
+  final _agencyRucController = TextEditingController();
   
   final Map<int, File?> _documents = {
     0: null,
@@ -93,6 +97,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _colorController.dispose();
     _yearController.dispose();
     _plateController.dispose();
+    _agencyNameController.dispose();
+    _agencyRucController.dispose();
     super.dispose();
   }
 
@@ -228,6 +234,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
         _yearController.text.trim().isEmpty) {
       _showSnackBar('Completa todos los datos del vehículo');
       return false;
+    }
+    
+    if (_isAgencyDriver) {
+      if (_agencyNameController.text.trim().isEmpty) {
+        _showSnackBar('Por favor ingresa el nombre de la agencia');
+        return false;
+      }
+      final ruc = _agencyRucController.text.trim();
+      if (ruc.isNotEmpty && !RegExp(r'^\d{11}$').hasMatch(ruc)) {
+        _showSnackBar('El RUC debe contener exactamente 11 números');
+        return false;
+      }
     }
 
     final plate = _plateController.text.trim();
@@ -405,6 +423,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 vehicleModel: _modelController.text.trim(),
                 vehicleColor: _colorController.text.trim(),
                 vehicleYear: _yearController.text.trim(),
+                vehicleType: _vehicleType,
+                isAgencyDriver: _isAgencyDriver,
+                agencyName: _isAgencyDriver ? _agencyNameController.text.trim() : null,
+                agencyRuc: _isAgencyDriver ? _agencyRucController.text.trim() : null,
                 licenseNumber: _licenseController.text.trim(),
               );
 
@@ -741,16 +763,82 @@ class _RegisterScreenState extends State<RegisterScreen> {
           const SizedBox(height: 15),
           const Text('Tipo de vehículo', style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF9D408).withOpacity(0.2),
-              border: Border.all(color: const Color(0xFFF9D408)),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            alignment: Alignment.center,
-            child: const Text('Mototaxi', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black)),
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _vehicleType = 'moto'),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      color: _vehicleType == 'moto' ? const Color(0xFFF9D408).withOpacity(0.2) : Colors.white,
+                      border: Border.all(
+                        color: _vehicleType == 'moto' ? const Color(0xFFF9D408) : Colors.grey.shade300,
+                        width: _vehicleType == 'moto' ? 2 : 1,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(Icons.two_wheeler, color: _vehicleType == 'moto' ? Colors.black : Colors.grey),
+                        const SizedBox(height: 4),
+                        Text('Motocar', style: TextStyle(fontWeight: FontWeight.bold, color: _vehicleType == 'moto' ? Colors.black : Colors.grey)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 15),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _vehicleType = 'auto'),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      color: _vehicleType == 'auto' ? const Color(0xFFF9D408).withOpacity(0.2) : Colors.white,
+                      border: Border.all(
+                        color: _vehicleType == 'auto' ? const Color(0xFFF9D408) : Colors.grey.shade300,
+                        width: _vehicleType == 'auto' ? 2 : 1,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(Icons.local_taxi, color: _vehicleType == 'auto' ? Colors.black : Colors.grey),
+                        const SizedBox(height: 4),
+                        Text('Auto', style: TextStyle(fontWeight: FontWeight.bold, color: _vehicleType == 'auto' ? Colors.black : Colors.grey)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
+          const SizedBox(height: 15),
+          SwitchListTile(
+            title: const Text('Pertenezco a una agencia', style: TextStyle(fontWeight: FontWeight.bold)),
+            value: _isAgencyDriver,
+            activeColor: const Color(0xFFF9D408),
+            onChanged: (val) => setState(() => _isAgencyDriver = val),
+          ),
+          if (_isAgencyDriver) ...[
+            const SizedBox(height: 10),
+            TextField(
+              controller: _agencyNameController,
+              decoration: const InputDecoration(labelText: 'Nombre de la agencia', border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 15),
+            TextField(
+              controller: _agencyRucController,
+              keyboardType: TextInputType.number,
+              maxLength: 11,
+              decoration: const InputDecoration(
+                labelText: 'RUC de la agencia (Opcional)', 
+                border: OutlineInputBorder(),
+                counterText: '',
+              ),
+            ),
+          ],
           const SizedBox(height: 15),
           TextField(
             controller: _brandController,
