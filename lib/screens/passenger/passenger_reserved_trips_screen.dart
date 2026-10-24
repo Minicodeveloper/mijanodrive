@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -836,6 +837,9 @@ class _CreateReservationBottomSheetState
   List<String> _originSuggestions = [];
   List<String> _destinationSuggestions = [];
 
+  LatLng? _originLatLng;
+  LatLng? _destinationLatLng;
+
   DateTime _scheduledAt = DateTime.now().add(const Duration(hours: 1));
   String _selectedPaymentMethod = 'Efectivo';
   bool _carriesCargo = false;
@@ -910,9 +914,52 @@ class _CreateReservationBottomSheetState
     return null;
   }
 
+  Future<void> _openMapPicker({required bool isOrigin}) async {
+    LatLng initialPoint = const LatLng(-6.4869, -76.3654);
+    if (isOrigin && _originLatLng != null) {
+      initialPoint = _originLatLng!;
+    } else if (!isOrigin && _destinationLatLng != null) {
+      initialPoint = _destinationLatLng!;
+    } else {
+      try {
+        final pos = await LocationService.instance.current();
+        initialPoint = LatLng(pos.latitude, pos.longitude);
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+    final result = await Navigator.push<Map<String, dynamic>>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => _MapLocationPickerScreen(
+          isOrigin: isOrigin,
+          initialPosition: initialPoint,
+          apiKey: _apiKey,
+        ),
+      ),
+    );
+
+    if (result != null && mounted) {
+      final LatLng pickedLatLng = result['latLng'] as LatLng;
+      final String pickedAddress = result['address'] as String;
+      setState(() {
+        if (isOrigin) {
+          _originLatLng = pickedLatLng;
+          _originController.text = pickedAddress;
+          _originSuggestions = [];
+        } else {
+          _destinationLatLng = pickedLatLng;
+          _destinationController.text = pickedAddress;
+          _destinationSuggestions = [];
+        }
+      });
+      await _recalculateFare();
+    }
+  }
+
   Future<void> _recalculateFare() async {
     final destText = _destinationController.text.trim();
-    if (destText.isEmpty) return;
+    if (destText.isEmpty && _destinationLatLng == null) return;
 
     setState(() => _isCalculatingFare = true);
 
@@ -921,8 +968,10 @@ class _CreateReservationBottomSheetState
           ? _originController.text.trim()
           : 'Mi ubicación actual';
 
-      LatLng? originLatLng = await _getLatLngFromAddress(originText);
-      final LatLng? destLatLng = await _getLatLngFromAddress(destText);
+      LatLng? originLatLng =
+          _originLatLng ?? await _getLatLngFromAddress(originText);
+      final LatLng? destLatLng =
+          _destinationLatLng ?? await _getLatLngFromAddress(destText);
 
       if (originLatLng == null) {
         try {
@@ -1000,12 +1049,12 @@ class _CreateReservationBottomSheetState
     setState(() => _isSubmitting = true);
 
     try {
-      LatLng? originCoords = await _getLatLngFromAddress(
-        _originController.text.trim(),
-      );
-      final LatLng? destCoords = await _getLatLngFromAddress(
-        _destinationController.text.trim(),
-      );
+      LatLng? originCoords =
+          _originLatLng ??
+          await _getLatLngFromAddress(_originController.text.trim());
+      final LatLng? destCoords =
+          _destinationLatLng ??
+          await _getLatLngFromAddress(_destinationController.text.trim());
 
       if (originCoords == null) {
         try {
@@ -1109,7 +1158,10 @@ class _CreateReservationBottomSheetState
             // ORIGEN
             TextField(
               controller: _originController,
-              onChanged: (v) => _searchPlaces(v, isOrigin: true),
+              onChanged: (v) {
+                _originLatLng = null;
+                _searchPlaces(v, isOrigin: true);
+              },
               style: const TextStyle(color: Colors.white, fontSize: 14),
               decoration: InputDecoration(
                 filled: true,
@@ -1120,6 +1172,14 @@ class _CreateReservationBottomSheetState
                   Icons.trip_origin,
                   color: Colors.greenAccent,
                   size: 18,
+                ),
+                suffixIcon: IconButton(
+                  tooltip: 'Seleccionar origen en el mapa',
+                  icon: const Icon(
+                    Icons.pin_drop_outlined,
+                    color: Colors.greenAccent,
+                  ),
+                  onPressed: () => _openMapPicker(isOrigin: true),
                 ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -1157,6 +1217,7 @@ class _CreateReservationBottomSheetState
                       onTap: () {
                         setState(() {
                           _originController.text = item;
+                          _originLatLng = null;
                           _originSuggestions = [];
                         });
                         _recalculateFare();
@@ -1170,7 +1231,10 @@ class _CreateReservationBottomSheetState
             // DESTINO
             TextField(
               controller: _destinationController,
-              onChanged: (v) => _searchPlaces(v, isOrigin: false),
+              onChanged: (v) {
+                _destinationLatLng = null;
+                _searchPlaces(v, isOrigin: false);
+              },
               style: const TextStyle(color: Colors.white, fontSize: 14),
               decoration: InputDecoration(
                 filled: true,
@@ -1181,6 +1245,14 @@ class _CreateReservationBottomSheetState
                   Icons.flag,
                   color: Colors.redAccent,
                   size: 18,
+                ),
+                suffixIcon: IconButton(
+                  tooltip: 'Seleccionar destino en el mapa',
+                  icon: const Icon(
+                    Icons.pin_drop_outlined,
+                    color: Colors.redAccent,
+                  ),
+                  onPressed: () => _openMapPicker(isOrigin: false),
                 ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -1218,6 +1290,7 @@ class _CreateReservationBottomSheetState
                       onTap: () {
                         setState(() {
                           _destinationController.text = item;
+                          _destinationLatLng = null;
                           _destinationSuggestions = [];
                         });
                         _recalculateFare();
@@ -1486,6 +1559,210 @@ class _CreateReservationBottomSheetState
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _MapLocationPickerScreen extends StatefulWidget {
+  const _MapLocationPickerScreen({
+    required this.isOrigin,
+    required this.initialPosition,
+    required this.apiKey,
+  });
+
+  final bool isOrigin;
+  final LatLng initialPosition;
+  final String apiKey;
+
+  @override
+  State<_MapLocationPickerScreen> createState() =>
+      _MapLocationPickerScreenState();
+}
+
+class _MapLocationPickerScreenState extends State<_MapLocationPickerScreen> {
+  GoogleMapController? _mapController;
+  late LatLng _currentTarget;
+  String _address = 'Obteniendo dirección...';
+  bool _isLoadingAddress = true;
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentTarget = widget.initialPosition;
+    _reverseGeocode(_currentTarget);
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _mapController?.dispose();
+    super.dispose();
+  }
+
+  void _onCameraIdle() {
+    _debounce?.cancel();
+    setState(() => _isLoadingAddress = true);
+    _debounce = Timer(const Duration(milliseconds: 350), () {
+      _reverseGeocode(_currentTarget);
+    });
+  }
+
+  Future<void> _reverseGeocode(LatLng pos) async {
+    try {
+      final url = Uri.parse(
+        'https://maps.googleapis.com/maps/api/geocode/json'
+        '?latlng=${pos.latitude},${pos.longitude}'
+        '&key=${widget.apiKey}'
+        '&language=es',
+      );
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['results'] != null && (data['results'] as List).isNotEmpty) {
+          if (mounted) {
+            setState(() {
+              _address = data['results'][0]['formatted_address'].toString();
+              _isLoadingAddress = false;
+            });
+          }
+          return;
+        }
+      }
+    } catch (_) {}
+    if (mounted) {
+      setState(() {
+        _address =
+            'Ubicación (${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)})';
+        _isLoadingAddress = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF1E1E1E),
+        foregroundColor: Colors.white,
+        title: Text(
+          widget.isOrigin
+              ? 'Seleccionar origen en el mapa'
+              : 'Seleccionar destino en el mapa',
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+      ),
+      body: Stack(
+        children: [
+          GoogleMap(
+            initialCameraPosition: CameraPosition(
+              target: widget.initialPosition,
+              zoom: 16.5,
+            ),
+            myLocationEnabled: true,
+            myLocationButtonEnabled: true,
+            zoomControlsEnabled: false,
+            onMapCreated: (c) => _mapController = c,
+            onCameraMove: (pos) => _currentTarget = pos.target,
+            onCameraIdle: _onCameraIdle,
+            onTap: (point) {
+              _currentTarget = point;
+              _mapController?.animateCamera(CameraUpdate.newLatLng(point));
+              _onCameraIdle();
+            },
+          ),
+          IgnorePointer(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 36),
+                child: Icon(
+                  Icons.location_on,
+                  size: 46,
+                  color: widget.isOrigin
+                      ? Colors.green.shade600
+                      : Colors.redAccent,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 24,
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: const [
+                  BoxShadow(color: Colors.black26, blurRadius: 10),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      if (_isLoadingAddress)
+                        const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      else
+                        Icon(
+                          widget.isOrigin ? Icons.trip_origin : Icons.flag,
+                          color: widget.isOrigin
+                              ? Colors.green.shade700
+                              : Colors.redAccent,
+                        ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _address,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFF9D408),
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () {
+                        Navigator.pop(context, {
+                          'latLng': _currentTarget,
+                          'address': _address,
+                        });
+                      },
+                      icon: const Icon(Icons.check_circle_outline),
+                      label: Text(
+                        widget.isOrigin
+                            ? 'Confirmar origen'
+                            : 'Confirmar destino',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

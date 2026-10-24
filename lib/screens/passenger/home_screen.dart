@@ -46,6 +46,14 @@ class _HomeScreenState extends State<HomeScreen> {
   List<String> _originSuggestions = [];
   List<String> _destinationSuggestions = [];
 
+  LatLng? _originLatLng;
+  LatLng? _destinationLatLng;
+  String? _mapPickTarget; // 'origin' o 'destination'
+  LatLng _mapCameraTarget = _tarapoto;
+  String _mapPickedAddress = '';
+  bool _isReverseGeocoding = false;
+  Timer? _reverseGeocodeDebounce;
+
   bool _tripSelected = false;
   bool _isSearchingDriver = false;
   String _selectedPaymentMethod = 'Efectivo';
@@ -103,6 +111,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _destinationFocus.dispose();
     _searchTimer?.cancel();
     _dispatchTimer?.cancel();
+    _reverseGeocodeDebounce?.cancel();
     _activeTripSubscription?.cancel();
     super.dispose();
   }
@@ -504,13 +513,38 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _selectOrigin(String place) {
+  void _selectOrigin(String place) async {
     setState(() {
       _originController.text = place;
+      _originLatLng = null;
       _isSearchingOrigin = false;
       _originSuggestions = [];
       _originFocus.unfocus();
     });
+    final coords = await _getLatLngFromAddress(place);
+    if (coords != null && mounted) {
+      setState(() {
+        _originLatLng = coords;
+      });
+      if (_destinationController.text.isNotEmpty) {
+        await _calculateAndDrawRoute();
+      } else {
+        setState(() {
+          _markers.removeWhere((m) => m.markerId.value == 'origin');
+          _markers.add(
+            Marker(
+              markerId: const MarkerId('origin'),
+              position: coords,
+              infoWindow: const InfoWindow(title: 'Origen'),
+              icon: BitmapDescriptor.defaultMarkerWithHue(
+                BitmapDescriptor.hueGreen,
+              ),
+            ),
+          );
+        });
+        _mapController?.animateCamera(CameraUpdate.newLatLngZoom(coords, 16));
+      }
+    }
   }
 
   Future<LatLng?> _getLatLngFromAddress(String address) async {
@@ -528,6 +562,123 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     } catch (e) {}
     return null;
+  }
+
+  Future<String> _getAddressFromLatLng(LatLng position) async {
+    try {
+      final url = Uri.parse(
+        'https://maps.googleapis.com/maps/api/geocode/json'
+        '?latlng=${position.latitude},${position.longitude}'
+        '&key=$_apiKey'
+        '&language=es',
+      );
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['results'] != null && (data['results'] as List).isNotEmpty) {
+          return data['results'][0]['formatted_address'].toString();
+        }
+      }
+    } catch (_) {}
+    return 'Ubicación (${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)})';
+  }
+
+  Future<void> _startPickingOnMap(
+    String target, {
+    LatLng? initialPoint,
+  }) async {
+    _originFocus.unfocus();
+    _destinationFocus.unfocus();
+
+    LatLng startTarget = initialPoint ?? _mapCameraTarget;
+    if (initialPoint == null) {
+      if (target == 'origin' && _originLatLng != null) {
+        startTarget = _originLatLng!;
+      } else if (target == 'destination' && _destinationLatLng != null) {
+        startTarget = _destinationLatLng!;
+      } else {
+        try {
+          final pos = await LocationService.instance.current();
+          startTarget = LatLng(pos.latitude, pos.longitude);
+        } catch (_) {}
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _mapPickTarget = target;
+      _mapCameraTarget = startTarget;
+      _isSearchingOrigin = false;
+      _isSearchingDestination = false;
+      _isReverseGeocoding = true;
+      _mapPickedAddress = 'Obteniendo dirección...';
+    });
+
+    await _mapController?.animateCamera(
+      CameraUpdate.newLatLngZoom(startTarget, 16.5),
+    );
+    _triggerReverseGeocode(startTarget);
+  }
+
+  void _triggerReverseGeocode(LatLng target) {
+    _reverseGeocodeDebounce?.cancel();
+    setState(() {
+      _isReverseGeocoding = true;
+    });
+    _reverseGeocodeDebounce = Timer(const Duration(milliseconds: 350), () async {
+      final address = await _getAddressFromLatLng(target);
+      if (!mounted || _mapPickTarget == null) return;
+      setState(() {
+        _mapPickedAddress = address;
+        _isReverseGeocoding = false;
+      });
+    });
+  }
+
+  Future<void> _confirmMapPickedLocation() async {
+    final target = _mapPickTarget;
+    if (target == null) return;
+
+    final chosenLatLng = _mapCameraTarget;
+    String address = _mapPickedAddress;
+    if (_isReverseGeocoding ||
+        address.isEmpty ||
+        address == 'Obteniendo dirección...') {
+      address = await _getAddressFromLatLng(chosenLatLng);
+    }
+
+    if (!mounted) return;
+
+    if (target == 'origin') {
+      setState(() {
+        _originLatLng = chosenLatLng;
+        _originController.text = address;
+        _mapPickTarget = null;
+        _markers.removeWhere((m) => m.markerId.value == 'origin');
+        _markers.add(
+          Marker(
+            markerId: const MarkerId('origin'),
+            position: chosenLatLng,
+            infoWindow: const InfoWindow(title: 'Origen'),
+            icon: BitmapDescriptor.defaultMarkerWithHue(
+              BitmapDescriptor.hueGreen,
+            ),
+          ),
+        );
+      });
+
+      if (_destinationController.text.isNotEmpty ||
+          _destinationLatLng != null) {
+        await _calculateAndDrawRoute();
+      }
+    } else {
+      setState(() {
+        _destinationLatLng = chosenLatLng;
+        _destinationController.text = address;
+        _mapPickTarget = null;
+      });
+      await _calculateAndDrawRoute();
+    }
   }
 
   List<LatLng> _decodePolyline(String encoded) {
@@ -563,18 +714,27 @@ class _HomeScreenState extends State<HomeScreen> {
   void _selectDestination(String place) async {
     setState(() {
       _destinationController.text = place;
+      _destinationLatLng = null;
       _isSearchingDestination = false;
       _destinationSuggestions = [];
       _destinationFocus.unfocus();
     });
 
+    await _calculateAndDrawRoute();
+  }
+
+  Future<void> _calculateAndDrawRoute() async {
     final originText = _originController.text.isNotEmpty
         ? _originController.text
         : 'Mi ubicación actual';
+    final destText = _destinationController.text;
 
-    LatLng? originLatLng = await _getLatLngFromAddress(originText);
-    LatLng? destLatLng = await _getLatLngFromAddress(place);
-
+    LatLng? originLatLng = _originLatLng;
+    if (originLatLng == null &&
+        originText != 'Mi ubicación actual' &&
+        originText.isNotEmpty) {
+      originLatLng = await _getLatLngFromAddress(originText);
+    }
     if (originLatLng == null) {
       try {
         final pos = await LocationService.instance.current();
@@ -582,7 +742,14 @@ class _HomeScreenState extends State<HomeScreen> {
       } catch (e) {}
     }
 
+    LatLng? destLatLng = _destinationLatLng;
+    if (destLatLng == null && destText.isNotEmpty) {
+      destLatLng = await _getLatLngFromAddress(destText);
+    }
+
     if (originLatLng != null && destLatLng != null) {
+      _originLatLng = originLatLng;
+      _destinationLatLng = destLatLng;
       try {
         final directionsUrl = Uri.parse(
           'https://maps.googleapis.com/maps/api/directions/json'
@@ -621,6 +788,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _durationText = '15 min';
         }
 
+        if (!mounted) return;
         setState(() {
           _tripSelected = true;
 
@@ -638,7 +806,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _markers.add(
             Marker(
               markerId: const MarkerId('destination'),
-              position: destLatLng,
+              position: destLatLng!,
               infoWindow: const InfoWindow(title: 'Destino'),
               icon: BitmapDescriptor.defaultMarkerWithHue(
                 BitmapDescriptor.hueRed,
@@ -1063,10 +1231,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
                               try {
                                 LatLng? originCoords =
+                                    _originLatLng ??
                                     await _getLatLngFromAddress(
                                       _originController.text,
                                     );
                                 LatLng? destCoords =
+                                    _destinationLatLng ??
                                     await _getLatLngFromAddress(
                                       _destinationController.text,
                                     );
@@ -1317,6 +1487,9 @@ class _HomeScreenState extends State<HomeScreen> {
       _activeTripId = null;
       _isSearchingDriver = false;
       _tripSelected = false;
+      _originLatLng = null;
+      _destinationLatLng = null;
+      _mapPickTarget = null;
       _originController.clear();
       _destinationController.clear();
       _markers.clear();
@@ -1327,6 +1500,9 @@ class _HomeScreenState extends State<HomeScreen> {
   void _clearRoute() {
     _searchTimer?.cancel();
     setState(() {
+      _originLatLng = null;
+      _destinationLatLng = null;
+      _mapPickTarget = null;
       _originController.clear();
       _destinationController.clear();
       _markers.clear();
@@ -1483,6 +1659,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildMainContent(user) {
+    final bool isPickingOnMap = _mapPickTarget != null && !_isSearchingDriver;
+    final bool isPickingOrigin = _mapPickTarget == 'origin';
+
     return Stack(
       children: [
         GoogleMap(
@@ -1495,7 +1674,76 @@ class _HomeScreenState extends State<HomeScreen> {
           compassEnabled: false,
           polylines: _polylines,
           markers: _markers,
+          onCameraMove: (CameraPosition position) {
+            _mapCameraTarget = position.target;
+          },
+          onCameraIdle: () {
+            if (_mapPickTarget != null) {
+              _triggerReverseGeocode(_mapCameraTarget);
+            }
+          },
+          onTap: (LatLng tappedPoint) {
+            if (_isSearchingDriver) return;
+            if (_mapPickTarget != null) {
+              _mapCameraTarget = tappedPoint;
+              _mapController?.animateCamera(
+                CameraUpdate.newLatLng(tappedPoint),
+              );
+              _triggerReverseGeocode(tappedPoint);
+            } else {
+              final target = _originFocus.hasFocus ? 'origin' : 'destination';
+              _startPickingOnMap(target, initialPoint: tappedPoint);
+            }
+          },
         ),
+        if (isPickingOnMap)
+          IgnorePointer(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 38),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E1E1E),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: const Color(0xFFF9D408),
+                          width: 1.5,
+                        ),
+                        boxShadow: const [
+                          BoxShadow(color: Colors.black26, blurRadius: 6),
+                        ],
+                      ),
+                      child: Text(
+                        isPickingOrigin
+                            ? 'Mueve o toca el mapa para fijar el ORIGEN'
+                            : 'Mueve o toca el mapa para fijar el DESTINO',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Icon(
+                      Icons.location_on,
+                      size: 46,
+                      color: isPickingOrigin
+                          ? Colors.green.shade600
+                          : Colors.redAccent,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         Positioned(
           top: 45,
           left: 20,
@@ -1507,6 +1755,21 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
+        if (isPickingOnMap)
+          Positioned(
+            top: 45,
+            right: 20,
+            child: FloatingActionButton.small(
+              heroTag: 'btn_my_loc_picker',
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black87,
+              onPressed: () async {
+                await _goToCurrentLocation();
+              },
+              tooltip: 'Mi ubicación actual',
+              child: const Icon(Icons.my_location),
+            ),
+          ),
         Positioned(
           bottom: 0,
           left: 0,
@@ -1829,6 +2092,199 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ],
                     )
+                  : isPickingOnMap
+                  ? Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.pin_drop,
+                                  color: isPickingOrigin
+                                      ? Colors.green.shade600
+                                      : Colors.redAccent,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  isPickingOrigin
+                                      ? 'Seleccionar origen en mapa'
+                                      : 'Seleccionar destino en mapa',
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              icon: const Icon(Icons.close, color: Colors.grey),
+                              onPressed: () {
+                                setState(() {
+                                  _mapPickTarget = null;
+                                });
+                              },
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ChoiceChip(
+                                label: const Center(
+                                  child: Text('Fijar Origen'),
+                                ),
+                                selected: isPickingOrigin,
+                                selectedColor: const Color(0xFFF9D408),
+                                backgroundColor: Colors.grey.shade100,
+                                labelStyle: TextStyle(
+                                  color: Colors.black,
+                                  fontWeight: isPickingOrigin
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  fontSize: 12,
+                                ),
+                                onSelected: (_) =>
+                                    _startPickingOnMap('origin'),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: ChoiceChip(
+                                label: const Center(
+                                  child: Text('Fijar Destino'),
+                                ),
+                                selected: !isPickingOrigin,
+                                selectedColor: const Color(0xFFF9D408),
+                                backgroundColor: Colors.grey.shade100,
+                                labelStyle: TextStyle(
+                                  color: Colors.black,
+                                  fontWeight: !isPickingOrigin
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  fontSize: 12,
+                                ),
+                                onSelected: (_) =>
+                                    _startPickingOnMap('destination'),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey.shade300),
+                          ),
+                          child: Row(
+                            children: [
+                              if (_isReverseGeocoding)
+                                const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.black87,
+                                  ),
+                                )
+                              else
+                                Icon(
+                                  isPickingOrigin
+                                      ? Icons.trip_origin
+                                      : Icons.flag,
+                                  size: 18,
+                                  color: isPickingOrigin
+                                      ? Colors.green.shade700
+                                      : Colors.redAccent,
+                                ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  _mapPickedAddress.isNotEmpty
+                                      ? _mapPickedAddress
+                                      : 'Mueve el mapa para elegir un punto...',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.black87,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
+                                  side: BorderSide(color: Colors.grey.shade300),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    _mapPickTarget = null;
+                                  });
+                                },
+                                child: const Text(
+                                  'Volver',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              flex: 2,
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFFF9D408),
+                                  foregroundColor: Colors.black,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  elevation: 0,
+                                ),
+                                onPressed: _confirmMapPickedLocation,
+                                icon: const Icon(Icons.check_circle_outline),
+                                label: Text(
+                                  isPickingOrigin
+                                      ? 'Confirmar origen'
+                                      : 'Confirmar destino',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    )
                   : Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1899,15 +2355,53 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                         const SizedBox(height: 14),
-                        const Text(
-                          'Introduce la ruta...',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black,
-                          ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Introduce la ruta...',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black,
+                              ),
+                            ),
+                            TextButton.icon(
+                              style: TextButton.styleFrom(
+                                foregroundColor: Colors.black87,
+                                backgroundColor: const Color(
+                                  0xFFF9D408,
+                                ).withValues(alpha: 0.25),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                              onPressed: () {
+                                final target = _originFocus.hasFocus
+                                    ? 'origin'
+                                    : 'destination';
+                                _startPickingOnMap(target);
+                              },
+                              icon: const Icon(
+                                Icons.map_outlined,
+                                size: 16,
+                                color: Colors.black87,
+                              ),
+                              label: const Text(
+                                'Elegir en mapa',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 15),
+                        const SizedBox(height: 12),
                         TextField(
                           controller: _originController,
                           focusNode: _originFocus,
@@ -1922,15 +2416,30 @@ class _HomeScreenState extends State<HomeScreen> {
                               color: Colors.black,
                               size: 20,
                             ),
-                            suffixIcon: _originController.text.isNotEmpty
-                                ? IconButton(
+                            suffixIcon: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (_originController.text.isNotEmpty)
+                                  IconButton(
                                     icon: const Icon(
                                       Icons.clear,
                                       color: Colors.black54,
+                                      size: 20,
                                     ),
                                     onPressed: _clearRoute,
-                                  )
-                                : null,
+                                  ),
+                                IconButton(
+                                  tooltip: 'Seleccionar origen en el mapa',
+                                  icon: const Icon(
+                                    Icons.pin_drop_outlined,
+                                    color: Colors.green,
+                                    size: 22,
+                                  ),
+                                  onPressed: () =>
+                                      _startPickingOnMap('origin'),
+                                ),
+                              ],
+                            ),
                             contentPadding: const EdgeInsets.symmetric(
                               vertical: 14,
                               horizontal: 12,
@@ -1955,11 +2464,10 @@ class _HomeScreenState extends State<HomeScreen> {
                             color: Colors.black87,
                           ),
                         ),
-                        if (_isSearchingOrigin &&
-                            _originSuggestions.isNotEmpty) ...[
+                        if (_isSearchingOrigin) ...[
                           const SizedBox(height: 5),
                           Container(
-                            constraints: const BoxConstraints(maxHeight: 180),
+                            constraints: const BoxConstraints(maxHeight: 210),
                             decoration: BoxDecoration(
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(12),
@@ -1967,9 +2475,29 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             child: ListView.builder(
                               shrinkWrap: true,
-                              itemCount: _originSuggestions.length,
+                              itemCount: _originSuggestions.length + 1,
                               itemBuilder: (context, index) {
-                                final suggestion = _originSuggestions[index];
+                                if (index == 0) {
+                                  return ListTile(
+                                    dense: true,
+                                    leading: const Icon(
+                                      Icons.map,
+                                      color: Colors.green,
+                                      size: 20,
+                                    ),
+                                    title: const Text(
+                                      'Seleccionar origen directamente en el mapa',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                    onTap: () => _startPickingOnMap('origin'),
+                                  );
+                                }
+                                final suggestion =
+                                    _originSuggestions[index - 1];
                                 return ListTile(
                                   leading: const Icon(
                                     Icons.location_on,
@@ -2001,15 +2529,30 @@ class _HomeScreenState extends State<HomeScreen> {
                               color: Colors.black,
                               size: 20,
                             ),
-                            suffixIcon: _destinationController.text.isNotEmpty
-                                ? IconButton(
+                            suffixIcon: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (_destinationController.text.isNotEmpty)
+                                  IconButton(
                                     icon: const Icon(
                                       Icons.clear,
                                       color: Colors.black54,
+                                      size: 20,
                                     ),
                                     onPressed: _clearRoute,
-                                  )
-                                : null,
+                                  ),
+                                IconButton(
+                                  tooltip: 'Seleccionar destino en el mapa',
+                                  icon: const Icon(
+                                    Icons.pin_drop_outlined,
+                                    color: Colors.redAccent,
+                                    size: 22,
+                                  ),
+                                  onPressed: () =>
+                                      _startPickingOnMap('destination'),
+                                ),
+                              ],
+                            ),
                             contentPadding: const EdgeInsets.symmetric(
                               vertical: 14,
                               horizontal: 12,
@@ -2034,11 +2577,10 @@ class _HomeScreenState extends State<HomeScreen> {
                             color: Colors.black87,
                           ),
                         ),
-                        if (_isSearchingDestination &&
-                            _destinationSuggestions.isNotEmpty) ...[
+                        if (_isSearchingDestination) ...[
                           const SizedBox(height: 5),
                           Container(
-                            constraints: const BoxConstraints(maxHeight: 180),
+                            constraints: const BoxConstraints(maxHeight: 210),
                             decoration: BoxDecoration(
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(12),
@@ -2046,10 +2588,30 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             child: ListView.builder(
                               shrinkWrap: true,
-                              itemCount: _destinationSuggestions.length,
+                              itemCount: _destinationSuggestions.length + 1,
                               itemBuilder: (context, index) {
+                                if (index == 0) {
+                                  return ListTile(
+                                    dense: true,
+                                    leading: const Icon(
+                                      Icons.map,
+                                      color: Colors.redAccent,
+                                      size: 20,
+                                    ),
+                                    title: const Text(
+                                      'Seleccionar destino directamente en el mapa',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                    onTap: () =>
+                                        _startPickingOnMap('destination'),
+                                  );
+                                }
                                 final suggestion =
-                                    _destinationSuggestions[index];
+                                    _destinationSuggestions[index - 1];
                                 return ListTile(
                                   leading: const Icon(
                                     Icons.location_on,
@@ -2206,7 +2768,8 @@ class AdCarouselBanner extends StatelessWidget {
 
         final docs = snapshot.data!.docs.where((doc) {
           final data = doc.data() as Map<String, dynamic>;
-          return data['isActive'] != false;
+          final adType = (data['type'] ?? 'banner').toString().toLowerCase();
+          return data['isActive'] != false && adType != 'popup';
         }).toList();
 
         if (docs.isEmpty) {
@@ -2246,12 +2809,16 @@ class _DynamicCarouselState extends State<_DynamicCarousel> {
 
     _carouselTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
       if (_pageController.hasClients && widget.ads.isNotEmpty) {
-        _currentPage = (_currentPage + 1) % widget.ads.length;
-        _pageController.animateToPage(
-          _currentPage,
-          duration: const Duration(milliseconds: 500),
-          curve: Curves.easeInOut,
-        );
+        if (widget.ads.length == 1) {
+          FirestoreService.instance.trackAdView(widget.ads[0].id);
+        } else {
+          _currentPage = (_currentPage + 1) % widget.ads.length;
+          _pageController.animateToPage(
+            _currentPage,
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.easeInOut,
+          );
+        }
       }
     });
   }

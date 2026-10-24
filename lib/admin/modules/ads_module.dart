@@ -111,7 +111,10 @@ class _AdsModuleState extends State<AdsModule> {
     try {
       final newAdId = FirebaseFirestore.instance.collection('ads').doc().id;
       final ref = FirebaseStorage.instance.ref().child('ads/$newAdId.jpg');
-      final uploadTask = ref.putData(_imageBytes!);
+      final uploadTask = ref.putData(
+        _imageBytes!,
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
       final snapshot = await uploadTask;
       final imageUrl = await snapshot.ref.getDownloadURL();
 
@@ -175,7 +178,10 @@ class _AdsModuleState extends State<AdsModule> {
     try {
       final newAdId = FirebaseFirestore.instance.collection('ads').doc().id;
       final ref = FirebaseStorage.instance.ref().child('ads/$newAdId.jpg');
-      final uploadTask = ref.putData(_popupImageBytes!);
+      final uploadTask = ref.putData(
+        _popupImageBytes!,
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
       final snapshot = await uploadTask;
       final imageUrl = await snapshot.ref.getDownloadURL();
 
@@ -350,52 +356,65 @@ class _AdsModuleState extends State<AdsModule> {
             validator: (v) => v!.trim().isEmpty ? 'Requerido' : null,
           ),
           const SizedBox(height: 12),
-          Row(
+          Wrap(
+            spacing: 12,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            alignment: WrapAlignment.spaceBetween,
             children: [
-              const Text('Tipo:', style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(width: 12),
-              Radio<String>(
-                value: 'banner',
-                groupValue: _adType,
-                onChanged: (v) => setState(() => _adType = v!),
-                activeColor: MijanoTheme.ink,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Tipo:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 12),
+                  Radio<String>(
+                    value: 'banner',
+                    groupValue: _adType,
+                    onChanged: (v) => setState(() => _adType = v!),
+                    activeColor: MijanoTheme.ink,
+                  ),
+                  const Text('Banner Superior'),
+                  const SizedBox(width: 15),
+                  Radio<String>(
+                    value: 'imagen',
+                    groupValue: _adType,
+                    onChanged: (v) => setState(() => _adType = v!),
+                    activeColor: MijanoTheme.ink,
+                  ),
+                  const Text('Imagen Cuadrada'),
+                ],
               ),
-              const Text('Banner Superior'),
-              const SizedBox(width: 15),
-              Radio<String>(
-                value: 'imagen',
-                groupValue: _adType,
-                onChanged: (v) => setState(() => _adType = v!),
-                activeColor: MijanoTheme.ink,
-              ),
-              const Text('Imagen Cuadrada'),
-              const Spacer(),
-              // Selector de Fecha de Vencimiento
-              OutlinedButton.icon(
-                onPressed: () async {
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: DateTime.now().add(const Duration(days: 7)),
-                    firstDate: DateTime.now(),
-                    lastDate: DateTime.now().add(const Duration(days: 365)),
-                  );
-                  if (picked != null) setState(() => _bannerEndDate = picked);
-                },
-                icon: const Icon(Icons.calendar_today, size: 16),
-                label: Text(_bannerEndDate == null
-                    ? 'Fecha Fin'
-                    : 'Fin: ${_bannerEndDate!.day}/${_bannerEndDate!.month}/${_bannerEndDate!.year}'),
-              ),
-              const SizedBox(width: 15),
-              ElevatedButton.icon(
-                onPressed: _isLoading ? null : _submitAd,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: MijanoTheme.ink,
-                  foregroundColor: MijanoTheme.sol,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                ),
-                icon: _isLoading ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: MijanoTheme.sol, strokeWidth: 2)) : const Icon(Icons.publish),
-                label: Text(_isLoading ? 'Publicando...' : 'Publicar Anuncio'),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Selector de Fecha de Vencimiento
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: DateTime.now().add(const Duration(days: 7)),
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 365)),
+                      );
+                      if (picked != null) setState(() => _bannerEndDate = picked);
+                    },
+                    icon: const Icon(Icons.calendar_today, size: 16),
+                    label: Text(_bannerEndDate == null
+                        ? 'Fecha Fin'
+                        : 'Fin: ${_bannerEndDate!.day}/${_bannerEndDate!.month}/${_bannerEndDate!.year}'),
+                  ),
+                  const SizedBox(width: 15),
+                  ElevatedButton.icon(
+                    onPressed: _isLoading ? null : _submitAd,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: MijanoTheme.ink,
+                      foregroundColor: MijanoTheme.sol,
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                    ),
+                    icon: _isLoading ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: MijanoTheme.sol, strokeWidth: 2)) : const Icon(Icons.publish),
+                    label: Text(_isLoading ? 'Publicando...' : 'Publicar Anuncio'),
+                  ),
+                ],
               ),
             ],
           ),
@@ -506,12 +525,20 @@ class _AdsModuleState extends State<AdsModule> {
             onChanged: (v) => setState(() => _targetAudience = v ?? 'Todos los usuarios'),
           ),
           const SizedBox(height: 12),
-          Row(
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            alignment: WrapAlignment.spaceBetween,
             children: [
-              const Icon(Icons.schedule, color: MijanoTheme.ink),
-              const SizedBox(width: 8),
-              const Text('Horario:', style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(width: 10),
+              const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.schedule, color: MijanoTheme.ink),
+                  SizedBox(width: 8),
+                  Text('Horario:', style: TextStyle(fontWeight: FontWeight.bold)),
+                ],
+              ),
               OutlinedButton.icon(
                 onPressed: () async {
                   final picked = await showTimePicker(context: context, initialTime: _startTime);
@@ -520,7 +547,6 @@ class _AdsModuleState extends State<AdsModule> {
                 icon: const Icon(Icons.access_time, size: 16),
                 label: Text('Desde: ${_startTime.format(context)}'),
               ),
-              const SizedBox(width: 8),
               OutlinedButton.icon(
                 onPressed: () async {
                   final picked = await showTimePicker(context: context, initialTime: _endTime);
@@ -529,7 +555,6 @@ class _AdsModuleState extends State<AdsModule> {
                 icon: const Icon(Icons.access_time_filled, size: 16),
                 label: Text('Hasta: ${_endTime.format(context)}'),
               ),
-              const SizedBox(width: 15),
               // Selector de Fecha de Vencimiento para Pop-up
               OutlinedButton.icon(
                 onPressed: () async {
@@ -546,8 +571,8 @@ class _AdsModuleState extends State<AdsModule> {
                     ? 'Fecha Fin'
                     : 'Fin: ${_popupEndDate!.day}/${_popupEndDate!.month}/${_popupEndDate!.year}'),
               ),
-              const SizedBox(width: 15),
               Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Checkbox(
                     value: _enableSound,
@@ -557,7 +582,6 @@ class _AdsModuleState extends State<AdsModule> {
                   const Text('Con Sonido'),
                 ],
               ),
-              const Spacer(),
               ElevatedButton.icon(
                 onPressed: _isPopupLoading ? null : _submitPopupAd,
                 style: ElevatedButton.styleFrom(
@@ -782,3 +806,4 @@ class _AdsModuleState extends State<AdsModule> {
     );
   }
 }
+
