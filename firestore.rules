@@ -110,7 +110,7 @@ service cloud.firestore {
         )
       );
 
-      allow delete: if isSuperAdmin();
+      allow delete: if isSuperAdmin() || (isAuth() && request.auth.uid == userId);
     }
 
     // 2. CONDUCTORES (DRIVERS)

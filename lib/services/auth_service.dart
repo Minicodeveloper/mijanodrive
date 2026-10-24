@@ -509,4 +509,67 @@ class AuthService {
     currentUser = null;
     _verificationId = null;
   }
+
+  Future<void> deleteAccount() async {
+    final authUser = _fbAuth.currentUser;
+    if (authUser == null) {
+      throw StateError('No hay una sesión activa para eliminar.');
+    }
+
+    final uid = authUser.uid;
+    final userRef = _firestore.collection('users').doc(uid);
+    final userSnapshot = await userRef.get();
+    final userData = userSnapshot.data();
+
+    DocumentReference<Map<String, dynamic>>? dniRef;
+    DocumentSnapshot<Map<String, dynamic>>? dniSnapshot;
+    final dni = userData?['dni'];
+    if (dni is String && dni.isNotEmpty) {
+      dniRef = _firestore.collection('dni_index').doc(dni);
+      dniSnapshot = await dniRef.get();
+    }
+
+    final profileImageRef = fbs.FirebaseStorage.instance
+        .ref()
+        .child('drivers')
+        .child(uid)
+        .child('$uid.jpg');
+
+    final deletionBatch = _firestore.batch();
+    if (userSnapshot.exists) deletionBatch.delete(userRef);
+    if (dniRef != null &&
+        dniSnapshot?.exists == true &&
+        dniSnapshot?.data()?['uid'] == uid) {
+      deletionBatch.delete(dniRef);
+    }
+    await deletionBatch.commit();
+
+    try {
+      try {
+        await profileImageRef.delete();
+      } on fbs.FirebaseException catch (e) {
+        if (e.code != 'object-not-found') rethrow;
+      }
+      await authUser.delete();
+    } catch (error, stackTrace) {
+      try {
+        final rollbackBatch = _firestore.batch();
+        if (userSnapshot.exists && userData != null) {
+          rollbackBatch.set(userRef, userData);
+        }
+        final dniData = dniSnapshot?.data();
+        if (dniRef != null && dniSnapshot?.exists == true && dniData != null) {
+          rollbackBatch.set(dniRef, dniData);
+        }
+        await rollbackBatch.commit();
+      } catch (rollbackError) {
+        throw StateError(
+          'No se pudo eliminar la cuenta y tampoco restaurar sus datos: $rollbackError',
+        );
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+
+    currentUser = null;
+  }
 }

@@ -26,6 +26,7 @@ class _PassengerProfileScreenState extends State<PassengerProfileScreen> {
   int _tripCount = 0;
   int _completedCount = 0;
   bool _isLoading = true;
+  bool _isDeletingAccount = false;
 
   @override
   void initState() {
@@ -315,6 +316,14 @@ class _PassengerProfileScreenState extends State<PassengerProfileScreen> {
                         ),
                         const Divider(height: 1, indent: 64, thickness: 0.8),
                         _buildNavTile(
+                          icon: Icons.delete_outline,
+                          title: 'Eliminar cuenta',
+                          subtitle: 'Elimina tu cuenta y los datos de tu perfil',
+                          color: MijanoTheme.signal,
+                          onTap: _confirmDeleteAccount,
+                        ),
+                        const Divider(height: 1, indent: 64, thickness: 0.8),
+                        _buildNavTile(
                           icon: Icons.security,
                           title: 'Seguridad',
                           onTap: _showSecurityDialog,
@@ -424,24 +433,87 @@ class _PassengerProfileScreenState extends State<PassengerProfileScreen> {
     required IconData icon,
     required String title,
     required VoidCallback onTap,
+    String? subtitle,
+    Color? color,
   }) {
     return ListTile(
-      leading: Icon(icon, color: const Color(0xFF333333), size: 24),
+      leading: Icon(icon, color: color ?? const Color(0xFF333333), size: 24),
       title: Text(
         title,
         style: const TextStyle(
           fontSize: 15,
           fontWeight: FontWeight.w600,
-          color: Colors.black,
-        ),
+        ).copyWith(color: color ?? Colors.black),
       ),
-      trailing: const Icon(
+      subtitle: subtitle == null
+          ? null
+          : Text(
+              subtitle,
+              style: TextStyle(fontSize: 12, color: color ?? Colors.black54),
+            ),
+      trailing: Icon(
         Icons.chevron_right,
         size: 22,
-        color: Colors.black45,
+        color: color ?? Colors.black45,
       ),
       onTap: onTap,
     );
+  }
+
+  Future<void> _confirmDeleteAccount() async {
+    if (_isDeletingAccount) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Eliminar cuenta'),
+        content: const Text(
+          'Esta acción eliminará tu acceso y los datos de tu perfil. '
+          'Los registros de viajes y pagos podrían conservarse. '
+          '¿Deseas continuar? Esta acción no se puede deshacer.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: TextButton.styleFrom(foregroundColor: MijanoTheme.signal),
+            child: const Text('Eliminar cuenta'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isDeletingAccount = true);
+    try {
+      await AuthService.instance.deleteAccount();
+      if (!mounted) return;
+      Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+    } on fb.FirebaseAuthException catch (e) {
+      final message = e.code == 'requires-recent-login'
+          ? 'Por seguridad, cierra sesión, vuelve a iniciar sesión y luego intenta eliminar la cuenta otra vez.'
+          : 'No se pudo eliminar la cuenta: ${e.message ?? e.code}';
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message), backgroundColor: MijanoTheme.signal),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No se pudo eliminar la cuenta: $e'),
+            backgroundColor: MijanoTheme.signal,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isDeletingAccount = false);
+    }
   }
 
   void _showLogoutConfirmation() {

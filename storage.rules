@@ -20,6 +20,7 @@ service firebase.storage {
       allow write: if isAuth() && request.auth.uid == userId
                    && request.resource.size < 5 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*');
+      allow delete: if isAuth() && request.auth.uid == userId;
     }
 
     match /profile_images/{userId}/{fileName} {
@@ -27,6 +28,7 @@ service firebase.storage {
       allow write: if isAuth() && request.auth.uid == userId
                    && request.resource.size < 5 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*');
+      allow delete: if isAuth() && request.auth.uid == userId;
     }
 
     match /ads/{fileName} {
