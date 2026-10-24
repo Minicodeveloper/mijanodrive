@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:mijano_drive_app/config/app_config.dart';
 import 'package:mijano_drive_app/models/user_model.dart';
 import 'package:mijano_drive_app/services/auth_service.dart';
 import 'package:mijano_drive_app/services/document_service.dart';
@@ -29,7 +30,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _dniController = TextEditingController();
-  final _cityController = TextEditingController();
+  String _selectedCity = AppConfig.cities.first;
   final _birthDateController = TextEditingController();
   final _ageController = TextEditingController();
   DateTime? _selectedBirthDate;
@@ -84,7 +85,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _dniController.dispose();
-    _cityController.dispose();
     _birthDateController.dispose();
     _ageController.dispose();
     _licenseController.dispose();
@@ -96,24 +96,31 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  Future<void> _pickImage({bool isProfile = true, int? docIndex}) async {
+  /// Abre directamente la cámara para tomar la foto de perfil (obligatoria).
+  Future<void> _takeProfilePhoto() async {
+    final XFile? pickedFile = await _picker.pickImage(
+      source: ImageSource.camera,
+      preferredCameraDevice: CameraDevice.front,
+      imageQuality: 80,
+    );
+    if (pickedFile != null) {
+      setState(() => _imageFile = File(pickedFile.path));
+    }
+  }
+
+  /// Selecciona imagen desde galería (solo para documentos del conductor).
+  Future<void> _pickDocumentImage(int docIndex) async {
     final XFile? pickedFile = await _picker.pickImage(
       source: ImageSource.gallery,
       imageQuality: 80,
     );
-
     if (pickedFile != null) {
-      setState(() {
-        if (isProfile) {
-          _imageFile = File(pickedFile.path);
-        } else if (docIndex != null) {
-          _documents[docIndex] = File(pickedFile.path);
-        }
-      });
+      setState(() => _documents[docIndex] = File(pickedFile.path));
     }
   }
 
-  void _showImageSourceActionSheet({bool isProfile = true, int? docIndex}) {
+  /// Muestra opciones de galería/cámara solo para subir documentos.
+  void _showImageSourceActionSheet({required int docIndex}) {
     showModalBottomSheet(
       context: context,
       builder: (BuildContext context) {
@@ -125,7 +132,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 title: const Text('Galería'),
                 onTap: () {
                   Navigator.of(context).pop();
-                  _pickImage(isProfile: isProfile, docIndex: docIndex);
+                  _pickDocumentImage(docIndex);
                 },
               ),
               ListTile(
@@ -138,13 +145,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     imageQuality: 80,
                   );
                   if (pickedFile != null) {
-                    setState(() {
-                      if (isProfile) {
-                        _imageFile = File(pickedFile.path);
-                      } else if (docIndex != null) {
-                        _documents[docIndex] = File(pickedFile.path);
-                      }
-                    });
+                    setState(() => _documents[docIndex] = File(pickedFile.path));
                   }
                 },
               ),
@@ -198,6 +199,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   bool _validateStep1() {
+    if (_imageFile == null) {
+      _showSnackBar('Toma tu foto de perfil para continuar');
+      return false;
+    }
     if (!_formKey.currentState!.validate()) {
       return false;
     }
@@ -390,7 +395,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 password: _passwordController.text,
                 phone: _phoneController.text.trim(),
                 dni: _dniController.text.trim(),
-                city: _cityController.text.trim(),
+                city: _selectedCity,
                 role: roleEnum,
                 birthDate: _selectedBirthDate,
                 age: int.tryParse(_ageController.text.trim()),
@@ -569,7 +574,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   bottom: 0,
                   right: 0,
                   child: InkWell(
-                    onTap: () => _showImageSourceActionSheet(isProfile: true),
+                    onTap: _takeProfilePhoto,
                     child: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: const BoxDecoration(
@@ -583,7 +588,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 6),
+          Center(
+            child: Text(
+              _imageFile == null ? 'Foto obligatoria' : 'Foto lista',
+              style: TextStyle(
+                fontSize: 12,
+                color: _imageFile == null ? Colors.red[400] : Colors.green[600],
+                fontWeight: FontWeight.w500,
+                letterSpacing: 0.2,
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
           const Text('Completa tu información personal', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 20),
           TextFormField(
@@ -622,10 +639,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
             decoration: const InputDecoration(labelText: 'DNI', prefixIcon: Icon(Icons.badge_outlined), border: OutlineInputBorder()),
           ),
           const SizedBox(height: 15),
-          TextFormField(
-            controller: _cityController,
-            validator: (v) => v == null || v.isEmpty ? 'Ciudad es obligatoria' : null,
+          DropdownButtonFormField<String>(
+            initialValue: _selectedCity,
+            validator: (value) => value == null ? 'Ciudad es obligatoria' : null,
             decoration: const InputDecoration(labelText: 'Ciudad', prefixIcon: Icon(Icons.location_city_outlined), border: OutlineInputBorder()),
+            items: AppConfig.cities
+                .map((city) => DropdownMenuItem(value: city, child: Text(city)))
+                .toList(),
+            onChanged: (city) {
+              if (city != null) setState(() => _selectedCity = city);
+            },
           ),
           const SizedBox(height: 15),
           TextFormField(
@@ -841,7 +864,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             itemBuilder: (context, index) {
               final file = _documents[index];
               return GestureDetector(
-                onTap: () => _showImageSourceActionSheet(isProfile: false, docIndex: index),
+                onTap: () => _showImageSourceActionSheet(docIndex: index),
                 child: Container(
                   decoration: BoxDecoration(
                     color: Colors.grey[100],

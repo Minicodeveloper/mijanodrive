@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../config/app_config.dart';
 import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
 import '../../theme.dart';
@@ -19,7 +20,7 @@ class _PassengerEditProfileScreenState extends State<PassengerEditProfileScreen>
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
-  final TextEditingController _cityController = TextEditingController();
+  String _selectedCity = AppConfig.cities.first;
 
   File? _selectedImage;
   bool _isLoading = false;
@@ -30,14 +31,17 @@ class _PassengerEditProfileScreenState extends State<PassengerEditProfileScreen>
     final user = AuthService.instance.currentUser;
     _nameController.text = user?.name ?? '';
     _phoneController.text = user?.phone ?? '';
-    _cityController.text = user?.city ?? 'Tarapoto';
+    final savedCity = user?.city;
+    _selectedCity = AppConfig.cities.firstWhere(
+      (city) => city.toLowerCase() == savedCity?.toLowerCase(),
+      orElse: () => AppConfig.cities.first,
+    );
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _phoneController.dispose();
-    _cityController.dispose();
     super.dispose();
   }
 
@@ -128,7 +132,7 @@ class _PassengerEditProfileScreenState extends State<PassengerEditProfileScreen>
       final updatedUser = currentUser.copyWith(
         name: _nameController.text.trim(),
         phone: _phoneController.text.trim(),
-        city: _cityController.text.trim(),
+        city: _selectedCity,
         photoUrl: photoUrl ?? currentUser.photoUrl,
       );
 
@@ -320,11 +324,12 @@ class _PassengerEditProfileScreenState extends State<PassengerEditProfileScreen>
                     // Campo Ciudad
                     _buildLabel('Ciudad'),
                     const SizedBox(height: 6),
-                    TextFormField(
-                      controller: _cityController,
+                    DropdownButtonFormField<String>(
+                      initialValue: _selectedCity,
+                      validator: (value) => value == null ? 'Selecciona una ciudad' : null,
                       style: const TextStyle(fontWeight: FontWeight.w600, color: MijanoTheme.ink),
                       decoration: InputDecoration(
-                        hintText: 'Ej. Tarapoto, Morales, Banda de Shilcayo',
+                        labelText: 'Ciudad',
                         prefixIcon: const Icon(Icons.location_city_outlined, color: MijanoTheme.ink),
                         fillColor: MijanoTheme.cream,
                         filled: true,
@@ -342,6 +347,12 @@ class _PassengerEditProfileScreenState extends State<PassengerEditProfileScreen>
                           borderSide: const BorderSide(color: MijanoTheme.ink, width: 2.5),
                         ),
                       ),
+                      items: AppConfig.cities
+                          .map((city) => DropdownMenuItem(value: city, child: Text(city)))
+                          .toList(),
+                      onChanged: (city) {
+                        if (city != null) setState(() => _selectedCity = city);
+                      },
                     ),
                     const SizedBox(height: 32),
 

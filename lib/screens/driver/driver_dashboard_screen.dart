@@ -866,6 +866,19 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
             'Pasajero: ${trip.passengerName ?? "Cliente"}',
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
           ),
+          if (trip.carriesCargo) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: const [
+                Icon(Icons.inventory_2_outlined, size: 14),
+                SizedBox(width: 6),
+                Text(
+                  'Carga adicional',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 8),
           Row(
             children: [
@@ -1079,6 +1092,14 @@ class _TripAlertDialogState extends State<_TripAlertDialog> {
               Icons.near_me,
               'Distancia',
               '${widget.distance!.toStringAsFixed(2)} km',
+            ),
+          ],
+          if (widget.trip.carriesCargo) ...[
+            const SizedBox(height: 10),
+            _alertInfoRow(
+              Icons.inventory_2_outlined,
+              'Carga',
+              'Lleva carga adicional',
             ),
           ],
         ],

@@ -766,6 +766,11 @@ class DriverActiveTripScreen extends StatelessWidget {
                   value: 'S/. ${trip.fareAmount.toStringAsFixed(2)}',
                 ),
                 _TripDetail(label: 'Pago', value: trip.paymentMethod.name),
+                if (trip.carriesCargo)
+                  _TripDetail(
+                    label: 'Carga',
+                    value: 'Sí, lleva carga adicional',
+                  ),
                 const Spacer(),
                 if (isAccepted)
                   FilledButton.icon(

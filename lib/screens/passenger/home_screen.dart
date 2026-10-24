@@ -313,7 +313,10 @@ class _HomeScreenState extends State<HomeScreen> {
           _distanceKm = (data['distanceKm'] ?? 0.0).toDouble();
           _durationText = data['durationText'] ?? '';
           _selectedPaymentMethod = data['paymentMethod'] ?? 'Efectivo';
-          _selectedServiceType = data['serviceType'] ?? 'Viaje';
+          // Los viajes antiguos de paquetería se normalizan a viaje normal.
+          _selectedServiceType = data['serviceType'] == 'Encomienda'
+              ? 'Viaje'
+              : (data['serviceType'] ?? 'Viaje');
 
           if (data['status'] == 'pending') {
             _isSearchingDriver = true;
@@ -666,6 +669,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _showRequestModal() {
     DateTime scheduledTripAt = DateTime.now().add(const Duration(hours: 1));
     bool isSubmitting = false;
+    bool carriesCargo = false;
 
     showModalBottomSheet(
       context: context,
@@ -768,30 +772,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                         const SizedBox(width: 12),
-                        Expanded(
-                          child: ChoiceChip(
-                            label: const Center(child: Text('Encomienda')),
-                            selected: _selectedServiceType == 'Encomienda',
-                            selectedColor: const Color(0xFFF9D408),
-                            backgroundColor: const Color(0xFF2A2A2A),
-                            labelStyle: TextStyle(
-                              color: _selectedServiceType == 'Encomienda'
-                                  ? Colors.black
-                                  : Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            onSelected: (bool selected) {
-                              setModalState(() {
-                                _selectedServiceType = 'Encomienda';
-                              });
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
                         Expanded(
                           child: ChoiceChip(
                             label: const Center(child: Text('Programar viaje')),
@@ -920,6 +900,42 @@ class _HomeScreenState extends State<HomeScreen> {
                         style: TextStyle(color: Colors.white54, fontSize: 12),
                       ),
                     ],
+                    const SizedBox(height: 20),
+                    const Text(
+                      '¿Llevas carga adicional?',
+                      style: TextStyle(color: Colors.white70, fontSize: 14),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2A2A2A),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: carriesCargo
+                              ? const Color(0xFFF9D408)
+                              : Colors.transparent,
+                          width: 2,
+                        ),
+                      ),
+                      child: SwitchListTile(
+                        value: carriesCargo,
+                        onChanged: (value) {
+                          setModalState(() => carriesCargo = value);
+                        },
+                        activeThumbColor: const Color(0xFFF9D408),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                        ),
+                        title: const Text(
+                          'Sí, llevo carga adicional',
+                          style: TextStyle(color: Colors.white, fontSize: 13),
+                        ),
+                        subtitle: const Text(
+                          'Opcional',
+                          style: TextStyle(color: Colors.white54, fontSize: 11),
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 20),
                     const Text(
                       'Método de pago:',
@@ -1072,6 +1088,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 'durationText': _durationText,
                                 'paymentMethod': _selectedPaymentMethod,
                                 'serviceType': _selectedServiceType,
+                                'carriesCargo': carriesCargo,
                                 if (_selectedServiceType ==
                                     'Programar viaje')
                                   'scheduledAt': Timestamp.fromDate(

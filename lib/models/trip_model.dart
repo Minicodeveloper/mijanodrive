@@ -34,6 +34,7 @@ class Trip {
   final DateTime? dispatchDeadline;
   final List<String> rejectedDriverIds;
   final bool dispatchExhausted;
+  final bool carriesCargo;
 
   Trip({
     required this.id,
@@ -65,6 +66,7 @@ class Trip {
     this.dispatchDeadline,
     this.rejectedDriverIds = const [],
     this.dispatchExhausted = false,
+    this.carriesCargo = false,
   });
 
   Map<String, dynamic> toMap() {
@@ -97,6 +99,7 @@ class Trip {
       'dispatchDeadline': dispatchDeadline,
       'rejectedDriverIds': rejectedDriverIds,
       'dispatchExhausted': dispatchExhausted,
+      'carriesCargo': carriesCargo,
     };
   }
 
@@ -131,6 +134,7 @@ class Trip {
       dispatchDeadline: (map['dispatchDeadline'] as Timestamp?)?.toDate(),
       rejectedDriverIds: List<String>.from(map['rejectedDriverIds'] ?? []),
       dispatchExhausted: map['dispatchExhausted'] ?? false,
+      carriesCargo: map['carriesCargo'] ?? false,
     );
   }
 
@@ -196,6 +200,7 @@ class Trip {
     DateTime? dispatchDeadline,
     List<String>? rejectedDriverIds,
     bool? dispatchExhausted,
+    bool? carriesCargo,
   }) {
     return Trip(
       id: id ?? this.id,
@@ -227,6 +232,7 @@ class Trip {
       dispatchDeadline: dispatchDeadline ?? this.dispatchDeadline,
       rejectedDriverIds: rejectedDriverIds ?? this.rejectedDriverIds,
       dispatchExhausted: dispatchExhausted ?? this.dispatchExhausted,
+      carriesCargo: carriesCargo ?? this.carriesCargo,
     );
   }
 }
