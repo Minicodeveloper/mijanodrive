@@ -107,37 +107,45 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  @override
+  void reassemble() {
+    super.reassemble();
+    _checkAndShowPopupAds();
+  }
+
   // Método para verificar y mostrar el pop-up flotante segmentado
   Future<void> _checkAndShowPopupAds() async {
     try {
-      final user = AuthService.instance.currentUser;
-      if (user == null) return;
-
       final querySnapshot = await FirebaseFirestore.instance
           .collection('ads')
-          .where('isActive', isEqualTo: true)
-          .where('type', isEqualTo: 'popup')
           .get();
 
+      debugPrint('[ADS] Documentos encontrados en coleccion ads: ${querySnapshot.docs.length}');
       if (querySnapshot.docs.isEmpty || !mounted) return;
 
       for (var doc in querySnapshot.docs) {
         final adId = doc.id;
         final adData = doc.data();
+        if (adData['isActive'] == false) continue;
+        final String adType =
+            (adData['type'] ?? 'banner').toString().toLowerCase();
+        if (adType != 'popup') continue;
+
         final String audience =
             adData['targetAudience'] ?? 'Todos los usuarios';
 
         bool shouldShow = false;
 
-        if (audience == 'Todos los usuarios') {
+        if (audience == 'Todos los usuarios' ||
+            audience == 'Recién registrados' ||
+            audience == 'Usuarios con viajes previos') {
           shouldShow = true;
-        } else if (audience == 'Recién registrados') {
-          // Validamos si es recién registrado (puedes ajustar esta regla según la fecha de creación del usuario)
+        } else {
           shouldShow = true;
         }
 
         if (shouldShow) {
-          Future.delayed(const Duration(milliseconds: 1500), () {
+          Future.delayed(const Duration(milliseconds: 1200), () {
             if (mounted) {
               FirestoreService.instance.trackAdView(adId);
               _showFloatingPopupDialog(adId, adData);
@@ -298,11 +306,21 @@ class _HomeScreenState extends State<HomeScreen> {
               'in_progress',
             ],
           )
-          .limit(1)
           .get();
 
-      if (querySnapshot.docs.isNotEmpty && mounted) {
-        final doc = querySnapshot.docs.first;
+      final activeDocs = querySnapshot.docs.where((d) {
+        final map = d.data();
+        final isScheduled =
+            map['serviceType'] == 'Programar viaje' ||
+            map['scheduledAt'] != null;
+        if (isScheduled && map['status'] == 'pending') {
+          return false;
+        }
+        return true;
+      }).toList();
+
+      if (activeDocs.isNotEmpty && mounted) {
+        final doc = activeDocs.first;
         final data = doc.data();
 
         setState(() {
@@ -1124,14 +1142,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       ),
                                     ),
                                   );
-                                  Navigator.of(this.context).push(
-                                    MaterialPageRoute<void>(
-                                      builder: (context) =>
-                                          PassengerReservedTripsScreen(
-                                            initialTripId: tripRef.id,
-                                          ),
-                                    ),
-                                  );
+                                  setState(() => _selectedIndex = 1);
                                   return;
                                 }
 
@@ -1362,25 +1373,22 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             ListTile(
-              leading: const Icon(Icons.history),
-              title: const Text('Historial de viajes'),
+              leading: const Icon(Icons.event_available),
+              title: const Text(
+                'Reservas de viajes',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
               onTap: () {
                 Navigator.pop(context);
                 setState(() => _selectedIndex = 1);
               },
             ),
             ListTile(
-              leading: const Icon(Icons.event_available),
-              title: const Text('Viajes reservados'),
+              leading: const Icon(Icons.history),
+              title: const Text('Historial de viajes'),
               onTap: () {
                 Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute<void>(
-                    builder: (context) =>
-                        const PassengerReservedTripsScreen(),
-                  ),
-                );
+                setState(() => _selectedIndex = 2);
               },
             ),
             ListTile(
@@ -1410,7 +1418,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
       body: IndexedStack(
-        index: _selectedIndex == 1 ? 1 : 0,
+        index: _selectedIndex.clamp(0, 2),
         children: [
           _activeTripId != null
               ? StreamBuilder<DocumentSnapshot>(
@@ -1442,15 +1450,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   },
                 )
               : _buildMainContent(user),
+          const PassengerReservedTripsScreen(),
           const PassengerHistoryScreen(),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
+        type: BottomNavigationBarType.fixed,
         currentIndex: _selectedIndex,
         selectedItemColor: const Color(0xFFF9D408),
         unselectedItemColor: Colors.grey,
         onTap: (index) {
-          if (index == 2) {
+          if (index == 3) {
             _navigateToAccount();
           } else {
             setState(() => _selectedIndex = index);
@@ -1458,6 +1468,10 @@ class _HomeScreenState extends State<HomeScreen> {
         },
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Inicio'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.event_available),
+            label: 'Reservas',
+          ),
           BottomNavigationBarItem(
             icon: Icon(Icons.history),
             label: 'Historial',
@@ -1819,6 +1833,72 @@ class _HomeScreenState extends State<HomeScreen> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Apartado exclusivo de reservas posicionado al inicio para mantenerlo siempre visible
+                        InkWell(
+                          onTap: () => setState(() => _selectedIndex = 1),
+                          borderRadius: BorderRadius.circular(14),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 11,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1E1E1E),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: const Color(0xFFF9D408),
+                                width: 1.5,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(7),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF9D408),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Icon(
+                                    Icons.event_available,
+                                    color: Colors.black,
+                                    size: 18,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                const Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Reservas de viajes',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      Text(
+                                        'Programa o revisa tus viajes anticipados aquí',
+                                        style: TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const Icon(
+                                  Icons.arrow_forward_ios,
+                                  color: Color(0xFFF9D408),
+                                  size: 15,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
                         const Text(
                           'Introduce la ruta...',
                           style: TextStyle(
@@ -2102,9 +2182,12 @@ class AdCarouselBanner extends StatelessWidget {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('ads')
-          .where('isActive', isEqualTo: true)
           .snapshots(),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          debugPrint('[ADS] Error en StreamBuilder de ads: ${snapshot.error}');
+          return const SizedBox.shrink();
+        }
         if (!snapshot.hasData) {
           return const SizedBox(
             height: 75,
@@ -2121,7 +2204,10 @@ class AdCarouselBanner extends StatelessWidget {
           );
         }
 
-        final docs = snapshot.data!.docs;
+        final docs = snapshot.data!.docs.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          return data['isActive'] != false;
+        }).toList();
 
         if (docs.isEmpty) {
           return const SizedBox.shrink();

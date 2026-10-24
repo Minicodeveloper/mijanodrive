@@ -269,7 +269,11 @@ service cloud.firestore {
     // 7. PUBLICIDAD Y PLANES
     match /ads/{adId} {
       allow read: if isAuth();
-      allow write: if isSuperAdmin() || isManager();
+      allow create, delete: if isSuperAdmin() || isManager();
+      allow update: if isSuperAdmin() || isManager() || (
+        isAuth()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewsCount', 'clicksCount'])
+      );
     }
 
     match /plans/{planId} {

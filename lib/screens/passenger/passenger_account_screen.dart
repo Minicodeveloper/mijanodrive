@@ -5,6 +5,7 @@ import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
 import '../../theme.dart';
 import 'passenger_profile_screen.dart';
+import 'passenger_reserved_trips_screen.dart';
 import 'passenger_support_chat_screen.dart';
 
 /// Pantalla principal de cuenta y perfil del Pasajero.
@@ -147,6 +148,22 @@ class _PassengerAccountScreenState extends State<PassengerAccountScreen> {
             ),
           ),
           const SizedBox(height: 12),
+
+          // Apartado exclusivo de Reservas posicionado al inicio
+          _buildOptionTile(
+            icon: Icons.event_available,
+            title: 'Mis Reservas',
+            subtitle: 'Programa un viaje o gestiona tus reservas activas',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const PassengerReservedTripsScreen(),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 10),
 
           // Opción 1: Editar Perfil / Mi Perfil Completo
           _buildOptionTile(
