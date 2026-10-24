@@ -128,55 +128,6 @@ class _PassengerProfileScreenState extends State<PassengerProfileScreen> {
     }
   }
 
-  void _showImagePickerOptions() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Wrap(
-              children: [
-                ListTile(
-                  leading: const CircleAvatar(
-                    backgroundColor: MijanoTheme.cream,
-                    child: Icon(Icons.photo_library, color: MijanoTheme.ink),
-                  ),
-                  title: const Text(
-                    'Galería de fotos',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: MijanoTheme.ink),
-                  ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _pickImage(ImageSource.gallery);
-                  },
-                ),
-                ListTile(
-                  leading: const CircleAvatar(
-                    backgroundColor: MijanoTheme.cream,
-                    child: Icon(Icons.photo_camera, color: MijanoTheme.ink),
-                  ),
-                  title: const Text(
-                    'Tomar foto con la cámara',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: MijanoTheme.ink),
-                  ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _pickImage(ImageSource.camera);
-                  },
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   String _formatPhone(String? phone) {
     if (phone == null || phone.trim().isEmpty) return 'No registrado';
     final clean = phone.trim();
@@ -243,7 +194,7 @@ class _PassengerProfileScreenState extends State<PassengerProfileScreen> {
                                 bottom: 0,
                                 right: 0,
                                 child: InkWell(
-                                  onTap: _showImagePickerOptions,
+                                  onTap: () => _pickImage(ImageSource.camera),
                                   borderRadius: BorderRadius.circular(20),
                                   child: Container(
                                     padding: const EdgeInsets.all(7),
