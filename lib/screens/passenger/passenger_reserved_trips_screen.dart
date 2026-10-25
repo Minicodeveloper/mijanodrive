@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 
+import '../../models/tariff_model.dart';
 import '../../services/auth_service.dart';
+import '../../services/firestore_service.dart';
 import '../../services/location_service.dart';
 import '../../theme.dart';
 
@@ -846,12 +848,47 @@ class _CreateReservationBottomSheetState
   bool _isCalculatingFare = false;
   bool _isSubmitting = false;
 
-  double _estimatedFare = 15.0;
+  PricingSettings _pricingSettings = PricingSettings.fromMap(null);
+  StreamSubscription<PricingSettings>? _pricingSubscription;
+  double _estimatedFare = 4.0;
   double _distanceKm = 0.0;
+  double _durationMinutes = 0.0;
   String _durationText = '';
 
   @override
+  void initState() {
+    super.initState();
+    _pricingSubscription = FirestoreService.instance
+        .streamPricingSettings()
+        .listen((settings) {
+          if (!mounted) return;
+          setState(() {
+            _pricingSettings = settings;
+            _updateQuoteFromSettings();
+          });
+        });
+  }
+
+  void _updateQuoteFromSettings() {
+    if (_distanceKm > 0) {
+      _estimatedFare = _pricingSettings
+          .quote(
+            category: VehicleCategory.moto,
+            distanceKm: _distanceKm,
+            durationMin: _durationMinutes,
+            hour: _scheduledAt.hour,
+          )
+          .total;
+    } else {
+      _estimatedFare = _pricingSettings
+          .tariffFor(VehicleCategory.moto)
+          .minFare;
+    }
+  }
+
+  @override
   void dispose() {
+    _pricingSubscription?.cancel();
     _originController.dispose();
     _destinationController.dispose();
     super.dispose();
@@ -989,26 +1026,48 @@ class _CreateReservationBottomSheetState
           '&key=$_apiKey',
         );
         final response = await http.get(directionsUrl);
+        bool routeFound = false;
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
           if (data['routes'] != null && data['routes'].isNotEmpty) {
             final route = data['routes'][0];
             if (route['legs'] != null && route['legs'].isNotEmpty) {
               final leg = route['legs'][0];
-              final distanceMeters = leg['distance']['value'] as int;
+              final distanceMeters =
+                  (leg['distance']?['value'] as num?)?.toDouble() ?? 0.0;
+              final durationSeconds =
+                  (leg['duration']?['value'] as num?)?.toDouble() ?? 0.0;
               final km = distanceMeters / 1000.0;
-              double fare = 5.0 + (km * 2.0);
-              if (fare < 10.0) fare = 10.0;
+              final durationMin = durationSeconds / 60.0;
 
               if (mounted) {
                 setState(() {
                   _distanceKm = km;
-                  _durationText = leg['duration']['text'] ?? '';
-                  _estimatedFare = fare;
+                  _durationMinutes = durationMin;
+                  _durationText =
+                      leg['duration']?['text'] ?? '${durationMin.round()} min';
+                  _updateQuoteFromSettings();
                 });
               }
+              routeFound = true;
             }
           }
+        }
+        if (!routeFound && mounted) {
+          final fallbackKm = LocationService.instance.distanceKm(
+            originLatLng.latitude,
+            originLatLng.longitude,
+            destLatLng.latitude,
+            destLatLng.longitude,
+          );
+          final km = fallbackKm > 0 ? fallbackKm : 2.5;
+          final durationMin = (km * 3.0).clamp(3.0, 120.0);
+          setState(() {
+            _distanceKm = km;
+            _durationMinutes = durationMin;
+            _durationText = '${durationMin.round()} min';
+            _updateQuoteFromSettings();
+          });
         }
       }
     } catch (_) {
@@ -1425,6 +1484,7 @@ class _CreateReservationBottomSheetState
                             selectedTime.hour,
                             selectedTime.minute,
                           );
+                          _updateQuoteFromSettings();
                         });
                       }
                     },
