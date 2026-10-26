@@ -45,6 +45,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _yearController = TextEditingController();
   final _plateController = TextEditingController();
  
+  static const _vehicleTypes = ['Mototaxi', 'Carro'];
+  static const _agencies = ['Agencia 1', 'Agencia 2', 'Agencia 3'];
+  String _selectedVehicleType = 'Mototaxi';
+  String? _selectedAgency;
+
   bool _acceptedTerms = false;
   bool _acceptedPrivacy = false;
 
@@ -357,6 +362,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return false;
     }
 
+    if (_selectedVehicleType == 'Carro' && _selectedAgency == null) {
+      _showSnackBar('Selecciona una agencia para continuar');
+      return false;
+    }
+
     final plate = _plateController.text.trim();
     if (plate.isEmpty || plate.length < 6) {
       _showSnackBar('Ingresa una placa válida (mínimo 6 caracteres)');
@@ -616,6 +626,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 vehicleModel: _modelController.text.trim(),
                 vehicleColor: _colorController.text.trim(),
                 vehicleYear: _yearController.text.trim(),
+                vehicleType: _selectedVehicleType,
+                agencyName: _selectedAgency,
                 licenseNumber: _licenseController.text.trim(),
               );
 
@@ -997,17 +1009,63 @@ class _RegisterScreenState extends State<RegisterScreen> {
           const SizedBox(height: 15),
           const Text('Tipo de vehículo', style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF9D408).withOpacity(0.2),
-              border: Border.all(color: const Color(0xFFF9D408)),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            alignment: Alignment.center,
-            child: const Text('Mototaxi', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black)),
+          Row(
+            children: [
+              Expanded(
+                child: _buildSelectionButton(
+                  label: _vehicleTypes[0],
+                  selected: _selectedVehicleType == _vehicleTypes[0],
+                  onPressed: () => setState(() {
+                    _selectedVehicleType = _vehicleTypes[0];
+                    _selectedAgency = null;
+                  }),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildSelectionButton(
+                  label: _vehicleTypes[1],
+                  selected: _selectedVehicleType == _vehicleTypes[1],
+                  onPressed: () =>
+                      setState(() => _selectedVehicleType = _vehicleTypes[1]),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 15),
+          if (_selectedVehicleType == 'Carro') ...[
+            const Text(
+              'Selecciona una agencia',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _agencies.map((agency) {
+                final selected = _selectedAgency == agency;
+                return ChoiceChip(
+                  label: Text(agency),
+                  selected: selected,
+                  selectedColor: const Color(0xFFF9D408),
+                  onSelected: (_) => setState(() => _selectedAgency = agency),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF9DB),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                '¿Qué es una agencia? Es el punto donde esperan los conductores de carro para recibir solicitudes de pasajeros. A diferencia de los mototaxis, los carros se asignan desde una agencia.',
+                style: TextStyle(fontSize: 13),
+              ),
+            ),
+            const SizedBox(height: 15),
+          ],
           TextField(
             controller: _brandController,
             decoration: const InputDecoration(labelText: 'Marca del vehículo', border: OutlineInputBorder()),
@@ -1085,6 +1143,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSelectionButton({
+    required String label,
+    required bool selected,
+    required VoidCallback onPressed,
+  }) {
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Colors.black,
+        backgroundColor: selected ? const Color(0x33F9D408) : Colors.white,
+        side: BorderSide(
+          color: selected ? const Color(0xFFF9D408) : Colors.grey.shade400,
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 14),
+      ),
+      child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
     );
   }
 

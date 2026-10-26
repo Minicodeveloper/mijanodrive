@@ -25,6 +25,7 @@ class User {
   final String? vehicleColor;
   final String? vehicleYear;
   final String? vehicleType;
+  final String? agencyName;
   final String? licenseNumber;
   final Map<String, dynamic> documents;
 
@@ -48,6 +49,7 @@ class User {
     this.vehicleColor,
     this.vehicleYear,
     this.vehicleType,
+    this.agencyName,
     this.licenseNumber,
     this.documents = const {},
   });
@@ -73,6 +75,7 @@ class User {
       'vehicleColor': vehicleColor,
       'vehicleYear': vehicleYear,
       'vehicleType': vehicleType,
+      'agencyName': agencyName,
       'licenseNumber': licenseNumber,
       'documents': documents,
     };
@@ -81,7 +84,7 @@ class User {
   factory User.fromMap(Map<String, dynamic> map) {
     UserRole parsedRole = UserRole.passenger;
     final r = map['role'] as String?;
-    
+
     if (r != null) {
       final normalized = RoleHelper.normalizeRole(r);
       if (normalized == 'driver') {
@@ -119,6 +122,7 @@ class User {
       vehicleColor: map['vehicleColor'],
       vehicleYear: map['vehicleYear'],
       vehicleType: map['vehicleType'],
+      agencyName: map['agencyName'],
       licenseNumber: map['licenseNumber'],
       documents: Map<String, dynamic>.from(map['documents'] ?? {}),
     );
@@ -148,6 +152,7 @@ class User {
     String? vehicleColor,
     String? vehicleYear,
     String? vehicleType,
+    String? agencyName,
     String? licenseNumber,
     Map<String, dynamic>? documents,
   }) {
@@ -171,6 +176,7 @@ class User {
       vehicleColor: vehicleColor ?? this.vehicleColor,
       vehicleYear: vehicleYear ?? this.vehicleYear,
       vehicleType: vehicleType ?? this.vehicleType,
+      agencyName: agencyName ?? this.agencyName,
       licenseNumber: licenseNumber ?? this.licenseNumber,
       documents: documents ?? this.documents,
     );
