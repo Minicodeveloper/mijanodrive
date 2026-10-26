@@ -61,18 +61,20 @@ class FirestoreService {
     }
   }
 
-  // ---- DNI Unicidad ----
+  // ---- DNI Unicidad ---- cambio reciente---
   Future<bool> isDniTaken(String dni) async {
+    final cleanDni = dni.trim();
+    if (cleanDni.isEmpty) return false;
+
     try {
-      final q = await _db
-          .collection('users')
-          .where('dni', isEqualTo: dni.trim())
-          .limit(1)
-          .get();
-      return q.docs.isNotEmpty;
-    } catch (_) {
-      return false;
+      // Consulta directa y segura al índice público de DNI (permitido por las reglas de Firestore)
+      final indexDoc = await _db.collection('dni_index').doc(cleanDni).get();
+      if (indexDoc.exists) return true;
+    } catch (e) {
+      // Si ocurre un error de red o permisos, por seguridad retornamos false o manejamos el log
     }
+
+    return false;
   }
 
   // ---- Conductores ----

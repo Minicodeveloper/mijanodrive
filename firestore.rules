@@ -110,7 +110,7 @@ service cloud.firestore {
         )
       );
 
-      allow delete: if isSuperAdmin() || (isAuth() && request.auth.uid == userId);
+      allow delete: if isSuperAdmin();
     }
 
     // 2. CONDUCTORES (DRIVERS)
@@ -168,10 +168,9 @@ service cloud.firestore {
            && resource.data.get('dispatchExhausted', false) == false
            && isApprovedDriver())
           ||
-          // Conductor rechaza su turno (actualiza solo despacho)
+          // Conductor rechaza su turno o el temporizador del cliente lo avanza (actualiza solo campos de despacho)
           (resource.data.get('status', '') == 'pending'
-           && request.auth.uid == resource.data.get('currentDispatchDriverId', '')
-           && isApprovedDriver()
+           && (request.auth.uid == resource.data.get('currentDispatchDriverId', '') || request.auth.uid == resource.data.get('passengerId', ''))
            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
              'dispatchIndex', 'currentDispatchDriverId', 'currentDispatchPlan',
              'dispatchDeadline', 'rejectedDriverIds', 'dispatchExhausted'
@@ -227,9 +226,9 @@ service cloud.firestore {
     // 5. CONFIGURACIÓN (SETTINGS & CITIES)
     match /settings/{docId} {
       allow read: if isSuperAdmin()
-                  || (isAuth() && docId == 'pricing')
+                  || (isAuth() && !isStaff() && docId == 'pricing')
                   || (isAuth() && docId == 'payment_qr');
-      allow write: if isSuperAdmin() || (isStaff() && docId == 'pricing');
+      allow write: if isSuperAdmin();
     }
 
     match /cities/{cityId} {
@@ -268,13 +267,13 @@ service cloud.firestore {
 
     // 7. PUBLICIDAD Y PLANES
     match /ads/{adId} {
-      allow read: if isAuth();
-      allow create, delete: if isSuperAdmin() || isManager();
-      allow update: if isSuperAdmin() || isManager() || (
-        isAuth()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewsCount', 'clicksCount'])
-      );
-    }
+    allow read: if isAuth();
+    allow create, delete: if isSuperAdmin() || isManager();
+    allow update: if isSuperAdmin() || isManager() || (
+      isAuth()
+      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewsCount', 'clicksCount'])
+    );
+  }
 
     match /plans/{planId} {
       allow read: if isAuth();
@@ -307,7 +306,23 @@ service cloud.firestore {
     }
 
     match /dni_index/{dni} {
-      allow read, write: if isStaff() || isAuth();
+      allow read: if true; // Permite verificar si el DNI ya existe antes de autenticarse
+      allow write: if isStaff() || isAuth();
+    }
+
+    match /phone_index/{phone} {
+      allow read: if true; // Permite verificar si el teléfono ya existe antes de autenticarse
+      allow write: if isStaff() || isAuth();
+    }
+
+    match /plate_index/{plate} {
+      allow read: if true; // Permite verificar si la placa ya existe antes de autenticarse
+      allow write: if isStaff() || isAuth();
+    }
+
+    match /license_index/{license} {
+      allow read: if true; // Permite verificar si la licencia ya existe antes de autenticarse
+      allow write: if isStaff() || isAuth();
     }
 
     match /driver_plans/{driverId} {

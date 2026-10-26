@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -71,6 +72,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final ImagePicker _picker = ImagePicker();
   final _auth = AuthService.instance;
 
+  String? _phoneDuplicateError;
+  String? _dniDuplicateError;
+  String? _licenseDuplicateError;
+  String? _plateDuplicateError;
+
+  bool _checkingPhone = false;
+  bool _checkingDni = false;
+  bool _checkingLicense = false;
+  bool _checkingPlate = false;
+
+  Timer? _phoneDebounce;
+  Timer? _dniDebounce;
+  Timer? _licenseDebounce;
+  Timer? _plateDebounce;
+
   @override
   void initState() {
     super.initState();
@@ -79,6 +95,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   void dispose() {
+    _phoneDebounce?.cancel();
+    _dniDebounce?.cancel();
+    _licenseDebounce?.cancel();
+    _plateDebounce?.cancel();
     _pageController.dispose();
     _nameController.dispose();
     _phoneController.dispose();
@@ -94,6 +114,113 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _yearController.dispose();
     _plateController.dispose();
     super.dispose();
+  }
+
+  void _onPhoneChanged(String value) {
+    _phoneDebounce?.cancel();
+    final trimmed = value.trim();
+    if (_phoneDuplicateError != null) {
+      setState(() => _phoneDuplicateError = null);
+    }
+    if (trimmed.length != 9) {
+      if (_checkingPhone) setState(() => _checkingPhone = false);
+      return;
+    }
+    setState(() => _checkingPhone = true);
+    _phoneDebounce = Timer(const Duration(milliseconds: 300), () async {
+      final current = _phoneController.text.trim();
+      if (current != trimmed) return;
+      final taken = await _auth.isPhoneRegistered(current);
+      if (!mounted || _phoneController.text.trim() != current) return;
+      setState(() {
+        _checkingPhone = false;
+        _phoneDuplicateError =
+            taken ? 'Este número ya está registrado.' : null;
+      });
+      if (taken) {
+        _showSnackBar('Este número ya está registrado.');
+      }
+    });
+  }
+
+  void _onDniChanged(String value) {
+    _dniDebounce?.cancel();
+    final trimmed = value.trim();
+    if (_dniDuplicateError != null) {
+      setState(() => _dniDuplicateError = null);
+    }
+    if (trimmed.length != 8) {
+      if (_checkingDni) setState(() => _checkingDni = false);
+      return;
+    }
+    setState(() => _checkingDni = true);
+    _dniDebounce = Timer(const Duration(milliseconds: 300), () async {
+      final current = _dniController.text.trim();
+      if (current != trimmed) return;
+      final taken = await FirestoreService.instance.isDniTaken(current);
+      if (!mounted || _dniController.text.trim() != current) return;
+      setState(() {
+        _checkingDni = false;
+        _dniDuplicateError = taken ? 'Este DNI ya está registrado.' : null;
+      });
+      if (taken) {
+        _showSnackBar('Este DNI ya está registrado.');
+      }
+    });
+  }
+
+  void _onLicenseChanged(String value) {
+    _licenseDebounce?.cancel();
+    final trimmed = value.trim();
+    if (_licenseDuplicateError != null) {
+      setState(() => _licenseDuplicateError = null);
+    }
+    if (trimmed.length < 6) {
+      if (_checkingLicense) setState(() => _checkingLicense = false);
+      return;
+    }
+    setState(() => _checkingLicense = true);
+    _licenseDebounce = Timer(const Duration(milliseconds: 350), () async {
+      final current = _licenseController.text.trim();
+      if (current != trimmed) return;
+      final taken = await _auth.isLicenseRegistered(current);
+      if (!mounted || _licenseController.text.trim() != current) return;
+      setState(() {
+        _checkingLicense = false;
+        _licenseDuplicateError =
+            taken ? 'Este número de licencia ya está registrado.' : null;
+      });
+      if (taken) {
+        _showSnackBar('Este número de licencia ya está registrado.');
+      }
+    });
+  }
+
+  void _onPlateChanged(String value) {
+    _plateDebounce?.cancel();
+    final trimmed = value.trim();
+    if (_plateDuplicateError != null) {
+      setState(() => _plateDuplicateError = null);
+    }
+    if (trimmed.length < 5) {
+      if (_checkingPlate) setState(() => _checkingPlate = false);
+      return;
+    }
+    setState(() => _checkingPlate = true);
+    _plateDebounce = Timer(const Duration(milliseconds: 350), () async {
+      final current = _plateController.text.trim();
+      if (current != trimmed) return;
+      final taken = await _auth.isPlateRegistered(current);
+      if (!mounted || _plateController.text.trim() != current) return;
+      setState(() {
+        _checkingPlate = false;
+        _plateDuplicateError =
+            taken ? 'Esta placa de vehículo ya está registrada.' : null;
+      });
+      if (taken) {
+        _showSnackBar('Esta placa de vehículo ya está registrada.');
+      }
+    });
   }
 
   /// Abre directamente la cámara para tomar la foto de perfil (obligatoria).
@@ -253,15 +380,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
       final dniTaken = await FirestoreService.instance.isDniTaken(dniText);
       final phoneTaken = await _auth.isPhoneRegistered(phoneText);
 
-      setState(() => _isLoading = false);
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _phoneDuplicateError =
+            phoneTaken ? 'Este número ya está registrado.' : null;
+        _dniDuplicateError =
+            dniTaken ? 'Este DNI ya está registrado.' : null;
+      });
       
+      if (phoneTaken && dniTaken) {
+        _showAlert(
+          'Datos ya registrados',
+          'Este número de teléfono y este DNI ya están registrados.',
+        );
+        return;
+      }
+
       if (phoneTaken) {
-        _showAlert('Teléfono Duplicado', 'Este número de teléfono ya está registrado en otra cuenta.');
+        _showAlert('Número ya registrado', 'Este número ya está registrado.');
         return;
       }
 
       if (dniTaken) {
-        _showAlert('DNI Duplicado', 'Este DNI ya está registrado en otra cuenta.');
+        _showAlert('DNI ya registrado', 'Este DNI ya está registrado.');
         return;
       }
 
@@ -283,15 +425,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
       final licenseTaken = await _auth.isLicenseRegistered(licenseText);
       final plateTaken = await _auth.isPlateRegistered(plateText);
 
-      setState(() => _isLoading = false);
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _licenseDuplicateError =
+            licenseTaken ? 'Este número de licencia ya está registrado.' : null;
+        _plateDuplicateError =
+            plateTaken ? 'Esta placa de vehículo ya está registrada.' : null;
+      });
+
+      if (licenseTaken && plateTaken) {
+        _showAlert(
+          'Datos ya registrados',
+          'Este número de licencia y esta placa de vehículo ya están registrados.',
+        );
+        return;
+      }
 
       if (licenseTaken) {
-        _showAlert('Licencia Duplicada', 'Este número de licencia ya está registrado en la base de datos.');
+        _showAlert('Licencia ya registrada', 'Este número de licencia ya está registrado.');
         return;
       }
 
       if (plateTaken) {
-        _showAlert('Placa Duplicada', 'Esta placa de vehículo ya está registrada en la base de datos.');
+        _showAlert('Placa ya registrada', 'Esta placa de vehículo ya está registrada.');
         return;
       }
 
@@ -313,8 +470,62 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Future<void> _register() async {
     setState(() => _isLoading = true);
     final phone = _phoneController.text.trim();
+    final dni = _dniController.text.trim();
 
     try {
+      // Doble verificación antes de enviar cualquier SMS
+      final phoneTaken = await _auth.isPhoneRegistered(phone);
+      final dniTaken = await FirestoreService.instance.isDniTaken(dni);
+
+      bool licenseTaken = false;
+      bool plateTaken = false;
+      if (_selectedRole == 'driver') {
+        licenseTaken = await _auth.isLicenseRegistered(_licenseController.text.trim());
+        plateTaken = await _auth.isPlateRegistered(_plateController.text.trim());
+      }
+
+      if (!mounted) return;
+      if (phoneTaken || dniTaken || licenseTaken || plateTaken) {
+        setState(() {
+          _isLoading = false;
+          _phoneDuplicateError =
+              phoneTaken ? 'Este número ya está registrado.' : null;
+          _dniDuplicateError =
+              dniTaken ? 'Este DNI ya está registrado.' : null;
+          _licenseDuplicateError =
+              licenseTaken ? 'Este número de licencia ya está registrado.' : null;
+          _plateDuplicateError =
+              plateTaken ? 'Esta placa de vehículo ya está registrada.' : null;
+        });
+
+        if (phoneTaken && dniTaken) {
+          _showAlert(
+            'Datos ya registrados',
+            'Este número de teléfono y este DNI ya están registrados.',
+          );
+        } else if (phoneTaken) {
+          _showAlert('Número ya registrado', 'Este número ya está registrado.');
+        } else if (dniTaken) {
+          _showAlert('DNI ya registrado', 'Este DNI ya está registrado.');
+        } else if (licenseTaken && plateTaken) {
+          _showAlert(
+            'Datos ya registrados',
+            'Este número de licencia y esta placa de vehículo ya están registrados.',
+          );
+        } else if (licenseTaken) {
+          _showAlert(
+            'Licencia ya registrada',
+            'Este número de licencia ya está registrado.',
+          );
+        } else if (plateTaken) {
+          _showAlert(
+            'Placa ya registrada',
+            'Esta placa de vehículo ya está registrada.',
+          );
+        }
+        return;
+      }
+
       final (ok, msg) = await _auth.sendOtp(phone);
 
       if (!mounted) return;
@@ -612,9 +823,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
           TextFormField(
             controller: _phoneController,
             keyboardType: TextInputType.phone,
+            onChanged: _onPhoneChanged,
             validator: (v) => v == null || v.length != 9 ? 'Ingresa 9 dígitos válidos' : null,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(9)],
-            decoration: const InputDecoration(labelText: 'Número de teléfono', prefixIcon: Icon(Icons.phone_outlined), border: OutlineInputBorder()),
+            decoration: InputDecoration(
+              labelText: 'Número de teléfono',
+              prefixIcon: const Icon(Icons.phone_outlined),
+              errorText: _phoneDuplicateError,
+              suffixIcon: _checkingPhone
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : null,
+              border: const OutlineInputBorder(),
+            ),
           ),
           const SizedBox(height: 15),
           TextFormField(
@@ -634,9 +861,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
           TextFormField(
             controller: _dniController,
             keyboardType: TextInputType.number,
+            onChanged: _onDniChanged,
             validator: (v) => v == null || v.length != 8 ? 'Ingresa exactamente 8 dígitos' : null,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(8)],
-            decoration: const InputDecoration(labelText: 'DNI', prefixIcon: Icon(Icons.badge_outlined), border: OutlineInputBorder()),
+            decoration: InputDecoration(
+              labelText: 'DNI',
+              prefixIcon: const Icon(Icons.badge_outlined),
+              errorText: _dniDuplicateError,
+              suffixIcon: _checkingDni
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : null,
+              border: const OutlineInputBorder(),
+            ),
           ),
           const SizedBox(height: 15),
           DropdownButtonFormField<String>(
@@ -731,10 +974,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
           TextField(
             controller: _licenseController,
             maxLength: 10,
-            decoration: const InputDecoration(
+            textCapitalization: TextCapitalization.characters,
+            onChanged: _onLicenseChanged,
+            decoration: InputDecoration(
               labelText: 'Número de licencia', 
-              prefixIcon: Icon(Icons.card_membership), 
-              border: OutlineInputBorder(),
+              prefixIcon: const Icon(Icons.card_membership), 
+              errorText: _licenseDuplicateError,
+              suffixIcon: _checkingLicense
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : null,
+              border: const OutlineInputBorder(),
               counterText: '',
             ),
           ),
@@ -786,9 +1042,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
           TextField(
             controller: _plateController,
             maxLength: 7,
-            decoration: const InputDecoration(
+            textCapitalization: TextCapitalization.characters,
+            onChanged: _onPlateChanged,
+            decoration: InputDecoration(
               labelText: 'Placa del vehículo', 
-              border: OutlineInputBorder(),
+              errorText: _plateDuplicateError,
+              suffixIcon: _checkingPlate
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : null,
+              border: const OutlineInputBorder(),
               counterText: '',
             ),
           ),
