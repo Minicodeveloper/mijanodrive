@@ -46,7 +46,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _plateController = TextEditingController();
  
   static const _vehicleTypes = ['Mototaxi', 'Carro'];
-  static const _agencies = ['Agencia 1', 'Agencia 2', 'Agencia 3'];
+  static const _agencies = [
+    'Autos San Martin',
+    'Turismo Cajamarca / Auto Cajamarca',
+    'Empresa de Transporte Sol Naciente',
+    'Turismo Selva (Combis)',
+    'Tocsac (Auto)',
+  ];
   String _selectedVehicleType = 'Mototaxi';
   String? _selectedAgency;
 
