@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../../models/plan_model.dart';
 import '../../models/trip_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
@@ -14,6 +15,7 @@ import '../../theme.dart';
 import '../../widgets/mijano_icon.dart';
 import '../../config/app_config.dart';
 import 'driver_active_trip_screen.dart';
+import 'driver_my_plan_screen.dart';
 import 'driver_plan_payment_screen.dart';
 
 class DriverDashboardScreen extends StatefulWidget {
@@ -60,6 +62,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
   late final Stream<List<Map<String, dynamic>>> _notificationsStream;
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _rejectedPlanRequestsStream;
   late final Stream<DocumentSnapshot<Map<String, dynamic>>> _driverDocStream;
+  late final Stream<DocumentSnapshot<Map<String, dynamic>>> _driverPlanDocStream;
+  late final Stream<List<Map<String, dynamic>>> _plansStream;
   late final Stream<List<Trip>> _pendingTripsStream;
 
   StreamSubscription<List<Trip>>? _tripAlertSub;
@@ -81,6 +85,11 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
         .collection('drivers')
         .doc(_uid)
         .snapshots();
+    _driverPlanDocStream = FirebaseFirestore.instance
+        .collection('driver_plans')
+        .doc(_uid)
+        .snapshots();
+    _plansStream = _fs.streamPlans();
     _pendingTripsStream = _fs.pendingTrips();
 
     _watchDriverPlan();
@@ -670,45 +679,140 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
                           fontSize: 13,
                         ),
                       ),
-                      if (_hasActivePlan) ...[
-                        const SizedBox(height: 2),
-                        StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                          stream: _driverDocStream,
-                          builder: (context, snapshot) {
-                            final data = snapshot.data?.data();
-                            final planName = data?['planName'] ?? 'Plan Activo';
-                            final expiresAt = (data?['planExpiresAt'] as Timestamp?)?.toDate();
-                            
-                            String timeRemainingText = '';
-                            if (expiresAt != null) {
-                              final diff = expiresAt.difference(DateTime.now());
-                              if (!diff.isNegative) {
-                                final days = diff.inDays;
-                                final hours = diff.inHours % 24;
-                                timeRemainingText = days > 0 ? '$days d $hours h restantes' : '$hours horas restantes';
-                              } else {
-                                timeRemainingText = 'Plan expirado';
-                              }
-                            }
+                      const SizedBox(height: 3),
+                      StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                        stream: _driverDocStream,
+                        builder: (context, driverSnap) {
+                          return StreamBuilder<
+                            DocumentSnapshot<Map<String, dynamic>>
+                          >(
+                            stream: _driverPlanDocStream,
+                            builder: (context, driverPlanSnap) {
+                              return StreamBuilder<List<Map<String, dynamic>>>(
+                                stream: _plansStream,
+                                builder: (context, plansSnap) {
+                                  final driverData = driverSnap.data?.data();
+                                  final driverPlanData =
+                                      driverPlanSnap.data?.data();
+                                  final rawPlans = plansSnap.data ?? [];
+                                  final plans = rawPlans
+                                      .map(
+                                        (e) => PlanModel.fromMap(e, e['id']),
+                                      )
+                                      .toList();
 
-                            return Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.85),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                '$planName · $timeRemainingText',
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.green,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ],
+                                  final expiresAt =
+                                      (driverData?['planExpiresAt']
+                                              as Timestamp?)
+                                          ?.toDate() ??
+                                      (driverPlanData?['expiresAt']
+                                              as Timestamp?)
+                                          ?.toDate();
+
+                                  if (!_hasActivePlan) {
+                                    return InkWell(
+                                      onTap: () {
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                const DriverMyPlanScreen(),
+                                          ),
+                                        );
+                                      },
+                                      borderRadius: BorderRadius.circular(6),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 3,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withValues(
+                                            alpha: 0.9,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          _planPaymentPending
+                                              ? 'Solicitud en revisión · Ver mi plan'
+                                              : 'Sin plan activo · Toca para ver planes',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: _planPaymentPending
+                                                ? Colors.orange.shade900
+                                                : Colors.red.shade700,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }
+
+                                  final planName =
+                                      DriverPlanHelper.resolvePlanName(
+                                        driverData: driverData,
+                                        driverPlanData: driverPlanData,
+                                        plans: plans,
+                                      );
+                                  final timeRemainingText =
+                                      DriverPlanHelper.formatRemainingTime(
+                                        expiresAt,
+                                      );
+
+                                  return InkWell(
+                                    onTap: () {
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              const DriverMyPlanScreen(),
+                                        ),
+                                      );
+                                    },
+                                    borderRadius: BorderRadius.circular(6),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.9,
+                                        ),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(
+                                            Icons.workspace_premium,
+                                            size: 13,
+                                            color: Colors.green,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Flexible(
+                                            child: Text(
+                                              timeRemainingText.isNotEmpty
+                                                  ? '$planName · $timeRemainingText'
+                                                  : planName,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.green,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          );
+                        },
+                      ),
                     ],
                   ),
                 ),

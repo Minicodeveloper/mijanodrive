@@ -61,18 +61,20 @@ class FirestoreService {
     }
   }
 
-  // ---- DNI Unicidad ----
+  // ---- DNI Unicidad ---- cambio reciente---
   Future<bool> isDniTaken(String dni) async {
+    final cleanDni = dni.trim();
+    if (cleanDni.isEmpty) return false;
+
     try {
-      final q = await _db
-          .collection('users')
-          .where('dni', isEqualTo: dni.trim())
-          .limit(1)
-          .get();
-      return q.docs.isNotEmpty;
-    } catch (_) {
-      return false;
+      // Consulta directa y segura al índice público de DNI (permitido por las reglas de Firestore)
+      final indexDoc = await _db.collection('dni_index').doc(cleanDni).get();
+      if (indexDoc.exists) return true;
+    } catch (e) {
+      // Si ocurre un error de red o permisos, por seguridad retornamos false o manejamos el log
     }
+
+    return false;
   }
 
   // ---- Conductores ----
@@ -105,6 +107,14 @@ class FirestoreService {
 
   // ---- Viajes ----
   Future<Map<String, dynamic>> _buildDispatchData(GeoPoint origin) async {
+    double maxDispatchRadiusKm = AppConfig.kMaxDispatchRadiusKm;
+    try {
+      final pricing = await getPricingSettings();
+      if (pricing.maxOfferRadiusKm > 0) {
+        maxDispatchRadiusKm = pricing.maxOfferRadiusKm;
+      }
+    } catch (_) {}
+
     final driversSnapshot = await _db.collection('drivers')
         .where('isAvailable', isEqualTo: true)
         .where('planPaymentStatus', isEqualTo: 'active')
@@ -131,7 +141,7 @@ class FirestoreService {
             origin.longitude,
           );
 
-          if (distance <= AppConfig.kMaxDispatchRadiusKm) {
+          if (distance <= maxDispatchRadiusKm) {
             final tier = PlanTier.resolve(data);
             candidates.add(DispatchCandidate(
               id: doc.id,
@@ -829,6 +839,23 @@ class FirestoreService {
     });
   }
 
+  /// Transmite en tiempo real la configuración de tarifas (`settings/pricing`).
+  Stream<PricingSettings> streamPricingSettings() => _db
+      .collection('settings')
+      .doc('pricing')
+      .snapshots()
+      .map((snap) => PricingSettings.fromMap(snap.data()));
+
+  /// Obtiene la configuración actual de tarifas (`settings/pricing`).
+  Future<PricingSettings> getPricingSettings() async {
+    try {
+      final snap = await _db.collection('settings').doc('pricing').get();
+      return PricingSettings.fromMap(snap.data());
+    } catch (_) {
+      return PricingSettings.fromMap(null);
+    }
+  }
+
   Future<void> savePricingSettings(PricingSettings settings) =>
       _db.collection('settings').doc('pricing').set({
         ...settings.toMap(),
@@ -1148,6 +1175,8 @@ class FirestoreService {
           'planPriority': priority,
           'planTier': planTierKey,
           'planExpiresAt': expiresAt,
+          'pendingPlanId': FieldValue.delete(),
+          'pendingPlanName': FieldValue.delete(),
         }, SetOptions(merge: true));
       }
     });
@@ -1164,6 +1193,10 @@ class FirestoreService {
       if (reqDoc.data()?['status'] != 'pending') throw Exception('La solicitud ya fue revisada.');
 
       final driverId = request['driverId']?.toString() ?? '';
+      DocumentSnapshot<Map<String, dynamic>>? driverDoc;
+      if (driverId.isNotEmpty) {
+        driverDoc = await transaction.get(_db.collection('drivers').doc(driverId));
+      }
 
       // 1. Marcar request como rechazado
       transaction.update(reqRef, {
@@ -1176,8 +1209,16 @@ class FirestoreService {
       // 2. Merge en drivers/{driverId}
       if (driverId.isNotEmpty) {
         final driverRef = _db.collection('drivers').doc(driverId);
+        final driverData = driverDoc?.data();
+        final expiresAt = (driverData?['planExpiresAt'] as Timestamp?)?.toDate();
+        final stillActive = driverData?['planPaymentStatus'] == 'active' &&
+            expiresAt != null &&
+            expiresAt.isAfter(DateTime.now());
+
         transaction.set(driverRef, {
-          'planPaymentStatus': 'rejected',
+          if (!stillActive) 'planPaymentStatus': 'rejected',
+          'pendingPlanId': FieldValue.delete(),
+          'pendingPlanName': FieldValue.delete(),
         }, SetOptions(merge: true));
       }
 

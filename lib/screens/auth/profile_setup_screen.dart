@@ -68,7 +68,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     if (isTaken) {
       if (!mounted) return;
       setState(() => _saving = false);
-      _snack('Este DNI ya está registrado en otra cuenta.');
+      _snack('Este DNI ya está registrado.');
       return;
     }
 

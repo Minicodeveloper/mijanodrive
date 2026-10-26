@@ -13,7 +13,14 @@ import '../../services/firestore_service.dart';
 import '../../theme.dart';
 
 class DriverPlanPaymentScreen extends StatefulWidget {
-  const DriverPlanPaymentScreen({super.key});
+  const DriverPlanPaymentScreen({
+    super.key,
+    this.initialPlanId,
+    this.isMigration = false,
+  });
+
+  final String? initialPlanId;
+  final bool isMigration;
 
   @override
   State<DriverPlanPaymentScreen> createState() =>
@@ -24,6 +31,7 @@ class _DriverPlanPaymentScreenState extends State<DriverPlanPaymentScreen> {
   final _picker = ImagePicker();
   final _notesController = TextEditingController();
   PlanModel? _selectedPlan;
+  bool _didApplyInitialPlan = false;
   File? _receipt;
   Uint8List? _receiptBytes;
   bool _isSubmitting = false;
@@ -118,16 +126,36 @@ class _DriverPlanPaymentScreenState extends State<DriverPlanPaymentScreen> {
         'days': selectedPlan.durationDays,
         'priority': selectedPlan.priority,
         'receiptUrl': receiptUrl,
+        'isMigration': widget.isMigration,
         if (_notesController.text.trim().isNotEmpty)
           'notes': _notesController.text.trim(),
       });
 
-      
-      await FirebaseFirestore.instance.collection('drivers').doc(uid).set({
-        'isAvailable': false,
-        'planPaymentStatus': 'pending',
-        'pendingPlanId': selectedPlan.id,
-      }, SetOptions(merge: true));
+      final driverDoc = await FirebaseFirestore.instance
+          .collection('drivers')
+          .doc(uid)
+          .get();
+      final driverData = driverDoc.data();
+      final expiresAt =
+          (driverData?['planExpiresAt'] as Timestamp?)?.toDate();
+      final stillHasActivePlan =
+          driverData?['planPaymentStatus'] == 'active' &&
+          expiresAt != null &&
+          expiresAt.isAfter(DateTime.now());
+
+      if (stillHasActivePlan) {
+        await FirebaseFirestore.instance.collection('drivers').doc(uid).set({
+          'pendingPlanId': selectedPlan.id,
+          'pendingPlanName': selectedPlan.name,
+        }, SetOptions(merge: true));
+      } else {
+        await FirebaseFirestore.instance.collection('drivers').doc(uid).set({
+          'isAvailable': false,
+          'planPaymentStatus': 'pending',
+          'pendingPlanId': selectedPlan.id,
+          'pendingPlanName': selectedPlan.name,
+        }, SetOptions(merge: true));
+      }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -154,7 +182,9 @@ class _DriverPlanPaymentScreenState extends State<DriverPlanPaymentScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFFAF8FF),
       appBar: AppBar(
-        title: const Text('Activa tus viajes'),
+        title: Text(
+          widget.isMigration ? 'Migrar de plan' : 'Activa tus viajes',
+        ),
         backgroundColor: const Color(0xFFFAF8FF),
         foregroundColor: MijanoTheme.ink,
       ),
@@ -188,7 +218,17 @@ class _DriverPlanPaymentScreenState extends State<DriverPlanPaymentScreen> {
               );
             }
 
-            // Seleccionar el primer plan disponible por defecto si no hay selección
+            // Seleccionar el plan inicial indicado o el primero disponible por defecto
+            if (!_didApplyInitialPlan && widget.initialPlanId != null) {
+              final matching = plans.where(
+                (p) => p.id == widget.initialPlanId,
+              );
+              if (matching.isNotEmpty) {
+                _selectedPlan = matching.first;
+                _didApplyInitialPlan = true;
+              }
+            }
+
             if (_selectedPlan == null ||
                 !plans.any((p) => p.id == _selectedPlan!.id)) {
               WidgetsBinding.instance.addPostFrameCallback((_) {

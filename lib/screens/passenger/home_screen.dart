@@ -15,6 +15,7 @@ import 'active_trip_screen.dart';
 import '../../services/notification_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../config/app_config.dart';
+import '../../models/tariff_model.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -58,8 +59,11 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isSearchingDriver = false;
   String _selectedPaymentMethod = 'Efectivo';
   String _selectedServiceType = 'Viaje';
-  double _estimatedFare = 15.00;
+  PricingSettings _pricingSettings = PricingSettings.fromMap(null);
+  StreamSubscription<PricingSettings>? _pricingSubscription;
+  double _estimatedFare = 4.00;
   double _distanceKm = 0.0;
+  double _durationMinutes = 0.0;
   String _durationText = '';
 
   String? _activeTripId;
@@ -98,6 +102,28 @@ class _HomeScreenState extends State<HomeScreen> {
 
     _checkActiveTrip();
 
+    _pricingSubscription = FirestoreService.instance
+        .streamPricingSettings()
+        .listen((settings) {
+          if (!mounted) return;
+          setState(() {
+            _pricingSettings = settings;
+            if (_tripSelected || _distanceKm > 0) {
+              _estimatedFare = _pricingSettings
+                  .quote(
+                    category: VehicleCategory.moto,
+                    distanceKm: _distanceKm,
+                    durationMin: _durationMinutes,
+                  )
+                  .total;
+            } else {
+              _estimatedFare = _pricingSettings
+                  .tariffFor(VehicleCategory.moto)
+                  .minFare;
+            }
+          });
+        });
+
     // Verificamos y mostramos los pop-ups programados para nuevos usuarios al iniciar
     _checkAndShowPopupAds();
   }
@@ -112,6 +138,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _searchTimer?.cancel();
     _dispatchTimer?.cancel();
     _reverseGeocodeDebounce?.cancel();
+    _pricingSubscription?.cancel();
     _activeTripSubscription?.cancel();
     super.dispose();
   }
@@ -771,21 +798,41 @@ class _HomeScreenState extends State<HomeScreen> {
 
             if (route['legs'] != null && route['legs'].isNotEmpty) {
               final leg = route['legs'][0];
-              final distanceMeters = leg['distance']['value'] as int;
+              final distanceMeters = (leg['distance']?['value'] as num?)?.toDouble() ?? 0.0;
+              final durationSeconds = (leg['duration']?['value'] as num?)?.toDouble() ?? 0.0;
               _distanceKm = distanceMeters / 1000.0;
-              _durationText = leg['duration']['text'] ?? '';
+              _durationMinutes = durationSeconds / 60.0;
+              _durationText = leg['duration']?['text'] ?? '${_durationMinutes.round()} min';
 
-              _estimatedFare = 5.0 + (_distanceKm * 2.0);
-              if (_estimatedFare < 10.0) _estimatedFare = 10.0;
+              _estimatedFare = _pricingSettings
+                  .quote(
+                    category: VehicleCategory.moto,
+                    distanceKm: _distanceKm,
+                    durationMin: _durationMinutes,
+                  )
+                  .total;
             }
           }
         }
 
         if (routePoints.isEmpty) {
           routePoints = [originLatLng, destLatLng];
-          _estimatedFare = 15.00;
-          _distanceKm = 5.0;
-          _durationText = '15 min';
+          final fallbackKm = LocationService.instance.distanceKm(
+            originLatLng.latitude,
+            originLatLng.longitude,
+            destLatLng.latitude,
+            destLatLng.longitude,
+          );
+          _distanceKm = fallbackKm > 0 ? fallbackKm : 2.5;
+          _durationMinutes = (_distanceKm * 3.0).clamp(3.0, 120.0);
+          _durationText = '${_durationMinutes.round()} min';
+          _estimatedFare = _pricingSettings
+              .quote(
+                category: VehicleCategory.moto,
+                distanceKm: _distanceKm,
+                durationMin: _durationMinutes,
+              )
+              .total;
         }
 
         if (!mounted) return;
@@ -862,74 +909,104 @@ class _HomeScreenState extends State<HomeScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setModalState) {
-            return Container(
-              padding: const EdgeInsets.fromLTRB(20, 25, 20, 25),
-              decoration: const BoxDecoration(
-                color: Color(0xFF1E1E1E),
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(24),
-                  topRight: Radius.circular(24),
-                ),
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: const [
-                        Icon(Icons.local_taxi, color: Color(0xFFF9D408)),
-                        SizedBox(width: 10),
-                        Text(
-                          'Solicitar motoTaxi',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
+        return StreamBuilder<PricingSettings>(
+          stream: FirestoreService.instance.streamPricingSettings(),
+          initialData: _pricingSettings,
+          builder: (context, pricingSnapshot) {
+            final livePricing = pricingSnapshot.data ?? _pricingSettings;
+            return StatefulBuilder(
+              builder: (BuildContext context, StateSetter setModalState) {
+                final int? quoteHour =
+                    _selectedServiceType == 'Programar viaje'
+                    ? scheduledTripAt.hour
+                    : null;
+                final FareQuote activeQuote = livePricing.quote(
+                  category: VehicleCategory.moto,
+                  distanceKm: _distanceKm,
+                  durationMin: _durationMinutes,
+                  hour: quoteHour,
+                );
+                _estimatedFare = activeQuote.total;
+
+                return Container(
+                  padding: const EdgeInsets.fromLTRB(20, 25, 20, 25),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF1E1E1E),
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(24),
+                      topRight: Radius.circular(24),
                     ),
-                    const SizedBox(height: 20),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(15),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF2A2A2A),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: const Color(0xFFF9D408),
-                          width: 1,
+                  ),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: const [
+                            Icon(Icons.local_taxi, color: Color(0xFFF9D408)),
+                            SizedBox(width: 10),
+                            Text(
+                              'Solicitar motoTaxi',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                      child: Column(
-                        children: [
-                          const Text(
-                            'Precio sugerido por el sistema',
-                            style: TextStyle(color: Colors.grey, fontSize: 12),
-                          ),
-                          const SizedBox(height: 5),
-                          Text(
-                            'S/ ${_estimatedFare.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFFF9D408),
+                        const SizedBox(height: 20),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(15),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2A2A2A),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: const Color(0xFFF9D408),
+                              width: 1,
                             ),
                           ),
-                          const SizedBox(height: 5),
-                          Text(
-                            '${_distanceKm.toStringAsFixed(1)} km  •  $_durationText',
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 12,
-                            ),
+                          child: Column(
+                            children: [
+                              const Text(
+                                'Precio sugerido por el sistema',
+                                style: TextStyle(color: Colors.grey, fontSize: 12),
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                'S/ ${activeQuote.total.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFFF9D408),
+                                ),
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                '${_distanceKm.toStringAsFixed(1)} km  •  $_durationText',
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Base S/ ${activeQuote.baseFare.toStringAsFixed(2)}'
+                                ' + Ruta S/ ${activeQuote.distanceCost.toStringAsFixed(2)}'
+                                ' + Tiempo S/ ${activeQuote.timeCost.toStringAsFixed(2)}'
+                                '${activeQuote.isNight ? ' + Nocturno S/ ${activeQuote.nightSurcharge.toStringAsFixed(2)}' : ''}'
+                                '${activeQuote.minFareApplied ? ' (Tarifa mínima)' : ''}',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    ),
+                        ),
                     const SizedBox(height: 20),
                     const Text(
                       'Tipo de servicio:',
@@ -1271,8 +1348,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                         destCoords.longitude,
                                       )
                                     : null,
-                                'fareAmount': _estimatedFare,
+                                'fareAmount': activeQuote.total,
                                 'distanceKm': _distanceKm,
+                                'durationMinutes': _durationMinutes,
                                 'durationText': _durationText,
                                 'paymentMethod': _selectedPaymentMethod,
                                 'serviceType': _selectedServiceType,
@@ -1369,6 +1447,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
               ),
+            );
+              },
             );
           },
         );

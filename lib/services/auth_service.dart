@@ -286,45 +286,54 @@ class AuthService {
   // MÉTODOS DE VALIDACIÓN DE DUPLICADOS
   // ==========================================
   Future<bool> isPhoneRegistered(String phone) async {
-    try {
-      final cleanPhone = _normalize(phone);
-      final snapshot = await _firestore
-          .collection('users')
-          .where('phone', isEqualTo: cleanPhone)
-          .limit(1)
-          .get();
-      return snapshot.docs.isNotEmpty;
-    } catch (e) {
-      return false;
+    final cleanPhone = phone.trim();
+    if (cleanPhone.isEmpty) return false;
+
+    // Generar variantes para buscar tanto con 9 dígitos como con +51
+    final variants = <String>{
+      cleanPhone,
+      if (!cleanPhone.startsWith('+')) '+51$cleanPhone',
+      if (cleanPhone.startsWith('+51')) cleanPhone.substring(3),
+    };
+
+    for (final variant in variants) {
+      try {
+        final doc = await _firestore.collection('phone_index').doc(variant).get();
+        if (doc.exists) return true;
+      } catch (_) {}
     }
+
+    return false;
+  }
+
+  Future<bool> isDniRegistered(String dni) async {
+    final cleanDni = dni.trim();
+    if (cleanDni.isEmpty) return false;
+    try {
+      final doc = await _firestore.collection('dni_index').doc(cleanDni).get();
+      if (doc.exists) return true;
+    } catch (_) {}
+    return false;
   }
 
   Future<bool> isLicenseRegistered(String license) async {
+    final clean = license.trim().toUpperCase();
+    if (clean.isEmpty) return false;
     try {
-      final cleanLicense = license.trim();
-      final snapshot = await _firestore
-          .collection('users')
-          .where('licenseNumber', isEqualTo: cleanLicense)
-          .limit(1)
-          .get();
-      return snapshot.docs.isNotEmpty;
-    } catch (e) {
-      return false;
-    }
+      final doc = await _firestore.collection('license_index').doc(clean).get();
+      if (doc.exists) return true;
+    } catch (_) {}
+    return false;
   }
 
   Future<bool> isPlateRegistered(String plate) async {
+    final clean = plate.trim().toUpperCase();
+    if (clean.isEmpty) return false;
     try {
-      final cleanPlate = plate.trim().toUpperCase();
-      final snapshot = await _firestore
-          .collection('users')
-          .where('vehiclePlate', isEqualTo: cleanPlate)
-          .limit(1)
-          .get();
-      return snapshot.docs.isNotEmpty;
-    } catch (e) {
-      return false;
-    }
+      final doc = await _firestore.collection('plate_index').doc(clean).get();
+      if (doc.exists) return true;
+    } catch (_) {}
+    return false;
   }
 
   // ==========================================
@@ -350,6 +359,29 @@ class AuthService {
     String? licenseNumber,
   }) async {
     try {
+      final cleanDni = dni.trim();
+      final cleanPlate = vehiclePlate?.trim().toUpperCase();
+      final cleanLicense = licenseNumber?.trim().toUpperCase();
+
+      if (await isPhoneRegistered(phone)) {
+        return (false, 'Este número ya está registrado.');
+      }
+      if (await isDniRegistered(cleanDni)) {
+        return (false, 'Este DNI ya está registrado.');
+      }
+      if (role == UserRole.driver) {
+        if (cleanLicense != null &&
+            cleanLicense.isNotEmpty &&
+            await isLicenseRegistered(cleanLicense)) {
+          return (false, 'Este número de licencia ya está registrado.');
+        }
+        if (cleanPlate != null &&
+            cleanPlate.isNotEmpty &&
+            await isPlateRegistered(cleanPlate)) {
+          return (false, 'Esta placa de vehículo ya está registrada.');
+        }
+      }
+
       fb.UserCredential userCredential = await _fbAuth
           .createUserWithEmailAndPassword(
             email: email.trim(),
@@ -371,7 +403,7 @@ class AuthService {
         name: name,
         email: email.trim(),
         phone: number,
-        dni: dni,
+        dni: cleanDni,
         city: city,
         role: role,
         birthDate: birthDate,
@@ -379,13 +411,13 @@ class AuthService {
         photoUrl: photoUrl,
         createdAt: DateTime.now(),
         status: initialStatus,
-        vehiclePlate: vehiclePlate,
+        vehiclePlate: cleanPlate,
         vehicleBrand: vehicleBrand,
         vehicleModel: vehicleModel,
         vehicleColor: vehicleColor,
         vehicleYear: vehicleYear,
         vehicleType: vehicleType,
-        licenseNumber: licenseNumber,
+        licenseNumber: cleanLicense,
       );
 
       final userData = currentUser!.toMap();
@@ -417,6 +449,42 @@ class AuthService {
       final userRef = _firestore.collection('users').doc(uid);
 
       batch.set(userRef, userData);
+
+      // 1. Índice de DNI
+      if (cleanDni.isNotEmpty) {
+        final dniRef = _firestore.collection('dni_index').doc(cleanDni);
+        batch.set(dniRef, {
+          'uid': uid,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      // 2. Índice de Teléfono (¡Faltaba este!)
+      if (phone.isNotEmpty) {
+        final phoneRef = _firestore.collection('phone_index').doc(phone.trim());
+        batch.set(phoneRef, {
+          'uid': uid,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      // 3. Índice de Licencia (Si es conductor)
+      if (role == UserRole.driver && cleanLicense != null && cleanLicense.isNotEmpty) {
+        final licenseRef = _firestore.collection('license_index').doc(cleanLicense);
+        batch.set(licenseRef, {
+          'uid': uid,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      // 4. Índice de Placa (Si es conductor)
+      if (role == UserRole.driver && cleanPlate != null && cleanPlate.isNotEmpty) {
+        final plateRef = _firestore.collection('plate_index').doc(cleanPlate);
+        batch.set(plateRef, {
+          'uid': uid,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
       await batch.commit();
 
       await _getOrCreateWallet(uid);
