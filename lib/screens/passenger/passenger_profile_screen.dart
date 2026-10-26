@@ -48,7 +48,9 @@ class _PassengerProfileScreenState extends State<PassengerProfileScreen> {
 
     try {
       // 1. Precargar usuario desde la colección 'users' de Firestore
-      final freshUser = await FirestoreService.instance.getUser(currentAuthUser.uid);
+      final freshUser = await FirestoreService.instance.getUser(
+        currentAuthUser.uid,
+      );
       if (freshUser != null && mounted) {
         setState(() {
           _user = freshUser;
@@ -111,7 +113,10 @@ class _PassengerProfileScreenState extends State<PassengerProfileScreen> {
               backgroundColor: MijanoTheme.ink,
               content: Text(
                 'Foto de perfil actualizada correctamente',
-                style: TextStyle(color: MijanoTheme.sol, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: MijanoTheme.sol,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           );
@@ -165,7 +170,9 @@ class _PassengerProfileScreenState extends State<PassengerProfileScreen> {
         ),
       ),
       body: _isLoading && user == null
-          ? const Center(child: CircularProgressIndicator(color: MijanoTheme.ink))
+          ? const Center(
+              child: CircularProgressIndicator(color: MijanoTheme.ink),
+            )
           : SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -173,7 +180,10 @@ class _PassengerProfileScreenState extends State<PassengerProfileScreen> {
                   // 1. CABECERA Y RESUMEN SUPERIOR (Captura 1)
                   Container(
                     color: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 24,
+                    ),
                     child: Column(
                       children: [
                         // Avatar circular con selector de cámara integrado
@@ -184,11 +194,19 @@ class _PassengerProfileScreenState extends State<PassengerProfileScreen> {
                               CircleAvatar(
                                 radius: 52,
                                 backgroundColor: Colors.grey[300],
-                                backgroundImage: user?.photoUrl != null && user!.photoUrl!.isNotEmpty
+                                backgroundImage:
+                                    user?.photoUrl != null &&
+                                        user!.photoUrl!.isNotEmpty
                                     ? NetworkImage(user.photoUrl!)
                                     : null,
-                                child: (user?.photoUrl == null || user!.photoUrl!.isEmpty)
-                                    ? const Icon(Icons.person, size: 52, color: Colors.black54)
+                                child:
+                                    (user?.photoUrl == null ||
+                                        user!.photoUrl!.isEmpty)
+                                    ? const Icon(
+                                        Icons.person,
+                                        size: 52,
+                                        color: Colors.black54,
+                                      )
                                     : null,
                               ),
                               Positioned(
@@ -202,7 +220,10 @@ class _PassengerProfileScreenState extends State<PassengerProfileScreen> {
                                     decoration: BoxDecoration(
                                       color: const Color(0xFFF9D408),
                                       shape: BoxShape.circle,
-                                      border: Border.all(color: Colors.black, width: 1.5),
+                                      border: Border.all(
+                                        color: Colors.black,
+                                        width: 1.5,
+                                      ),
                                     ),
                                     child: const Icon(
                                       Icons.camera_alt,
@@ -306,7 +327,8 @@ class _PassengerProfileScreenState extends State<PassengerProfileScreen> {
                             final result = await Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => const PassengerEditProfileScreen(),
+                                builder: (_) =>
+                                    const PassengerEditProfileScreen(),
                               ),
                             );
                             if (result == true) {
@@ -318,7 +340,8 @@ class _PassengerProfileScreenState extends State<PassengerProfileScreen> {
                         _buildNavTile(
                           icon: Icons.delete_outline,
                           title: 'Eliminar cuenta',
-                          subtitle: 'Elimina tu cuenta y los datos de tu perfil',
+                          subtitle:
+                              'Elimina tu cuenta y los datos de tu perfil',
                           color: MijanoTheme.signal,
                           onTap: _confirmDeleteAccount,
                         ),
@@ -420,10 +443,7 @@ class _PassengerProfileScreenState extends State<PassengerProfileScreen> {
       ),
       subtitle: Text(
         value,
-        style: TextStyle(
-          fontSize: 13,
-          color: Colors.grey[700],
-        ),
+        style: TextStyle(fontSize: 13, color: Colors.grey[700]),
       ),
     );
   }
@@ -530,21 +550,31 @@ class _PassengerProfileScreenState extends State<PassengerProfileScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancelar', style: TextStyle(color: Colors.black54)),
+            child: const Text(
+              'Cancelar',
+              style: TextStyle(color: Colors.black54),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFFF5733),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
             onPressed: () async {
               Navigator.pop(dialogContext);
               await fb.FirebaseAuth.instance.signOut();
               await AuthService.instance.signOut();
               if (!mounted) return;
-              Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+              Navigator.of(
+                context,
+              ).pushNamedAndRemoveUntil('/login', (route) => false);
             },
-            child: const Text('Cerrar sesión', style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'Cerrar sesión',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -557,7 +587,10 @@ class _PassengerProfileScreenState extends State<PassengerProfileScreen> {
       builder: (dialogCtx) => AlertDialog(
         backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Seguridad de la Cuenta', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Seguridad de la Cuenta',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -569,7 +602,9 @@ class _PassengerProfileScreenState extends State<PassengerProfileScreen> {
               leading: const Icon(Icons.fingerprint, color: MijanoTheme.ink),
               title: const Text('Autenticación biométrica'),
               subtitle: Text(
-                _user?.biometricEnabled == true ? 'Habilitada' : 'Deshabilitada',
+                _user?.biometricEnabled == true
+                    ? 'Habilitada'
+                    : 'Deshabilitada',
                 style: const TextStyle(fontSize: 12),
               ),
               trailing: Switch(
@@ -593,7 +628,13 @@ class _PassengerProfileScreenState extends State<PassengerProfileScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx),
-            child: const Text('Cerrar', style: TextStyle(color: MijanoTheme.ink, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Cerrar',
+              style: TextStyle(
+                color: MijanoTheme.ink,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
@@ -606,7 +647,10 @@ class _PassengerProfileScreenState extends State<PassengerProfileScreen> {
       builder: (dialogCtx) => AlertDialog(
         backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Notificaciones', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Notificaciones',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         content: const Text(
           'Recibirás alertas en tiempo real sobre la asignación de tu conductor, llegada del motokar y recibos de viaje.',
         ),
@@ -615,10 +659,15 @@ class _PassengerProfileScreenState extends State<PassengerProfileScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: MijanoTheme.ink,
               foregroundColor: MijanoTheme.sol,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             onPressed: () => Navigator.pop(dialogCtx),
-            child: const Text('Aceptar', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Aceptar',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -631,7 +680,10 @@ class _PassengerProfileScreenState extends State<PassengerProfileScreen> {
       builder: (dialogCtx) => AlertDialog(
         backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Acerca de Mijano Drive', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Acerca de Mijano Drive',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         content: const Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -650,7 +702,13 @@ class _PassengerProfileScreenState extends State<PassengerProfileScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx),
-            child: const Text('Entendido', style: TextStyle(color: MijanoTheme.ink, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Entendido',
+              style: TextStyle(
+                color: MijanoTheme.ink,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),

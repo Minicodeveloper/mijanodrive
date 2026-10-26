@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'dart:io'; 
+import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart' as fbs; 
+import 'package:firebase_storage/firebase_storage.dart' as fbs;
 import 'package:local_auth/local_auth.dart';
 import 'package:mijano_drive_app/models/user_model.dart';
 
@@ -20,7 +20,7 @@ class AuthService {
   String _normalize(String phone) {
     final clean = phone.trim();
     if (clean.startsWith('+')) return clean;
-    return '+51$clean'; 
+    return '+51$clean';
   }
 
   // ==========================================
@@ -45,7 +45,10 @@ class AuthService {
   // ==========================================
   // 1. INICIAR SESIÓN (Correo y Contraseña)
   // ==========================================
-  Future<(bool, String, UserRole?, String?)> login(String email, String password) async {
+  Future<(bool, String, UserRole?, String?)> login(
+    String email,
+    String password,
+  ) async {
     try {
       fb.UserCredential credential = await _fbAuth.signInWithEmailAndPassword(
         email: email.trim(),
@@ -53,30 +56,48 @@ class AuthService {
       );
 
       final uid = credential.user!.uid;
-      DocumentSnapshot userDoc = await _firestore.collection('users').doc(uid).get();
-      
+      DocumentSnapshot userDoc = await _firestore
+          .collection('users')
+          .doc(uid)
+          .get();
+
       if (userDoc.exists) {
         final data = userDoc.data() as Map<String, dynamic>;
 
         if (data['isBlocked'] == true) {
           await _fbAuth.signOut();
-          return (false, 'Tu cuenta ha sido bloqueada. Comunícate con el soporte de Mijano Drive.', null, null);
+          return (
+            false,
+            'Tu cuenta ha sido bloqueada. Comunícate con el soporte de Mijano Drive.',
+            null,
+            null,
+          );
         }
 
         currentUser = User.fromMap(data);
-        
-        String? status = data['status'] ?? (currentUser!.role == UserRole.driver ? 'pending' : 'approved');
-        
+
+        String? status =
+            data['status'] ??
+            (currentUser!.role == UserRole.driver ? 'pending' : 'approved');
+
         return (true, '¡Bienvenido de nuevo!', currentUser!.role, status);
       } else {
-        return (false, 'No se encontraron los datos del usuario en el sistema.', null, null);
+        return (
+          false,
+          'No se encontraron los datos del usuario en el sistema.',
+          null,
+          null,
+        );
       }
     } on fb.FirebaseAuthException catch (e) {
       String message = 'Error al iniciar sesión';
-      if (e.code == 'user-not-found' || e.code == 'wrong-password' || e.code == 'invalid-credential') {
+      if (e.code == 'user-not-found' ||
+          e.code == 'wrong-password' ||
+          e.code == 'invalid-credential') {
         message = 'Correo o contraseña incorrectos.';
       } else if (e.code == 'too-many-requests') {
-        message = 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.';
+        message =
+            'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.';
       } else if (e.code == 'network-request-failed') {
         message = 'Sin conexión. Revisa tu internet.';
       } else if (e.code == 'invalid-email') {
@@ -129,7 +150,10 @@ class AuthService {
   Future<(bool, String)> verifyOtp(String phone, String smsCode) async {
     try {
       if (_verificationId == null) {
-        return (false, 'No hay una solicitud de código activa. Solicita un nuevo SMS.');
+        return (
+          false,
+          'No hay una solicitud de código activa. Solicita un nuevo SMS.',
+        );
       }
 
       fb.PhoneAuthCredential credential = fb.PhoneAuthProvider.credential(
@@ -137,10 +161,15 @@ class AuthService {
         smsCode: smsCode,
       );
 
-      fb.UserCredential userCredential = await _fbAuth.signInWithCredential(credential);
+      fb.UserCredential userCredential = await _fbAuth.signInWithCredential(
+        credential,
+      );
       final uid = userCredential.user!.uid;
 
-      DocumentSnapshot userDoc = await _firestore.collection('users').doc(uid).get();
+      DocumentSnapshot userDoc = await _firestore
+          .collection('users')
+          .doc(uid)
+          .get();
       if (userDoc.exists) {
         currentUser = User.fromMap(userDoc.data() as Map<String, dynamic>);
       }
@@ -178,7 +207,10 @@ class AuthService {
   }) async {
     try {
       if (_verificationId == null) {
-        return (false, 'No hay una solicitud de código activa. Solicita un nuevo SMS.');
+        return (
+          false,
+          'No hay una solicitud de código activa. Solicita un nuevo SMS.',
+        );
       }
 
       return await _createAccountInFirebase(
@@ -318,10 +350,11 @@ class AuthService {
     String? licenseNumber,
   }) async {
     try {
-      fb.UserCredential userCredential = await _fbAuth.createUserWithEmailAndPassword(
-        email: email.trim(),
-        password: password,
-      );
+      fb.UserCredential userCredential = await _fbAuth
+          .createUserWithEmailAndPassword(
+            email: email.trim(),
+            password: password,
+          );
 
       final uid = userCredential.user!.uid;
       final number = _normalize(phone);
@@ -343,7 +376,7 @@ class AuthService {
         role: role,
         birthDate: birthDate,
         age: age,
-        photoUrl: photoUrl, 
+        photoUrl: photoUrl,
         createdAt: DateTime.now(),
         status: initialStatus,
         vehiclePlate: vehiclePlate,
@@ -359,9 +392,24 @@ class AuthService {
 
       if (role == UserRole.driver) {
         userData['documents'] = [
-          {'id': 'dni', 'name': 'Documento de Identidad (DNI)', 'status': 'pending', 'url': ''},
-          {'id': 'license', 'name': 'Licencia de Conducir', 'status': 'pending', 'url': ''},
-          {'id': 'soat', 'name': 'SOAT / Seguro del Vehículo', 'status': 'pending', 'url': ''},
+          {
+            'id': 'dni',
+            'name': 'Documento de Identidad (DNI)',
+            'status': 'pending',
+            'url': '',
+          },
+          {
+            'id': 'license',
+            'name': 'Licencia de Conducir',
+            'status': 'pending',
+            'url': '',
+          },
+          {
+            'id': 'soat',
+            'name': 'SOAT / Seguro del Vehículo',
+            'status': 'pending',
+            'url': '',
+          },
         ];
       }
 
@@ -388,14 +436,14 @@ class AuthService {
       return (false, message);
     } catch (e) {
       if (e.toString().contains('permission-denied')) {
-         final user = _fbAuth.currentUser;
-         if (user != null) {
-            try {
-               await user.delete();
-            } catch (_) {}
-            await _fbAuth.signOut();
-         }
-         return (false, 'Este DNI ya está registrado.');
+        final user = _fbAuth.currentUser;
+        if (user != null) {
+          try {
+            await user.delete();
+          } catch (_) {}
+          await _fbAuth.signOut();
+        }
+        return (false, 'Este DNI ya está registrado.');
       }
       return (false, 'Error inesperado al registrar: $e');
     }
@@ -445,10 +493,9 @@ class AuthService {
       });
 
       await batch.commit();
-
     } catch (e) {
       if (e.toString().contains('permission-denied')) {
-         throw Exception('DNI ya registrado en otra cuenta.');
+        throw Exception('DNI ya registrado en otra cuenta.');
       }
       throw Exception(e);
     }
@@ -502,7 +549,9 @@ class AuthService {
     final uid = _fbAuth.currentUser?.uid;
     if (uid != null) {
       try {
-        await _firestore.collection('drivers').doc(uid).set({'isAvailable': false}, SetOptions(merge: true));
+        await _firestore.collection('drivers').doc(uid).set({
+          'isAvailable': false,
+        }, SetOptions(merge: true));
       } catch (_) {}
     }
     await _fbAuth.signOut();
