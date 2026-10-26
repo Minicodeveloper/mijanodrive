@@ -256,12 +256,21 @@ class AuthService {
   Future<bool> isPhoneRegistered(String phone) async {
     final cleanPhone = phone.trim();
     if (cleanPhone.isEmpty) return false;
-    
-    // Normalizar a formato de dígitos limpios o con prefijo según guardes en tu app
-    try {
-      final doc = await _firestore.collection('phone_index').doc(cleanPhone).get();
-      if (doc.exists) return true;
-    } catch (_) {}
+
+    // Generar variantes para buscar tanto con 9 dígitos como con +51
+    final variants = <String>{
+      cleanPhone,
+      if (!cleanPhone.startsWith('+')) '+51$cleanPhone',
+      if (cleanPhone.startsWith('+51')) cleanPhone.substring(3),
+    };
+
+    for (final variant in variants) {
+      try {
+        final doc = await _firestore.collection('phone_index').doc(variant).get();
+        if (doc.exists) return true;
+      } catch (_) {}
+    }
+
     return false;
   }
 
