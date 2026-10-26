@@ -8,6 +8,7 @@ import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
 import '../../services/location_service.dart';
 import 'package:geocoding/geocoding.dart' as geo;
+import '../../widgets/frequent_places_sheet.dart';
 
 class SearchTripScreen extends StatefulWidget {
   const SearchTripScreen({super.key});
@@ -150,11 +151,13 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
         ),
         title: const Text('Nuevo viaje', style: TextStyle(color: Colors.black)),
       ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+      body: Stack(
+        children: [
+          SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.only(left: 20.0, right: 20.0, top: 20.0, bottom: 120.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 10),
 
@@ -298,29 +301,6 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                 ),
               ),
 
-              const SizedBox(height: 20),
-
-              // Lugares frecuentes.
-              const Text(
-                'Lugares frecuentes',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-              ),
-
-              const SizedBox(height: 10),
-
-              GridView.count(
-                crossAxisCount: 2,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                childAspectRatio: 2.5,
-                children: [
-                  _buildQuickButton('Casa', Icons.home),
-                  _buildQuickButton('Trabajo', Icons.work),
-                  _buildQuickButton('Supermercado', Icons.shopping_cart),
-                  _buildQuickButton('Hospital', Icons.local_hospital),
-                ],
-              ),
-
               const SizedBox(height: 25),
 
               // Tarifa estimada.
@@ -420,35 +400,14 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildQuickButton(String label, IconData icon) {
-    return InkWell(
-      onTap: () async {
-        _destinationController.text = label;
-        
-        _destinationLat = null;
-        _destinationLng = null;
-      },
-      child: Container(
-        margin: const EdgeInsets.all(5),
-        decoration: BoxDecoration(
-          border: Border.all(color: Colors.grey[300]!),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: const Color(0xFFE5B800)),
-            const SizedBox(height: 5),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 12),
-            ),
-          ],
-        ),
+          FrequentPlacesSheet(
+            onPlaceSelected: (place) {
+              _destinationController.text = place;
+              _destinationLat = null;
+              _destinationLng = null;
+            },
+          ),
+        ],
       ),
     );
   }
