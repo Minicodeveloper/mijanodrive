@@ -329,5 +329,9 @@ service cloud.firestore {
       allow read: if isSuperAdmin() || isManager() || request.auth.uid == driverId;
       allow write: if isSuperAdmin() || isManager();
     }
+
+    match /intercity_vehicles/{vehicleId} {
+      allow read, write: if true;
+    }
   }
 }

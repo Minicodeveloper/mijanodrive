@@ -9,6 +9,7 @@ import '../../services/auth_service.dart';
 import '../../services/location_service.dart';
 import '../../services/firestore_service.dart';
 import 'passenger_account_screen.dart';
+import 'passenger_available_cars_screen.dart';
 import 'passenger_history_screen.dart';
 import 'passenger_reserved_trips_screen.dart';
 import 'active_trip_screen.dart';
@@ -58,6 +59,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
   bool _tripSelected = false;
   bool _isSearchingDriver = false;
+  bool _isCarMode = false;
+  String? _carOriginCity = 'Yurimaguas';
+  String? _carDestinationCity = 'Tarapoto';
+  static const List<String> _intercityOptions = [
+    'Yurimaguas',
+    'Tarapoto',
+    'Iquitos',
+    'Moyobamba',
+    'Rioja',
+    'Juanjuí',
+  ];
   String _selectedPaymentMethod = 'Efectivo';
   String _selectedServiceType = 'Viaje';
   PricingSettings _pricingSettings = PricingSettings.fromMap(null);
@@ -2439,50 +2451,251 @@ class _HomeScreenState extends State<HomeScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text(
-                              'Introduce la ruta...',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black,
+                            Expanded(
+                              child: Text(
+                                _isCarMode
+                                    ? 'Viaje en Auto'
+                                    : 'Introduce la ruta...',
+                                style: const TextStyle(
+                                  fontSize: 19,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black,
+                                ),
                               ),
                             ),
-                            TextButton.icon(
-                              style: TextButton.styleFrom(
-                                foregroundColor: Colors.black87,
-                                backgroundColor: const Color(
-                                  0xFFF9D408,
-                                ).withValues(alpha: 0.25),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 6,
-                                ),
-                                shape: RoundedRectangleBorder(
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                InkWell(
+                                  onTap: () {
+                                    setState(() {
+                                      _isCarMode = !_isCarMode;
+                                      _isSearchingOrigin = false;
+                                      _isSearchingDestination = false;
+                                    });
+                                  },
                                   borderRadius: BorderRadius.circular(10),
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 180),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 11,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: _isCarMode
+                                          ? const Color(0xFFF9D408)
+                                          : const Color(0xFF1E1E1E),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: const Color(0xFFF9D408),
+                                        width: 1.3,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          _isCarMode
+                                              ? Icons.two_wheeler
+                                              : Icons.directions_car_filled,
+                                          size: 16,
+                                          color: _isCarMode
+                                              ? Colors.black
+                                              : const Color(0xFFF9D408),
+                                        ),
+                                        const SizedBox(width: 5),
+                                        Text(
+                                          _isCarMode ? 'Moto' : 'Auto',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: _isCarMode
+                                                ? Colors.black
+                                                : Colors.white,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
-                              ),
-                              onPressed: () {
-                                final target = _originFocus.hasFocus
-                                    ? 'origin'
-                                    : 'destination';
-                                _startPickingOnMap(target);
-                              },
-                              icon: const Icon(
-                                Icons.map_outlined,
-                                size: 16,
-                                color: Colors.black87,
-                              ),
-                              label: const Text(
-                                'Elegir en mapa',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
+                                if (!_isCarMode) ...[
+                                  const SizedBox(width: 8),
+                                  TextButton.icon(
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: Colors.black87,
+                                      backgroundColor: const Color(
+                                        0xFFF9D408,
+                                      ).withValues(alpha: 0.25),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                    ),
+                                    onPressed: () {
+                                      final target = _originFocus.hasFocus
+                                          ? 'origin'
+                                          : 'destination';
+                                      _startPickingOnMap(target);
+                                    },
+                                    icon: const Icon(
+                                      Icons.map_outlined,
+                                      size: 16,
+                                      color: Colors.black87,
+                                    ),
+                                    label: const Text(
+                                      'Elegir en mapa',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
                           ],
                         ),
                         const SizedBox(height: 12),
+                        if (_isCarMode) ...[
+                          DropdownButtonFormField<String>(
+                            initialValue: _carOriginCity,
+                            icon: const Icon(
+                              Icons.keyboard_arrow_down,
+                              color: Colors.black87,
+                            ),
+                            decoration: InputDecoration(
+                              filled: true,
+                              fillColor: Colors.white,
+                              prefixIcon: const Icon(
+                                Icons.trip_origin,
+                                color: Colors.black,
+                                size: 20,
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                vertical: 14,
+                                horizontal: 12,
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                  color: Colors.grey.shade400,
+                                  width: 1,
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: const BorderSide(
+                                  color: Colors.black,
+                                  width: 1.2,
+                                ),
+                              ),
+                            ),
+                            hint: const Text('De: Selecciona origen'),
+                            selectedItemBuilder: (context) {
+                              return _intercityOptions.map((city) {
+                                return Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    'De: $city',
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.black87,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                );
+                              }).toList();
+                            },
+                            items: _intercityOptions
+                                .map(
+                                  (city) => DropdownMenuItem<String>(
+                                    value: city,
+                                    child: Text('De: $city'),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (value) {
+                              setState(() {
+                                _carOriginCity = value;
+                                if (_carDestinationCity == value) {
+                                  _carDestinationCity = _intercityOptions
+                                      .firstWhere((c) => c != value);
+                                }
+                              });
+                            },
+                          ),
+                          const SizedBox(height: 10),
+                          DropdownButtonFormField<String>(
+                            initialValue: _carDestinationCity,
+                            icon: const Icon(
+                              Icons.keyboard_arrow_down,
+                              color: Colors.black87,
+                            ),
+                            decoration: InputDecoration(
+                              filled: true,
+                              fillColor: Colors.white,
+                              prefixIcon: const Icon(
+                                Icons.flag,
+                                color: Colors.black,
+                                size: 20,
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                vertical: 14,
+                                horizontal: 12,
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                  color: Colors.grey.shade400,
+                                  width: 1,
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: const BorderSide(
+                                  color: Colors.black,
+                                  width: 1.2,
+                                ),
+                              ),
+                            ),
+                            hint: const Text('A: Selecciona destino'),
+                            selectedItemBuilder: (context) {
+                              return _intercityOptions.map((city) {
+                                return Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    'A: $city',
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.black87,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                );
+                              }).toList();
+                            },
+                            items: _intercityOptions
+                                .map(
+                                  (city) => DropdownMenuItem<String>(
+                                    value: city,
+                                    child: Text('A: $city'),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (value) {
+                              setState(() {
+                                _carDestinationCity = value;
+                                if (_carOriginCity == value) {
+                                  _carOriginCity = _intercityOptions
+                                      .firstWhere((c) => c != value);
+                                }
+                              });
+                            },
+                          ),
+                        ] else ...[
                         TextField(
                           controller: _originController,
                           focusNode: _originFocus,
@@ -2709,6 +2922,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                         ],
+                        ],
                         const SizedBox(height: 15),
                         const AdCarouselBanner(),
                         const SizedBox(height: 20),
@@ -2725,6 +2939,30 @@ class _HomeScreenState extends State<HomeScreen> {
                               elevation: 0,
                             ),
                             onPressed: () {
+                              if (_isCarMode) {
+                                if (_carOriginCity != null &&
+                                    _carDestinationCity != null &&
+                                    _carOriginCity != _carDestinationCity) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => AvailableCarsScreen(
+                                        originCity: _carOriginCity!,
+                                        destinationCity: _carDestinationCity!,
+                                      ),
+                                    ),
+                                  );
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Selecciona ciudad de origen y destino diferentes.',
+                                      ),
+                                    ),
+                                  );
+                                }
+                                return;
+                              }
                               if (_destinationController.text.isNotEmpty) {
                                 _showRequestModal();
                               } else {
@@ -2738,7 +2976,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               }
                             },
                             child: Text(
-                              _tripSelected
+                              _isCarMode
+                                  ? 'Buscar Autos Disponibles'
+                                  : _tripSelected
                                   ? 'Continuar solicitud'
                                   : 'Seleccionar destino',
                               style: const TextStyle(
