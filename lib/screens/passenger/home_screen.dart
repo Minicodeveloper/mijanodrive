@@ -368,11 +368,6 @@ class _HomeScreenState extends State<HomeScreen> {
           _distanceKm = (data['distanceKm'] ?? 0.0).toDouble();
           _durationText = data['durationText'] ?? '';
           _selectedPaymentMethod = data['paymentMethod'] ?? 'Efectivo';
-          // Los viajes antiguos de paquetería se normalizan a viaje normal.
-          _selectedServiceType = data['serviceType'] == 'Encomienda'
-              ? 'Viaje'
-              : (data['serviceType'] ?? 'Viaje');
-
           if (data['status'] == 'pending') {
             _isSearchingDriver = true;
             _startSearchTimer();
