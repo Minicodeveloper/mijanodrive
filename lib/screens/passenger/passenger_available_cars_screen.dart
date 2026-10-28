@@ -402,39 +402,6 @@ class IntercityVehicleRepository extends ChangeNotifier {
     'car_4',
   };
 
-  /// Lista de respaldo solo si aún no se ha sincronizado ningún auto real.
-  final List<AvailableCarItem> _fallbackCars = [
-    const AvailableCarItem(
-      id: 'car_1',
-      driverId: 'car_1',
-      driverName: 'Juan Pérez',
-      vehicleModel: 'Toyota Yaris',
-      vehiclePlate: 'ABC-123',
-      departureLabel: 'Hoy, 14:30',
-      pricePerSeat: 45.00,
-      avatarUrl:
-          'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=240&auto=format&fit=crop&q=80',
-      originCity: 'Tarapoto',
-      destinationCity: 'Yurimaguas',
-      seatStates: {
-        1: 'available',
-        2: 'available',
-        3: 'occupied',
-        4: 'available',
-      },
-      seatPassengers: {
-        3: SeatPassengerInfo(
-          seatNumber: 3,
-          passengerId: 'pax_carlos_r',
-          passengerName: 'Carlos Ramírez',
-          shortName: 'Carlos R.',
-          phone: '+51912345678',
-          etaText: 'ETA: 12 min a 15 min',
-        ),
-      },
-    ),
-  ];
-
   bool _isCarVehicleMap(Map<String, dynamic> data) {
     final rawType =
         (data['vehicleType'] ??
@@ -456,13 +423,9 @@ class IntercityVehicleRepository extends ChangeNotifier {
         data['isIntercityCar'] == true;
   }
 
-  /// Todos los vehículos registrados (prioriza siempre las cuentas reales de Auto).
-  List<AvailableCarItem> get allCars {
-    if (_realCarsByUid.isNotEmpty) {
-      return List.unmodifiable(_realCarsByUid.values.toList());
-    }
-    return List.unmodifiable(_fallbackCars);
-  }
+  /// Todos los vehículos reales registrados con cuenta de Auto / Carro.
+  List<AvailableCarItem> get allCars =>
+      List.unmodifiable(_realCarsByUid.values.toList());
 
   /// Ocultamiento Automático por Ocupación Total:
   /// Cuando los 4 asientos de un vehículo alcanzan el estado de ocupados
@@ -470,19 +433,43 @@ class IntercityVehicleRepository extends ChangeNotifier {
   List<AvailableCarItem> get publicAvailableCars =>
       allCars.where((c) => c.availableSeatsCount > 0).toList();
 
-  /// Obtiene el vehículo correspondiente al conductor autenticado actual.
+  /// Obtiene el vehículo correspondiente al conductor autenticado actual
+  /// (sin datos por defecto ni pasajeros ficticios).
   AvailableCarItem get driverPrimaryVehicle {
-    final uid =
-        AuthService.instance.currentUser?.uid ??
-        fb.FirebaseAuth.instance.currentUser?.uid ??
-        '';
+    final user = AuthService.instance.currentUser;
+    final uid = user?.uid ?? fb.FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isNotEmpty && _realCarsByUid.containsKey(uid)) {
       return _realCarsByUid[uid]!;
     }
     if (_realCarsByUid.isNotEmpty) {
       return _realCarsByUid.values.first;
     }
-    return _fallbackCars.first;
+    final brand = (user?.vehicleBrand ?? '').trim();
+    final model = (user?.vehicleModel ?? '').trim();
+    final fullModel = '$brand $model'.trim();
+    return AvailableCarItem(
+      id: uid.isNotEmpty ? uid : 'driver_car',
+      driverId: uid,
+      driverName: (user?.name != null && user!.name!.trim().isNotEmpty)
+          ? user.name!.trim()
+          : 'Conductor',
+      driverPhone: user?.phone ?? '',
+      vehicleBrand: brand,
+      vehicleModel: fullModel.isNotEmpty ? fullModel : 'Auto',
+      vehiclePlate: (user?.vehiclePlate ?? '').trim().toUpperCase(),
+      agencyName: user?.agencyName ?? '',
+      departureLabel: 'Hoy, 14:30',
+      pricePerSeat: 45.00,
+      avatarUrl: user?.photoUrl ?? '',
+      originCity: user?.city ?? 'Tarapoto',
+      destinationCity: 'Yurimaguas',
+      seatStates: const {
+        1: 'available',
+        2: 'available',
+        3: 'available',
+        4: 'available',
+      },
+    );
   }
 
   AvailableCarItem getCarById(String carId) {
@@ -742,14 +729,7 @@ class IntercityVehicleRepository extends ChangeNotifier {
   }
 
   void _updateLocalCar(AvailableCarItem updatedCar) {
-    if (_legacyDemoIds.contains(updatedCar.id) && _realCarsByUid.isEmpty) {
-      final idx = _fallbackCars.indexWhere((c) => c.id == updatedCar.id);
-      if (idx != -1) {
-        _fallbackCars[idx] = updatedCar;
-      }
-    } else {
-      _realCarsByUid[updatedCar.id] = updatedCar;
-    }
+    _realCarsByUid[updatedCar.id] = updatedCar;
     notifyListeners();
   }
 

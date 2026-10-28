@@ -1376,6 +1376,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                 'status': 'pending',
                                 'driverId': null,
                                 'completedAt': null,
+                                'createdAtMs':
+                                    DateTime.now().millisecondsSinceEpoch,
                                 'createdAt': FieldValue.serverTimestamp(),
                               };
                               

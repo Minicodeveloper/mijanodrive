@@ -396,9 +396,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
         );
       }
     } else {
-      final nameController = TextEditingController(
-        text: seatNumber == 2 ? 'María Torres' : 'Pasajero $seatNumber',
-      );
+      final nameController = TextEditingController();
       final shouldOccupy = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(

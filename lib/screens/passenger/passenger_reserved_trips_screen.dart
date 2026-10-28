@@ -334,20 +334,28 @@ class _PassengerReservedTripsScreenState
                       }).toList();
 
                       filteredReservations.sort((a, b) {
-                        if (a.id == widget.initialTripId) return -1;
-                        if (b.id == widget.initialTripId) return 1;
-                        final dateA = a.data()['scheduledAt'];
-                        final dateB = b.data()['scheduledAt'];
-                        if (dateA is Timestamp && dateB is Timestamp) {
-                          return _selectedFilter == 'activas'
-                              ? dateA.compareTo(dateB)
-                              : dateB.compareTo(dateA);
+                        DateTime extractCreated(
+                          QueryDocumentSnapshot<Map<String, dynamic>> doc,
+                        ) {
+                          final data = doc.data();
+                          final localMs = data['createdAtMs'];
+                          if (localMs is num) {
+                            return DateTime.fromMillisecondsSinceEpoch(
+                              localMs.toInt(),
+                            );
+                          }
+                          final created = data['createdAt'];
+                          if (created is Timestamp) {
+                            return created.toDate();
+                          }
+                          if (doc.metadata.hasPendingWrites) {
+                            return DateTime.now();
+                          }
+                          return DateTime.fromMillisecondsSinceEpoch(0);
                         }
-                        return dateA is Timestamp
-                            ? -1
-                            : dateB is Timestamp
-                            ? 1
-                            : 0;
+
+                        // La última reserva creada siempre aparece primero arriba
+                        return extractCreated(b).compareTo(extractCreated(a));
                       });
 
                       if (filteredReservations.isEmpty) {
@@ -842,7 +850,8 @@ class _CreateReservationBottomSheetState
   LatLng? _originLatLng;
   LatLng? _destinationLatLng;
 
-  DateTime _scheduledAt = DateTime.now().add(const Duration(hours: 1));
+  DateTime? _selectedDate;
+  TimeOfDay? _selectedTime;
   String _selectedPaymentMethod = 'Efectivo';
   bool _carriesCargo = false;
   bool _isCalculatingFare = false;
@@ -850,10 +859,21 @@ class _CreateReservationBottomSheetState
 
   PricingSettings _pricingSettings = PricingSettings.fromMap(null);
   StreamSubscription<PricingSettings>? _pricingSubscription;
-  double _estimatedFare = 4.0;
+  double _estimatedFare = 0.0;
   double _distanceKm = 0.0;
   double _durationMinutes = 0.0;
   String _durationText = '';
+
+  DateTime? get _scheduledAt {
+    if (_selectedDate == null || _selectedTime == null) return null;
+    return DateTime(
+      _selectedDate!.year,
+      _selectedDate!.month,
+      _selectedDate!.day,
+      _selectedTime!.hour,
+      _selectedTime!.minute,
+    );
+  }
 
   @override
   void initState() {
@@ -871,18 +891,17 @@ class _CreateReservationBottomSheetState
 
   void _updateQuoteFromSettings() {
     if (_distanceKm > 0) {
+      final hour = _selectedTime?.hour ?? DateTime.now().hour;
       _estimatedFare = _pricingSettings
           .quote(
             category: VehicleCategory.moto,
             distanceKm: _distanceKm,
             durationMin: _durationMinutes,
-            hour: _scheduledAt.hour,
+            hour: hour,
           )
           .total;
     } else {
-      _estimatedFare = _pricingSettings
-          .tariffFor(VehicleCategory.moto)
-          .minFare;
+      _estimatedFare = 0.0;
     }
   }
 
@@ -1079,6 +1098,15 @@ class _CreateReservationBottomSheetState
   }
 
   Future<void> _submitReservation() async {
+    if (_originController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Por favor, ingresa el punto de partida de tu reserva.'),
+        ),
+      );
+      return;
+    }
+
     if (_destinationController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1088,7 +1116,19 @@ class _CreateReservationBottomSheetState
       return;
     }
 
-    if (!_scheduledAt.isAfter(DateTime.now())) {
+    final scheduled = _scheduledAt;
+    if (scheduled == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Por favor, selecciona la fecha y la hora para tu reserva.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (!scheduled.isAfter(DateTime.now())) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Selecciona una fecha y hora futura para la reserva.'),
@@ -1128,9 +1168,7 @@ class _CreateReservationBottomSheetState
         'passengerId': user.uid,
         'passengerName': user.name,
         'passengerPhone': user.phone,
-        'originAddress': _originController.text.trim().isNotEmpty
-            ? _originController.text.trim()
-            : 'Mi ubicación actual',
+        'originAddress': _originController.text.trim(),
         'destinationAddress': _destinationController.text.trim(),
         'origin': GeoPoint(originCoords.latitude, originCoords.longitude),
         'destination': destCoords != null
@@ -1142,10 +1180,11 @@ class _CreateReservationBottomSheetState
         'paymentMethod': _selectedPaymentMethod,
         'serviceType': 'Programar viaje',
         'carriesCargo': _carriesCargo,
-        'scheduledAt': Timestamp.fromDate(_scheduledAt),
+        'scheduledAt': Timestamp.fromDate(scheduled),
         'status': 'pending',
         'driverId': null,
         'completedAt': null,
+        'createdAtMs': DateTime.now().millisecondsSinceEpoch,
         'createdAt': FieldValue.serverTimestamp(),
       };
 
@@ -1225,7 +1264,7 @@ class _CreateReservationBottomSheetState
               decoration: InputDecoration(
                 filled: true,
                 fillColor: const Color(0xFF2A2A2A),
-                hintText: 'Origen (vacío = Mi ubicación actual)',
+                hintText: 'Ingresa el punto de partida',
                 hintStyle: const TextStyle(color: Colors.white54, fontSize: 13),
                 prefixIcon: const Icon(
                   Icons.trip_origin,
@@ -1430,9 +1469,12 @@ class _CreateReservationBottomSheetState
                     ),
                     onPressed: () async {
                       final today = DateTime.now();
+                      final initialDate =
+                          _selectedDate ??
+                          DateTime(today.year, today.month, today.day);
                       final selectedDate = await showDatePicker(
                         context: context,
-                        initialDate: _scheduledAt,
+                        initialDate: initialDate,
                         firstDate: DateTime(today.year, today.month, today.day),
                         lastDate: DateTime(
                           today.year,
@@ -1443,21 +1485,21 @@ class _CreateReservationBottomSheetState
                       );
                       if (selectedDate != null) {
                         setState(() {
-                          _scheduledAt = DateTime(
+                          _selectedDate = DateTime(
                             selectedDate.year,
                             selectedDate.month,
                             selectedDate.day,
-                            _scheduledAt.hour,
-                            _scheduledAt.minute,
                           );
                         });
                       }
                     },
                     icon: const Icon(Icons.calendar_today, size: 18),
                     label: Text(
-                      MaterialLocalizations.of(
-                        context,
-                      ).formatMediumDate(_scheduledAt),
+                      _selectedDate == null
+                          ? 'Seleccionar fecha'
+                          : MaterialLocalizations.of(
+                              context,
+                            ).formatMediumDate(_selectedDate!),
                     ),
                   ),
                 ),
@@ -1470,29 +1512,27 @@ class _CreateReservationBottomSheetState
                       padding: const EdgeInsets.symmetric(vertical: 13),
                     ),
                     onPressed: () async {
+                      final initialTime =
+                          _selectedTime ?? TimeOfDay.fromDateTime(DateTime.now());
                       final selectedTime = await showTimePicker(
                         context: context,
-                        initialTime: TimeOfDay.fromDateTime(_scheduledAt),
+                        initialTime: initialTime,
                         helpText: 'Selecciona la hora del viaje',
                       );
                       if (selectedTime != null) {
                         setState(() {
-                          _scheduledAt = DateTime(
-                            _scheduledAt.year,
-                            _scheduledAt.month,
-                            _scheduledAt.day,
-                            selectedTime.hour,
-                            selectedTime.minute,
-                          );
+                          _selectedTime = selectedTime;
                           _updateQuoteFromSettings();
                         });
                       }
                     },
                     icon: const Icon(Icons.access_time, size: 18),
                     label: Text(
-                      MaterialLocalizations.of(context).formatTimeOfDay(
-                        TimeOfDay.fromDateTime(_scheduledAt),
-                      ),
+                      _selectedTime == null
+                          ? 'Seleccionar hora'
+                          : MaterialLocalizations.of(
+                              context,
+                            ).formatTimeOfDay(_selectedTime!),
                     ),
                   ),
                 ),
