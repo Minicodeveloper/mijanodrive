@@ -75,6 +75,7 @@ class AuthService {
         }
 
         currentUser = User.fromMap(data);
+        unawaited(syncCarDriverToPublicIndex(currentUser!));
 
         String? status =
             data['status'] ??
@@ -172,6 +173,7 @@ class AuthService {
           .get();
       if (userDoc.exists) {
         currentUser = User.fromMap(userDoc.data() as Map<String, dynamic>);
+        unawaited(syncCarDriverToPublicIndex(currentUser!));
       }
 
       return (true, '¡Código verificado con éxito!');
@@ -493,6 +495,10 @@ class AuthService {
       }
       await batch.commit();
 
+      if (currentUser != null) {
+        unawaited(syncCarDriverToPublicIndex(currentUser!));
+      }
+
       await _getOrCreateWallet(uid);
 
       return (true, '¡Cuenta registrada con éxito!');
@@ -694,5 +700,88 @@ class AuthService {
     }
 
     currentUser = null;
+  }
+
+  /// Sincroniza el auto del conductor (cuando se registró con Carro / Auto)
+  /// hacia `plate_index/CAR_VEHICLE_{uid}` e `intercity_vehicles/{uid}` para que
+  /// aparezca inmediatamente en "Autos Disponibles" de los pasajeros.
+  Future<void> syncCarDriverToPublicIndex(User user) async {
+    if (user.role != UserRole.driver || user.uid.isEmpty) return;
+
+    final rawType = (user.vehicleType ?? '').trim().toLowerCase();
+    final hasAgency =
+        user.agencyName != null && user.agencyName!.trim().isNotEmpty;
+    final isMoto = rawType.contains('moto');
+    final isCar =
+        !isMoto &&
+        (rawType == 'carro' ||
+            rawType == 'auto' ||
+            rawType.contains('carro') ||
+            rawType.contains('auto') ||
+            hasAgency);
+    if (!isCar) return;
+
+    final brand = (user.vehicleBrand ?? '').trim();
+    final model = (user.vehicleModel ?? '').trim();
+    String fullModel = '$brand $model'.trim();
+    if (brand.isNotEmpty &&
+        model.toLowerCase().startsWith(brand.toLowerCase())) {
+      fullModel = model;
+    }
+    if (fullModel.isEmpty) {
+      fullModel = 'Auto Interprovincial';
+    }
+
+    final plate = (user.vehiclePlate ?? '').trim().toUpperCase();
+    final baseProfile = <String, dynamic>{
+      'id': user.uid,
+      'driverId': user.uid,
+      'driverName': (user.name != null && user.name!.trim().isNotEmpty)
+          ? user.name!.trim()
+          : 'Conductor Mijano',
+      'driverPhone': user.phone,
+      'vehicleBrand': brand,
+      'vehicleModel': fullModel,
+      'vehiclePlate': plate.isNotEmpty ? plate : 'SIN-PLACA',
+      'vehicleType': 'Carro',
+      'agencyName': user.agencyName ?? '',
+      'avatarUrl': user.photoUrl ?? '',
+      'originCity': (user.city != null && user.city!.trim().isNotEmpty)
+          ? user.city!.trim()
+          : 'Tarapoto',
+      'destinationCity': 'Yurimaguas',
+      'departureLabel': 'Hoy, 14:30',
+      'pricePerSeat': 45.0,
+      'isIntercityCar': true,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+
+    try {
+      final indexRef = _firestore
+          .collection('plate_index')
+          .doc('CAR_VEHICLE_${user.uid}');
+      final existingSnap = await indexRef.get();
+      if (!existingSnap.exists) {
+        baseProfile['seatStates'] = {
+          '1': 'available',
+          '2': 'available',
+          '3': 'available',
+          '4': 'available',
+        };
+        baseProfile['seatPassengers'] = <String, dynamic>{};
+        baseProfile['pendingRequests'] = <Map<String, dynamic>>[];
+        baseProfile['availableSeats'] = 4;
+        baseProfile['occupiedSeats'] = 0;
+        baseProfile['isPubliclyVisible'] = true;
+      }
+      await indexRef.set(baseProfile, SetOptions(merge: true));
+    } catch (_) {}
+
+    try {
+      await _firestore
+          .collection('intercity_vehicles')
+          .doc(user.uid)
+          .set(baseProfile, SetOptions(merge: true));
+    } catch (_) {}
   }
 }

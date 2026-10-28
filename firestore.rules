@@ -62,7 +62,7 @@ service cloud.firestore {
 
     // 1. USUARIOS (USERS)
     match /users/{userId} {
-      allow read: if isStaff() || request.auth.uid == userId;
+      allow read: if isAuth();
 
       allow create: if isSuperAdmin() || (
         request.auth.uid == userId

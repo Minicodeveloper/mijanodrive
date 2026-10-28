@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
 import '../../theme.dart';
+import '../passenger/passenger_available_cars_screen.dart';
 import 'driver_account_screen.dart';
 import 'driver_dashboard_screen.dart';
 import 'driver_history_screen.dart';
@@ -51,6 +53,14 @@ class _DriverMainLayoutState extends State<DriverMainLayout> {
         current.vehicleType,
         current.agencyName,
       );
+      if (initialIsCar) {
+        unawaited(
+          IntercityVehicleRepository.instance.syncFromUserMap(
+            current.uid,
+            current.toMap(),
+          ),
+        );
+      }
       if (mounted && _isCarDriver != initialIsCar) {
         setState(() => _isCarDriver = initialIsCar);
       }
@@ -77,6 +87,11 @@ class _DriverMainLayoutState extends State<DriverMainLayout> {
         final agency = data['agencyName']?.toString();
         if (vType != null || agency != null) {
           final resolved = _checkIsCarType(vType, agency);
+          if (resolved) {
+            unawaited(
+              IntercityVehicleRepository.instance.syncFromUserMap(uid, data),
+            );
+          }
           if (mounted && _isCarDriver != resolved) {
             setState(() {
               _isCarDriver = resolved;
@@ -104,6 +119,11 @@ class _DriverMainLayoutState extends State<DriverMainLayout> {
                 ?.toString();
         final agency = data['agencyName']?.toString();
         final resolved = _checkIsCarType(vType, agency);
+        if (resolved) {
+          unawaited(
+            IntercityVehicleRepository.instance.syncFromUserMap(uid, data),
+          );
+        }
         if (mounted && _isCarDriver != resolved) {
           setState(() {
             _isCarDriver = resolved;

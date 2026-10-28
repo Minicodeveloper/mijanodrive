@@ -12,6 +12,12 @@ class DriverVehicleScreen extends StatefulWidget {
 class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
   final IntercityVehicleRepository _repo = IntercityVehicleRepository.instance;
 
+  @override
+  void initState() {
+    super.initState();
+    _repo.ensureCurrentDriverVehicleSynced();
+  }
+
   Future<void> _callPassenger(SeatPassengerInfo passenger) async {
     final uri = Uri(scheme: 'tel', path: passenger.phone);
     try {
@@ -31,15 +37,107 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
     );
   }
 
-  void _openDirectChat(SeatPassengerInfo passenger) {
+  void _openEditRouteDialog(AvailableCarItem car) {
+    final originCtrl = TextEditingController(text: car.originCity);
+    final destCtrl = TextEditingController(text: car.destinationCity);
+    final timeCtrl = TextEditingController(text: car.departureLabel);
+    final priceCtrl = TextEditingController(
+      text: car.pricePerSeat.toStringAsFixed(2),
+    );
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Configurar Ruta y Salida',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: originCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Ciudad de Origen (De:)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: destCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Ciudad de Destino (A:)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: timeCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Horario de salida (ej. Hoy, 14:30)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: priceCtrl,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Precio por asiento (S/)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFF9D408),
+              foregroundColor: Colors.black,
+            ),
+            onPressed: () async {
+              final origin = originCtrl.text.trim().isNotEmpty
+                  ? originCtrl.text.trim()
+                  : car.originCity;
+              final dest = destCtrl.text.trim().isNotEmpty
+                  ? destCtrl.text.trim()
+                  : car.destinationCity;
+              final label = timeCtrl.text.trim().isNotEmpty
+                  ? timeCtrl.text.trim()
+                  : car.departureLabel;
+              final price =
+                  double.tryParse(priceCtrl.text.trim()) ?? car.pricePerSeat;
+
+              await _repo.updateVehicleRouteAndSchedule(
+                carId: car.id,
+                originCity: origin,
+                destinationCity: dest,
+                departureLabel: label,
+                pricePerSeat: price,
+              );
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text(
+              'Guardar',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openDirectChat(AvailableCarItem car, SeatPassengerInfo passenger) {
     final messageController = TextEditingController();
-    final messages = <Map<String, String>>[
-      {
-        'sender': 'passenger',
-        'text':
-            'Hola conductor, ya estoy en camino hacia la agencia (${passenger.etaText}).',
-      },
-    ];
 
     showModalBottomSheet<void>(
       context: context,
@@ -49,14 +147,20 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) {
+        return ListenableBuilder(
+          listenable: _repo,
+          builder: (ctx, _) {
+            final liveCar = _repo.getCarById(car.id);
+            final seatMessages = liveCar.chatMessages
+                .where((m) => m['seatNumber'] == passenger.seatNumber)
+                .toList();
+
             return Padding(
               padding: EdgeInsets.only(
                 bottom: MediaQuery.of(ctx).viewInsets.bottom,
               ),
               child: SizedBox(
-                height: 400,
+                height: 410,
                 child: Column(
                   children: [
                     Container(
@@ -116,16 +220,11 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                       ),
                     ),
                     Expanded(
-                      child: ListView.builder(
+                      child: ListView(
                         padding: const EdgeInsets.all(16),
-                        itemCount: messages.length,
-                        itemBuilder: (_, idx) {
-                          final msg = messages[idx];
-                          final isDriver = msg['sender'] == 'driver';
-                          return Align(
-                            alignment: isDriver
-                                ? Alignment.centerRight
-                                : Alignment.centerLeft,
+                        children: [
+                          Align(
+                            alignment: Alignment.centerLeft,
                             child: Container(
                               margin: const EdgeInsets.only(bottom: 10),
                               padding: const EdgeInsets.symmetric(
@@ -133,21 +232,47 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                                 vertical: 10,
                               ),
                               decoration: BoxDecoration(
-                                color: isDriver
-                                    ? const Color(0xFFF9D408)
-                                    : const Color(0xFFF1F1F1),
+                                color: const Color(0xFFF1F1F1),
                                 borderRadius: BorderRadius.circular(14),
                               ),
                               child: Text(
-                                msg['text'] ?? '',
+                                'Hola conductor, reservé el Asiento ${passenger.seatNumber}. Estoy en camino hacia la agencia (${passenger.etaText}).',
                                 style: const TextStyle(
                                   fontSize: 13.5,
                                   color: Colors.black87,
                                 ),
                               ),
                             ),
-                          );
-                        },
+                          ),
+                          ...seatMessages.map((msg) {
+                            final isDriver = msg['sender'] == 'driver';
+                            return Align(
+                              alignment: isDriver
+                                  ? Alignment.centerRight
+                                  : Alignment.centerLeft,
+                              child: Container(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 10,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: isDriver
+                                      ? const Color(0xFFF9D408)
+                                      : const Color(0xFFF1F1F1),
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: Text(
+                                  (msg['text'] ?? '').toString(),
+                                  style: const TextStyle(
+                                    fontSize: 13.5,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
+                        ],
                       ),
                     ),
                     Container(
@@ -189,16 +314,17 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                                 color: Colors.black,
                                 size: 18,
                               ),
-                              onPressed: () {
+                              onPressed: () async {
                                 final text = messageController.text.trim();
                                 if (text.isEmpty) return;
-                                setSheetState(() {
-                                  messages.add({
-                                    'sender': 'driver',
-                                    'text': text,
-                                  });
-                                  messageController.clear();
-                                });
+                                messageController.clear();
+                                await _repo.sendDirectChatMessage(
+                                  carId: liveCar.id,
+                                  seatNumber: passenger.seatNumber,
+                                  senderRole: 'driver',
+                                  senderName: liveCar.driverName,
+                                  text: text,
+                                );
                               },
                             ),
                           ),
@@ -270,10 +396,8 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
         );
       }
     } else {
-      // Permitir asignar rápidamente un pasajero al asiento libre para probar
-      // el ocultamiento automático al llegar a 4/4 asientos ocupados.
       final nameController = TextEditingController(
-        text: seatNumber == 2 ? 'María Torres' : ' Elena Ríos',
+        text: seatNumber == 2 ? 'María Torres' : 'Pasajero $seatNumber',
       );
       final shouldOccupy = await showDialog<bool>(
         context: context,
@@ -372,7 +496,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Tarjeta de Nueva Solicitud (Pendiente) — 3ra pantalla del Figma
+                // Tarjeta de Nueva Solicitud (Pendiente)
                 if (car.pendingRequests.isNotEmpty)
                   ...car.pendingRequests.map(
                     (req) => Container(
@@ -428,14 +552,9 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                                 ),
                               ),
                               onPressed: () async {
-                                await _repo.occupySeat(
+                                await _repo.acceptPendingRequest(
                                   carId: car.id,
-                                  seatNumber: req.seatNumber,
-                                  passengerId: req.passengerId,
-                                  passengerName: req.passengerName,
-                                  passengerPhone: req.passengerPhone,
-                                  etaText: 'ETA: 12 min a 15 min',
-                                  removeRequestId: req.requestId,
+                                  request: req,
                                 );
                                 if (!context.mounted) return;
                                 final updated = _repo.getCarById(car.id);
@@ -477,7 +596,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                               onPressed: () {
                                 _repo.rejectPendingRequest(
                                   carId: car.id,
-                                  requestId: req.requestId,
+                                  request: req,
                                 );
                               },
                               child: const Text(
@@ -504,17 +623,45 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                     color: Colors.black,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 3),
                 Text(
-                  car.departureLabel,
+                  '${car.vehicleModel} - ${car.vehiclePlate}${car.agencyName.trim().isNotEmpty ? ' • ${car.agencyName}' : ''}',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
-                    fontSize: 16,
-                    color: Colors.black87,
-                    fontWeight: FontWeight.w400,
+                    fontSize: 13.5,
+                    color: Colors.black54,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 3),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      '${car.departureLabel} • S/ ${car.pricePerSeat.toStringAsFixed(2)}',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        color: Colors.black87,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () => _openEditRouteDialog(car),
+                      child: const Padding(
+                        padding: EdgeInsets.all(4),
+                        child: Icon(
+                          Icons.edit_outlined,
+                          size: 17,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
 
                 // Mapa de Ocupación en Tiempo Real (Esquema superior del auto)
                 SizedBox(
@@ -536,7 +683,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                           seatNumber: 1,
                           isOccupied: car.seatStates[1] == 'occupied',
                           passengerShortName:
-                              car.seatPassengers[1]?.shortName ?? 'Juan D.',
+                              car.seatPassengers[1]?.shortName ?? 'Ocupado',
                           onTap: () => _onTapSeatBox(car, 1),
                         ),
                       ),
@@ -552,24 +699,21 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                               seatNumber: 2,
                               isOccupied: car.seatStates[2] == 'occupied',
                               passengerShortName:
-                                  car.seatPassengers[2]?.shortName ??
-                                  'María T.',
+                                  car.seatPassengers[2]?.shortName ?? 'Ocupado',
                               onTap: () => _onTapSeatBox(car, 2),
                             ),
                             _DriverSeatOccupancyBox(
                               seatNumber: 3,
                               isOccupied: car.seatStates[3] == 'occupied',
                               passengerShortName:
-                                  car.seatPassengers[3]?.shortName ??
-                                  'Carlos R.',
+                                  car.seatPassengers[3]?.shortName ?? 'Ocupado',
                               onTap: () => _onTapSeatBox(car, 3),
                             ),
                             _DriverSeatOccupancyBox(
                               seatNumber: 4,
                               isOccupied: car.seatStates[4] == 'occupied',
                               passengerShortName:
-                                  car.seatPassengers[4]?.shortName ??
-                                  'Pasajero',
+                                  car.seatPassengers[4]?.shortName ?? 'Ocupado',
                               onTap: () => _onTapSeatBox(car, 4),
                             ),
                           ],
@@ -715,14 +859,14 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Row(
-                    children: [
-                      const Icon(
+                    children: const [
+                      Icon(
                         Icons.people_alt_outlined,
                         size: 19,
                         color: Colors.black87,
                       ),
-                      const SizedBox(width: 8),
-                      const Expanded(
+                      SizedBox(width: 8),
+                      Expanded(
                         child: Text(
                           'Próximos Pasajeros (En camino a la agencia)',
                           style: TextStyle(
@@ -746,7 +890,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                       border: Border.all(color: Colors.grey.shade200),
                     ),
                     child: const Text(
-                      'No hay asientos ocupados en este momento. Todos los asientos (4/4) están disponibles.',
+                      'No hay asientos ocupados en este momento. Todos los asientos (4/4) están disponibles en la lista pública.',
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 13, color: Colors.black54),
                     ),
@@ -834,7 +978,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                               Icons.chat_bubble_outline,
                               size: 18,
                             ),
-                            onPressed: () => _openDirectChat(pax),
+                            onPressed: () => _openDirectChat(car, pax),
                           ),
                           const SizedBox(width: 6),
                           // Acceso directo a Llamada telefónica
@@ -967,4 +1111,3 @@ class _DriverSeatOccupancyBox extends StatelessWidget {
     );
   }
 }
-

@@ -407,6 +407,13 @@ class FirestoreService {
         final driver = _mergeDriverData(u, dData, uid);
         if (driver != null) {
           result.add(driver);
+          try {
+            unawaited(
+              AuthService.instance.syncCarDriverToPublicIndex(
+                User.fromMap({'uid': uid, ...u}),
+              ),
+            );
+          } catch (_) {}
         }
       }
       controller.add(result);
