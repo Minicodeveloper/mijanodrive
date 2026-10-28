@@ -35,6 +35,7 @@ class Trip {
   final List<String> rejectedDriverIds;
   final bool dispatchExhausted;
   final bool carriesCargo;
+  final String? city;
 
   Trip({
     required this.id,
@@ -67,6 +68,7 @@ class Trip {
     this.rejectedDriverIds = const [],
     this.dispatchExhausted = false,
     this.carriesCargo = false,
+    this.city,
   });
 
   Map<String, dynamic> toMap() {
@@ -100,6 +102,7 @@ class Trip {
       'rejectedDriverIds': rejectedDriverIds,
       'dispatchExhausted': dispatchExhausted,
       'carriesCargo': carriesCargo,
+      if (city != null) 'city': city,
     };
   }
 
@@ -135,6 +138,7 @@ class Trip {
       rejectedDriverIds: List<String>.from(map['rejectedDriverIds'] ?? []),
       dispatchExhausted: map['dispatchExhausted'] ?? false,
       carriesCargo: map['carriesCargo'] ?? false,
+      city: map['city'],
     );
   }
 
@@ -201,6 +205,7 @@ class Trip {
     List<String>? rejectedDriverIds,
     bool? dispatchExhausted,
     bool? carriesCargo,
+    String? city,
   }) {
     return Trip(
       id: id ?? this.id,
@@ -233,6 +238,7 @@ class Trip {
       rejectedDriverIds: rejectedDriverIds ?? this.rejectedDriverIds,
       dispatchExhausted: dispatchExhausted ?? this.dispatchExhausted,
       carriesCargo: carriesCargo ?? this.carriesCargo,
+      city: city ?? this.city,
     );
   }
 }

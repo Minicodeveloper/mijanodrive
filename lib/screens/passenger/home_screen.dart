@@ -1368,6 +1368,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 'paymentMethod': _selectedPaymentMethod,
                                 'serviceType': _selectedServiceType,
                                 'carriesCargo': carriesCargo,
+                                'city': user.city ?? 'Tarapoto',
                                 if (_selectedServiceType ==
                                     'Programar viaje')
                                   'scheduledAt': Timestamp.fromDate(

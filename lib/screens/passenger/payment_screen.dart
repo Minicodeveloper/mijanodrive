@@ -53,6 +53,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
                             userDoc.data()?['nombre'] ?? 
                             'Usuario';
 
+      final userCity = (user.city != null && user.city!.isNotEmpty)
+          ? user.city!
+          : (userDoc.data()?['city']?.toString() ?? widget.city);
+
       final trip = Trip(
         id: '',
         passengerId: user.uid,
@@ -68,6 +72,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
             : PaymentMethod.wallet,
         createdAt: DateTime.now(),
         distanceKm: widget.distanceKm,
+        city: userCity,
       );
 
       final tripId = await FirestoreService.instance.createTrip(trip);

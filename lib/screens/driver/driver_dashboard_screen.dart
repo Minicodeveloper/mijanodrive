@@ -90,7 +90,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
         .doc(_uid)
         .snapshots();
     _plansStream = _fs.streamPlans();
-    _pendingTripsStream = _fs.pendingTrips();
+    _pendingTripsStream = _fs.pendingTrips(city: _city);
 
     _watchDriverPlan();
     _startLocationTracking();
@@ -116,6 +116,25 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
     }
   }
 
+  static String _normalizeCity(String? city) {
+    if (city == null) return '';
+    var s = city.trim().toLowerCase();
+    s = s.replaceAll('á', 'a')
+         .replaceAll('é', 'e')
+         .replaceAll('í', 'i')
+         .replaceAll('ó', 'o')
+         .replaceAll('ú', 'u')
+         .replaceAll('ü', 'u');
+    return s;
+  }
+
+  static bool _areCitiesEqual(String? city1, String? city2) {
+    final c1 = _normalizeCity(city1);
+    final c2 = _normalizeCity(city2);
+    if (c1.isEmpty || c2.isEmpty) return true;
+    return c1 == c2;
+  }
+
   bool _isDriverEligibleForTripWithLogging(Trip trip) {
     if (_driverPosition == null) {
       debugPrint('[DRIVER-DISPATCH] tripId: ${trip.id}, dispatchIndex: ${trip.dispatchIndex}, currentDispatchDriverId: ${trip.currentDispatchDriverId}, mi uid: $_uid -> inelegible: _driverPosition es null');
@@ -132,6 +151,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
     if (trip.currentDispatchDriverId != _uid) {
       debugPrint('[DRIVER-DISPATCH] tripId: ${trip.id}, dispatchIndex: ${trip.dispatchIndex}, currentDispatchDriverId: ${trip.currentDispatchDriverId}, mi uid: $_uid -> inelegible: currentDispatchDriverId (${trip.currentDispatchDriverId}) no coincide con mi uid ($_uid)');
       return false;
+    }
+
+    if (trip.city != null && trip.city!.trim().isNotEmpty) {
+      if (!_areCitiesEqual(trip.city, _city)) {
+        debugPrint('[DRIVER-DISPATCH] tripId: ${trip.id} -> inelegible: trip.city (${trip.city}) no coincide con mi ciudad ($_city)');
+        return false;
+      }
     }
 
     final distance = _tripDistanceKm(trip);
@@ -466,6 +492,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
 
     if (trip.dispatchExhausted) return false;
     if (trip.currentDispatchDriverId != _uid) return false;
+
+    if (trip.city != null && trip.city!.trim().isNotEmpty) {
+      if (!_areCitiesEqual(trip.city, _city)) return false;
+    }
 
     final distance = _tripDistanceKm(trip);
     if (distance == null || distance > _maxTripDistanceKm) return false;

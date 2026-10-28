@@ -105,8 +105,27 @@ class FirestoreService {
         'locationUpdatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
+  static String _normalizeCity(String? city) {
+    if (city == null) return '';
+    var s = city.trim().toLowerCase();
+    s = s.replaceAll('á', 'a')
+         .replaceAll('é', 'e')
+         .replaceAll('í', 'i')
+         .replaceAll('ó', 'o')
+         .replaceAll('ú', 'u')
+         .replaceAll('ü', 'u');
+    return s;
+  }
+
+  static bool _areCitiesEqual(String? city1, String? city2) {
+    final c1 = _normalizeCity(city1);
+    final c2 = _normalizeCity(city2);
+    if (c1.isEmpty || c2.isEmpty) return true;
+    return c1 == c2;
+  }
+
   // ---- Viajes ----
-  Future<Map<String, dynamic>> _buildDispatchData(GeoPoint origin) async {
+  Future<Map<String, dynamic>> _buildDispatchData(GeoPoint origin, {String? city}) async {
     double maxDispatchRadiusKm = AppConfig.kMaxDispatchRadiusKm;
     try {
       final pricing = await getPricingSettings();
@@ -119,12 +138,49 @@ class FirestoreService {
         .where('isAvailable', isEqualTo: true)
         .where('planPaymentStatus', isEqualTo: 'active')
         .get();
+
+    // Mapear la ciudad de cada conductor
+    final Map<String, String> driverCities = {};
+    for (var doc in driversSnapshot.docs) {
+      final dData = doc.data();
+      if (dData['city'] != null && dData['city'].toString().trim().isNotEmpty) {
+        driverCities[doc.id] = dData['city'].toString();
+      }
+    }
+
+    final missingUids = driversSnapshot.docs
+        .map((d) => d.id)
+        .where((id) => !driverCities.containsKey(id) || driverCities[id]!.trim().isEmpty)
+        .toList();
+
+    if (missingUids.isNotEmpty) {
+      for (var i = 0; i < missingUids.length; i += 10) {
+        final chunk = missingUids.sublist(i, (i + 10 > missingUids.length) ? missingUids.length : i + 10);
+        try {
+          final usersSnap = await _db.collection('users').where(FieldPath.documentId, whereIn: chunk).get();
+          for (var userDoc in usersSnap.docs) {
+            final uCity = userDoc.data()['city']?.toString() ?? '';
+            if (uCity.trim().isNotEmpty) {
+              driverCities[userDoc.id] = uCity;
+            }
+          }
+        } catch (_) {}
+      }
+    }
         
     final List<DispatchCandidate> candidates = [];
     final Map<String, PlanTier> candidateTiers = {};
 
     for (var doc in driversSnapshot.docs) {
       final data = doc.data();
+      final driverId = doc.id;
+      final driverCity = driverCities[driverId] ?? data['city']?.toString() ?? '';
+
+      if (city != null && city.trim().isNotEmpty && driverCity.trim().isNotEmpty) {
+        if (!_areCitiesEqual(city, driverCity)) {
+          continue;
+        }
+      }
       
       final expiresAt = (data['planExpiresAt'] as Timestamp?)?.toDate();
       final hasNotExpired = expiresAt?.isAfter(DateTime.now()) ?? false;
@@ -175,8 +231,12 @@ class FirestoreService {
 
   Future<String> createTrip(Trip trip) async {
     final tripData = trip.toMap();
+    final tripCity = trip.city ?? AuthService.instance.currentUser?.city;
+    if (tripCity != null && tripCity.isNotEmpty) {
+      tripData['city'] = tripCity;
+    }
     
-    final dispatchData = await _buildDispatchData(trip.origin);
+    final dispatchData = await _buildDispatchData(trip.origin, city: tripCity);
     tripData.addAll(dispatchData);
 
     // cleanup
@@ -191,7 +251,12 @@ class FirestoreService {
   }
 
   Future<DocumentReference> createTripWithDispatch(Map<String, dynamic> tripData, {required GeoPoint origin}) async {
-    final dispatchData = await _buildDispatchData(origin);
+    final tripCity = tripData['city']?.toString() ?? AuthService.instance.currentUser?.city;
+    if (tripCity != null && tripCity.isNotEmpty) {
+      tripData['city'] = tripCity;
+    }
+
+    final dispatchData = await _buildDispatchData(origin, city: tripCity);
     tripData.addAll(dispatchData);
     return await _db.collection('trips').add(tripData);
   }
@@ -267,7 +332,7 @@ class FirestoreService {
     if (!doc.exists) return;
 
     final trip = Trip.fromMap(doc.data()!, doc.id);
-    final dispatchData = await _buildDispatchData(trip.origin);
+    final dispatchData = await _buildDispatchData(trip.origin, city: trip.city);
     await tripRef.update(dispatchData);
   }
 
@@ -289,15 +354,19 @@ class FirestoreService {
       .map((doc) => doc.exists ? Trip.fromFirestore(doc) : null);
 
   /// Viajes pendientes en una ciudad (para el conductor).
-  Stream<List<Trip>> pendingTrips() {
-  return FirebaseFirestore.instance
-      .collection('trips')
-      .where('status', isEqualTo: 'pending')
-      .snapshots()
-      .map((snapshot) {
-        return snapshot.docs.map((doc) => Trip.fromFirestore(doc)).toList();
-      });
-}
+  Stream<List<Trip>> pendingTrips({String? city}) {
+    Query<Map<String, dynamic>> query = FirebaseFirestore.instance
+        .collection('trips')
+        .where('status', isEqualTo: 'pending');
+
+    if (city != null && city.trim().isNotEmpty) {
+      query = query.where('city', isEqualTo: city.trim());
+    }
+
+    return query.snapshots().map((snapshot) {
+      return snapshot.docs.map((doc) => Trip.fromFirestore(doc)).toList();
+    });
+  }
 
   Stream<List<Trip>> tripsForPassenger(String uid) => _db
       .collection('trips')
