@@ -25,6 +25,8 @@ extension _VehicleCategoryUi on VehicleCategory {
     switch (this) {
       case VehicleCategory.moto:
         return Icons.two_wheeler;
+      case VehicleCategory.car:
+        return Icons.directions_car;
     }
   }
 }
@@ -47,13 +49,15 @@ class _TariffsModuleState extends State<TariffsModule> {
         for (final field in _TariffField.values) field: TextEditingController(),
       },
   };
+  final _carPricePerSeatCtrl = TextEditingController();
   final _nightStartCtrl = TextEditingController();
   final _nightEndCtrl = TextEditingController();
   final _radiusCtrl = TextEditingController();
   final _simKmCtrl = TextEditingController(text: '5.2');
   final _simMinCtrl = TextEditingController(text: '15');
 
-  VehicleCategory _simCategory = VehicleCategory.values.first;
+  VehicleCategory _selectedTabCategory = VehicleCategory.moto;
+  VehicleCategory _simCategory = VehicleCategory.moto;
   int _simHour = 14;
   DateTime? _updatedAt;
   String? _loadError;
@@ -73,6 +77,7 @@ class _TariffsModuleState extends State<TariffsModule> {
         controller.dispose();
       }
     }
+    _carPricePerSeatCtrl.dispose();
     _nightStartCtrl.dispose();
     _nightEndCtrl.dispose();
     _radiusCtrl.dispose();
@@ -120,6 +125,7 @@ class _TariffsModuleState extends State<TariffsModule> {
       ctrls[_TariffField.minFare]!.text = _amount(tariff.minFare);
       ctrls[_TariffField.nightSurcharge]!.text = _amount(tariff.nightSurcharge);
     }
+    _carPricePerSeatCtrl.text = _amount(settings.carPricePerSeat);
     _nightStartCtrl.text = '${settings.nightStartHour}';
     _nightEndCtrl.text = '${settings.nightEndHour}';
     _radiusCtrl.text = settings.maxOfferRadiusKm.toString();
@@ -176,10 +182,11 @@ class _TariffsModuleState extends State<TariffsModule> {
       );
     }
 
+    final carSeatPrice = _parse(_carPricePerSeatCtrl.text) ?? PricingSettings.defaultCarPricePerSeat;
     final nightStart = int.tryParse(_nightStartCtrl.text.trim());
     final nightEnd = int.tryParse(_nightEndCtrl.text.trim());
     final radius = _parse(_radiusCtrl.text);
-    if (nightStart == null || nightEnd == null || radius == null) return null;
+    if (nightStart == null || nightEnd == null || radius == null || carSeatPrice < 0) return null;
     if (nightStart > 23 || nightEnd > 23 || radius <= 0) return null;
 
     return PricingSettings(
@@ -187,6 +194,7 @@ class _TariffsModuleState extends State<TariffsModule> {
       nightStartHour: nightStart,
       nightEndHour: nightEnd,
       maxOfferRadiusKm: radius,
+      carPricePerSeat: carSeatPrice,
     );
   }
 
@@ -231,7 +239,7 @@ class _TariffsModuleState extends State<TariffsModule> {
         children: [
           const AdminHeader(
             'Tarifas',
-            'Cotización dinámica del servicio de mototaxi',
+            'Cotización dinámica del servicio de mototaxis y autos interurbanos',
           ),
           if (_loading)
             const Padding(
@@ -256,10 +264,10 @@ class _TariffsModuleState extends State<TariffsModule> {
           final parameters = Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (final category in VehicleCategory.values) ...[
-                _tariffCard(category),
-                const SizedBox(height: 16),
-              ],
+              _categoryTabBar(),
+              const SizedBox(height: 16),
+              _tariffCard(_selectedTabCategory),
+              const SizedBox(height: 16),
               _globalCard(),
             ],
           );
@@ -272,6 +280,45 @@ class _TariffsModuleState extends State<TariffsModule> {
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _categoryTabBar() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: SegmentedButton<VehicleCategory>(
+        segments: [
+          for (final category in VehicleCategory.values)
+            ButtonSegment<VehicleCategory>(
+              value: category,
+              icon: MijanoIcon(category.icon, size: 18, color: MijanoTheme.ink),
+              label: Text(
+                category.label,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+        ],
+        selected: {_selectedTabCategory},
+        onSelectionChanged: (newSelection) {
+          setState(() {
+            _selectedTabCategory = newSelection.first;
+            _simCategory = _selectedTabCategory;
+          });
+        },
+        style: SegmentedButton.styleFrom(
+          selectedBackgroundColor: MijanoTheme.sol,
+          selectedForegroundColor: MijanoTheme.ink,
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          side: BorderSide.none,
+        ),
       ),
     );
   }
@@ -313,22 +360,38 @@ class _TariffsModuleState extends State<TariffsModule> {
     final minFareIsUnreachable =
         baseFare != null && minFare != null && minFare <= baseFare;
 
+    final fields = <Widget>[
+      for (final field in _TariffField.values)
+        _numberField(
+          controller: ctrls[field]!,
+          label: field.label,
+          prefix: 'S/ ',
+          suffix: field.suffix,
+          validator: _validateAmount,
+        ),
+      if (category == VehicleCategory.car)
+        _numberField(
+          controller: _carPricePerSeatCtrl,
+          label: 'Precio por asiento (interurbano)',
+          prefix: 'S/ ',
+          suffix: '/ asiento',
+          validator: _validateAmount,
+        ),
+    ];
+
     return adminCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _cardTitle(category.icon, category.label, 'Parámetros de cotización'),
+          _cardTitle(
+            category.icon,
+            'Tarifario: ${category.label}',
+            category == VehicleCategory.moto
+                ? 'Parámetros de cotización para mototaxis'
+                : 'Parámetros de cotización para autos y precio por asiento interurbano',
+          ),
           const SizedBox(height: 20),
-          ..._inPairs([
-            for (final field in _TariffField.values)
-              _numberField(
-                controller: ctrls[field]!,
-                label: field.label,
-                prefix: 'S/ ',
-                suffix: field.suffix,
-                validator: _validateAmount,
-              ),
-          ]),
+          ..._inPairs(fields),
           if (minFareIsUnreachable) ...[
             const SizedBox(height: 16),
             _hint(
@@ -347,8 +410,8 @@ class _TariffsModuleState extends State<TariffsModule> {
         children: [
           _cardTitle(
             Icons.nights_stay_outlined,
-            'Configuración global',
-            'Horario nocturno y alcance de solicitudes',
+            'Configuración global (compartida)',
+            'Horario nocturno y radio de alcance para mototaxis y autos',
           ),
           const SizedBox(height: 20),
           ..._inPairs([
@@ -375,7 +438,7 @@ class _TariffsModuleState extends State<TariffsModule> {
           ]),
           const SizedBox(height: 16),
           _hint(
-            'El recargo se aplica cuando el viaje inicia dentro de la franja nocturna.',
+            'Esta configuración aplica para todas las categorías de vehículo (mototaxis y autos).',
           ),
         ],
       ),
@@ -468,6 +531,8 @@ class _TariffsModuleState extends State<TariffsModule> {
       ),
       child: Column(
         children: [
+          _line('Categoría simulada', _simCategory.label, bold: true),
+          const SizedBox(height: 4),
           _line('Tarifa base', _soles(quote.baseFare)),
           _line(
             'Distancia (${_plain(km)} km × ${_soles(tariff.perKm)})',
@@ -543,10 +608,10 @@ class _TariffsModuleState extends State<TariffsModule> {
           ),
           icon: _saving
               ? const SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          )
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
               : const Icon(Icons.save_outlined),
           label: const Text('Guardar cambios'),
         ),
@@ -638,7 +703,7 @@ class _TariffsModuleState extends State<TariffsModule> {
     final rows = <Widget>[];
     for (var i = 0; i < children.length; i += 2) {
       final second =
-      i + 1 < children.length ? children[i + 1] : const SizedBox.shrink();
+          i + 1 < children.length ? children[i + 1] : const SizedBox.shrink();
       rows.add(
         Padding(
           padding: EdgeInsets.only(top: i == 0 ? 0 : 16),
@@ -657,11 +722,11 @@ class _TariffsModuleState extends State<TariffsModule> {
   }
 
   Widget _line(
-      String label,
-      String value, {
-        bool muted = false,
-        bool bold = false,
-      }) {
+    String label,
+    String value, {
+    bool muted = false,
+    bool bold = false,
+  }) {
     final style = TextStyle(
       color: muted ? Colors.black38 : MijanoTheme.ink,
       fontWeight: bold ? FontWeight.w800 : FontWeight.w500,

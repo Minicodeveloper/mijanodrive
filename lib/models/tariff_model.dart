@@ -11,6 +11,17 @@ enum VehicleCategory {
       minFare: 4.0,
       nightSurcharge: 1.5,
     ),
+  ),
+  car(
+    'car_',
+    'Auto / Coche',
+    VehicleTariff(
+      baseFare: 8.0,
+      perKm: 2.5,
+      perMinute: 0.3,
+      minFare: 15.0,
+      nightSurcharge: 3.0,
+    ),
   );
 
   final String prefix;
@@ -35,9 +46,9 @@ class VehicleTariff {
   });
 
   factory VehicleTariff.fromMap(
-      Map<String, dynamic> map,
-      VehicleCategory category,
-      ) {
+    Map<String, dynamic> map,
+    VehicleCategory category,
+  ) {
     final defaults = category.defaults;
     double read(String key, double fallback) =>
         (map['${category.prefix}$key'] as num?)?.toDouble() ?? fallback;
@@ -89,11 +100,13 @@ class PricingSettings {
   static const int defaultNightStartHour = 22;
   static const int defaultNightEndHour = 6;
   static const double defaultMaxOfferRadiusKm = 5.0;
+  static const double defaultCarPricePerSeat = 45.0;
 
   final Map<VehicleCategory, VehicleTariff> tariffs;
   final int nightStartHour;
   final int nightEndHour;
   final double maxOfferRadiusKm;
+  final double carPricePerSeat;
   final DateTime? updatedAt;
 
   const PricingSettings({
@@ -101,6 +114,7 @@ class PricingSettings {
     required this.nightStartHour,
     required this.nightEndHour,
     required this.maxOfferRadiusKm,
+    required this.carPricePerSeat,
     this.updatedAt,
   });
 
@@ -112,11 +126,13 @@ class PricingSettings {
           category: VehicleTariff.fromMap(data, category),
       },
       nightStartHour:
-      (data['nightStartHour'] as num?)?.toInt() ?? defaultNightStartHour,
+          (data['nightStartHour'] as num?)?.toInt() ?? defaultNightStartHour,
       nightEndHour:
-      (data['nightEndHour'] as num?)?.toInt() ?? defaultNightEndHour,
+          (data['nightEndHour'] as num?)?.toInt() ?? defaultNightEndHour,
       maxOfferRadiusKm: (data['max_offer_radius_km'] as num?)?.toDouble() ??
           defaultMaxOfferRadiusKm,
+      carPricePerSeat: (data['car_pricePerSeat'] as num?)?.toDouble() ??
+          defaultCarPricePerSeat,
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
     );
   }
@@ -127,7 +143,26 @@ class PricingSettings {
       'nightStartHour': nightStartHour,
       'nightEndHour': nightEndHour,
       'max_offer_radius_km': maxOfferRadiusKm,
+      'car_pricePerSeat': carPricePerSeat,
     };
+  }
+
+  PricingSettings copyWith({
+    Map<VehicleCategory, VehicleTariff>? tariffs,
+    int? nightStartHour,
+    int? nightEndHour,
+    double? maxOfferRadiusKm,
+    double? carPricePerSeat,
+    DateTime? updatedAt,
+  }) {
+    return PricingSettings(
+      tariffs: tariffs ?? this.tariffs,
+      nightStartHour: nightStartHour ?? this.nightStartHour,
+      nightEndHour: nightEndHour ?? this.nightEndHour,
+      maxOfferRadiusKm: maxOfferRadiusKm ?? this.maxOfferRadiusKm,
+      carPricePerSeat: carPricePerSeat ?? this.carPricePerSeat,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
   }
 
   VehicleTariff tariffFor(VehicleCategory category) =>

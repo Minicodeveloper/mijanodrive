@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/material.dart';
 import '../../models/user_model.dart';
+import '../../models/tariff_model.dart';
 import '../../services/auth_service.dart';
 
 class SeatPassengerInfo {
@@ -115,7 +116,7 @@ class PendingSeatRequest {
       passengerId: (map['passengerId'] ?? 'guest').toString(),
       passengerName: (map['passengerName'] ?? 'Pasajero').toString(),
       passengerPhone: (map['passengerPhone'] ?? '+51987654321').toString(),
-      price: (map['price'] as num?)?.toDouble() ?? 45.0,
+      price: (map['price'] as num?)?.toDouble() ?? PricingSettings.defaultCarPricePerSeat,
       originCity: (map['originCity'] ?? 'Tarapoto').toString(),
       destinationCity: (map['destinationCity'] ?? 'Yurimaguas').toString(),
     );
@@ -358,7 +359,7 @@ class AvailableCarItem {
       pricePerSeat:
           (data['pricePerSeat'] as num?)?.toDouble() ??
           fallback?.pricePerSeat ??
-          45.0,
+          PricingSettings.defaultCarPricePerSeat,
       avatarUrl:
           (data['avatarUrl'] ?? data['photoUrl'] ?? fallback?.avatarUrl ?? '')
               .toString(),
@@ -459,7 +460,7 @@ class IntercityVehicleRepository extends ChangeNotifier {
       vehiclePlate: (user?.vehiclePlate ?? '').trim().toUpperCase(),
       agencyName: user?.agencyName ?? '',
       departureLabel: 'Hoy, 14:30',
-      pricePerSeat: 45.00,
+      pricePerSeat: PricingSettings.defaultCarPricePerSeat,
       avatarUrl: user?.photoUrl ?? '',
       originCity: user?.city ?? 'Tarapoto',
       destinationCity: 'Yurimaguas',
@@ -638,7 +639,7 @@ class IntercityVehicleRepository extends ChangeNotifier {
       pricePerSeat:
           (userMap['pricePerSeat'] as num?)?.toDouble() ??
           existing?.pricePerSeat ??
-          45.0,
+          PricingSettings.defaultCarPricePerSeat,
       avatarUrl:
           (userMap['photoUrl'] ??
                   userMap['avatarUrl'] ??

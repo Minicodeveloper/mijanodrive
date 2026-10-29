@@ -5,6 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart' as fbs;
 import 'package:local_auth/local_auth.dart';
 import 'package:mijano_drive_app/models/user_model.dart';
+import '../models/tariff_model.dart';
+import 'firestore_service.dart';
 
 class AuthService {
   static final AuthService instance = AuthService._internal();
@@ -732,7 +734,23 @@ class AuthService {
       fullModel = 'Auto Interprovincial';
     }
 
+    double defaultSeatPrice = PricingSettings.defaultCarPricePerSeat;
+    try {
+      final pricing = await FirestoreService.instance.getPricingSettings();
+      defaultSeatPrice = pricing.carPricePerSeat;
+    } catch (_) {}
+
     final plate = (user.vehiclePlate ?? '').trim().toUpperCase();
+    final indexRef = _firestore
+        .collection('plate_index')
+        .doc('CAR_VEHICLE_${user.uid}');
+    DocumentSnapshot<Map<String, dynamic>>? existingSnap;
+    try {
+      existingSnap = await indexRef.get();
+    } catch (_) {}
+
+    final existingSeatPrice = (existingSnap?.data()?['pricePerSeat'] as num?)?.toDouble();
+
     final baseProfile = <String, dynamic>{
       'id': user.uid,
       'driverId': user.uid,
@@ -751,17 +769,13 @@ class AuthService {
           : 'Tarapoto',
       'destinationCity': 'Yurimaguas',
       'departureLabel': 'Hoy, 14:30',
-      'pricePerSeat': 45.0,
+      'pricePerSeat': existingSeatPrice ?? defaultSeatPrice,
       'isIntercityCar': true,
       'updatedAt': FieldValue.serverTimestamp(),
     };
 
     try {
-      final indexRef = _firestore
-          .collection('plate_index')
-          .doc('CAR_VEHICLE_${user.uid}');
-      final existingSnap = await indexRef.get();
-      if (!existingSnap.exists) {
+      if (existingSnap == null || !existingSnap.exists) {
         baseProfile['seatStates'] = {
           '1': 'available',
           '2': 'available',
