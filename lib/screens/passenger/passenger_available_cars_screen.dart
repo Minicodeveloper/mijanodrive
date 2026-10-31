@@ -13,6 +13,13 @@ class SeatPassengerInfo {
   final String shortName;
   final String phone;
   final String etaText;
+  final String dni;
+  final String email;
+  final int? age;
+  final String city;
+  final String photoUrl;
+  final int reservedAtMs;
+  final String tripId;
 
   const SeatPassengerInfo({
     required this.seatNumber,
@@ -21,7 +28,46 @@ class SeatPassengerInfo {
     required this.shortName,
     required this.phone,
     required this.etaText,
+    this.dni = '',
+    this.email = '',
+    this.age,
+    this.city = '',
+    this.photoUrl = '',
+    this.reservedAtMs = 0,
+    this.tripId = '',
   });
+
+  SeatPassengerInfo copyWith({
+    int? seatNumber,
+    String? passengerId,
+    String? passengerName,
+    String? shortName,
+    String? phone,
+    String? etaText,
+    String? dni,
+    String? email,
+    int? age,
+    String? city,
+    String? photoUrl,
+    int? reservedAtMs,
+    String? tripId,
+  }) {
+    return SeatPassengerInfo(
+      seatNumber: seatNumber ?? this.seatNumber,
+      passengerId: passengerId ?? this.passengerId,
+      passengerName: passengerName ?? this.passengerName,
+      shortName: shortName ?? this.shortName,
+      phone: phone ?? this.phone,
+      etaText: etaText ?? this.etaText,
+      dni: dni ?? this.dni,
+      email: email ?? this.email,
+      age: age ?? this.age,
+      city: city ?? this.city,
+      photoUrl: photoUrl ?? this.photoUrl,
+      reservedAtMs: reservedAtMs ?? this.reservedAtMs,
+      tripId: tripId ?? this.tripId,
+    );
+  }
 
   Map<String, dynamic> toMap() => {
     'seatNumber': seatNumber,
@@ -30,6 +76,13 @@ class SeatPassengerInfo {
     'shortName': shortName,
     'phone': phone,
     'etaText': etaText,
+    'dni': dni,
+    'email': email,
+    'age': age,
+    'city': city,
+    'photoUrl': photoUrl,
+    'reservedAtMs': reservedAtMs,
+    'tripId': tripId,
   };
 
   factory SeatPassengerInfo.fromMap(
@@ -44,6 +97,13 @@ class SeatPassengerInfo {
       shortName: (map['shortName'] ?? formatShortName(fullName)).toString(),
       phone: (map['phone'] ?? '+51987654321').toString(),
       etaText: (map['etaText'] ?? 'ETA: 12 min a 15 min').toString(),
+      dni: (map['dni'] ?? '').toString(),
+      email: (map['email'] ?? '').toString(),
+      age: (map['age'] as num?)?.toInt(),
+      city: (map['city'] ?? '').toString(),
+      photoUrl: (map['photoUrl'] ?? '').toString(),
+      reservedAtMs: (map['reservedAtMs'] as num?)?.toInt() ?? 0,
+      tripId: (map['tripId'] ?? '').toString(),
     );
   }
 
@@ -65,6 +125,10 @@ class PendingSeatRequest {
   final String passengerId;
   final String passengerName;
   final String passengerPhone;
+  final String passengerDni;
+  final String passengerEmail;
+  final int? passengerAge;
+  final String passengerCity;
   final double price;
   final String originCity;
   final String destinationCity;
@@ -76,6 +140,10 @@ class PendingSeatRequest {
     required this.passengerId,
     required this.passengerName,
     required this.passengerPhone,
+    this.passengerDni = '',
+    this.passengerEmail = '',
+    this.passengerAge,
+    this.passengerCity = '',
     required this.price,
     required this.originCity,
     required this.destinationCity,
@@ -103,6 +171,10 @@ class PendingSeatRequest {
     'passengerId': passengerId,
     'passengerName': passengerName,
     'passengerPhone': passengerPhone,
+    'passengerDni': passengerDni,
+    'passengerEmail': passengerEmail,
+    'passengerAge': passengerAge,
+    'passengerCity': passengerCity,
     'price': price,
     'originCity': originCity,
     'destinationCity': destinationCity,
@@ -116,7 +188,11 @@ class PendingSeatRequest {
       passengerId: (map['passengerId'] ?? 'guest').toString(),
       passengerName: (map['passengerName'] ?? 'Pasajero').toString(),
       passengerPhone: (map['passengerPhone'] ?? '+51987654321').toString(),
-      price: (map['price'] as num?)?.toDouble() ?? PricingSettings.defaultCarPricePerSeat,
+      passengerDni: (map['passengerDni'] ?? '').toString(),
+      passengerEmail: (map['passengerEmail'] ?? '').toString(),
+      passengerAge: (map['passengerAge'] as num?)?.toInt(),
+      passengerCity: (map['passengerCity'] ?? '').toString(),
+      price: (map['price'] as num?)?.toDouble() ?? 45.0,
       originCity: (map['originCity'] ?? 'Tarapoto').toString(),
       destinationCity: (map['destinationCity'] ?? 'Yurimaguas').toString(),
     );
@@ -141,6 +217,7 @@ class AvailableCarItem {
   final Map<int, SeatPassengerInfo> seatPassengers;
   final List<PendingSeatRequest> pendingRequests;
   final List<Map<String, dynamic>> chatMessages;
+  final bool tripStarted;
 
   const AvailableCarItem({
     required this.id,
@@ -160,6 +237,7 @@ class AvailableCarItem {
     this.seatPassengers = const {},
     this.pendingRequests = const [],
     this.chatMessages = const [],
+    this.tripStarted = false,
   });
 
   int get availableSeatsCount =>
@@ -167,6 +245,8 @@ class AvailableCarItem {
 
   int get occupiedSeatsCount =>
       seatStates.values.where((s) => s == 'occupied').length;
+
+  int get totalSeatsCount => seatStates.isNotEmpty ? seatStates.length : 4;
 
   bool get isFull => availableSeatsCount == 0;
 
@@ -188,6 +268,7 @@ class AvailableCarItem {
     Map<int, SeatPassengerInfo>? seatPassengers,
     List<PendingSeatRequest>? pendingRequests,
     List<Map<String, dynamic>>? chatMessages,
+    bool? tripStarted,
   }) {
     return AvailableCarItem(
       id: id ?? this.id,
@@ -211,6 +292,7 @@ class AvailableCarItem {
           pendingRequests ?? List<PendingSeatRequest>.from(this.pendingRequests),
       chatMessages:
           chatMessages ?? List<Map<String, dynamic>>.from(this.chatMessages),
+      tripStarted: tripStarted ?? this.tripStarted,
     );
   }
 
@@ -242,9 +324,10 @@ class AvailableCarItem {
       'seatPassengers': passengersMap,
       'pendingRequests': pendingRequests.map((r) => r.toMap()).toList(),
       'chatMessages': chatMessages,
+      'tripStarted': tripStarted,
       'availableSeats': availableSeatsCount,
       'occupiedSeats': occupiedSeatsCount,
-      'isPubliclyVisible': availableSeatsCount > 0,
+      'isPubliclyVisible': availableSeatsCount > 0 && !tripStarted,
       'isIntercityCar': true,
       'updatedAt': FieldValue.serverTimestamp(),
     };
@@ -260,17 +343,23 @@ class AvailableCarItem {
         : (data['driverId'] ?? data['id'] ?? rawDocId).toString();
 
     final rawSeats = data['seatStates'];
-    final parsedSeats = <int, String>{
-      1: fallback?.seatStates[1] ?? 'available',
-      2: fallback?.seatStates[2] ?? 'available',
-      3: fallback?.seatStates[3] ?? 'available',
-      4: fallback?.seatStates[4] ?? 'available',
-    };
-    if (rawSeats is Map) {
-      for (final seatNum in [1, 2, 3, 4]) {
-        final val = rawSeats[seatNum.toString()] ?? rawSeats[seatNum];
-        if (val != null) {
-          parsedSeats[seatNum] = val.toString();
+    final parsedSeats = <int, String>{};
+    if (fallback != null && fallback.seatStates.isNotEmpty) {
+      parsedSeats.addAll(fallback.seatStates);
+    } else {
+      parsedSeats.addAll({
+        1: 'available',
+        2: 'available',
+        3: 'available',
+        4: 'available',
+      });
+    }
+    if (rawSeats is Map && rawSeats.isNotEmpty) {
+      parsedSeats.clear();
+      for (final entry in rawSeats.entries) {
+        final seatNum = int.tryParse(entry.key.toString());
+        if (seatNum != null && seatNum > 0) {
+          parsedSeats[seatNum] = entry.value.toString();
         }
       }
     }
@@ -281,10 +370,22 @@ class AvailableCarItem {
       for (final entry in rawPassengers.entries) {
         final seatNum = int.tryParse(entry.key.toString());
         if (seatNum != null && entry.value is Map) {
-          parsedPassengers[seatNum] = SeatPassengerInfo.fromMap(
+          final parsed = SeatPassengerInfo.fromMap(
             Map<String, dynamic>.from(entry.value as Map),
             seatNum,
           );
+          final prev = fallback?.seatPassengers[seatNum];
+          parsedPassengers[seatNum] = prev != null
+              ? parsed.copyWith(
+                  dni: parsed.dni.isNotEmpty ? parsed.dni : prev.dni,
+                  email: parsed.email.isNotEmpty ? parsed.email : prev.email,
+                  age: parsed.age ?? prev.age,
+                  city: parsed.city.isNotEmpty ? parsed.city : prev.city,
+                  photoUrl: parsed.photoUrl.isNotEmpty
+                      ? parsed.photoUrl
+                      : prev.photoUrl,
+                )
+              : parsed;
         }
       }
     } else if (fallback != null) {
@@ -373,6 +474,9 @@ class AvailableCarItem {
       seatPassengers: parsedPassengers,
       pendingRequests: parsedRequests,
       chatMessages: parsedChat,
+      tripStarted: data['tripStarted'] is bool
+          ? data['tripStarted'] as bool
+          : (fallback?.tripStarted ?? false),
     );
   }
 }
@@ -428,23 +532,42 @@ class IntercityVehicleRepository extends ChangeNotifier {
   List<AvailableCarItem> get allCars =>
       List.unmodifiable(_realCarsByUid.values.toList());
 
-  /// Ocultamiento Automático por Ocupación Total:
+  /// Ocultamiento Automático por Ocupación Total o Viaje en Curso:
   /// Cuando los 4 asientos de un vehículo alcanzan el estado de ocupados
-  /// (availableSeatsCount == 0), se retira automáticamente de la lista pública.
-  List<AvailableCarItem> get publicAvailableCars =>
-      allCars.where((c) => c.availableSeatsCount > 0).toList();
+  /// (availableSeatsCount == 0) o el viaje ya inició, se retira de la lista pública.
+  List<AvailableCarItem> get publicAvailableCars {
+    final currentUid = AuthService.instance.currentUser?.uid ??
+        fb.FirebaseAuth.instance.currentUser?.uid ??
+        '';
+    return allCars.where((c) {
+      // 1. Un pasajero jamás debe ver un auto a su propio nombre o UID
+      if (currentUid.isNotEmpty &&
+          (c.id == currentUid || c.driverId == currentUid)) {
+        return false;
+      }
+      // 2. Si la placa es un marcador genérico de prueba y no tiene agencia real, descartar
+      if (c.vehiclePlate == 'ABC-123' && c.agencyName.trim().isEmpty) {
+        return false;
+      }
+      return c.availableSeatsCount > 0 && !c.tripStarted;
+    }).toList();
+  }
 
   /// Obtiene el vehículo correspondiente al conductor autenticado actual
   /// (sin datos por defecto ni pasajeros ficticios).
   AvailableCarItem get driverPrimaryVehicle {
     final user = AuthService.instance.currentUser;
     final uid = user?.uid ?? fb.FirebaseAuth.instance.currentUser?.uid ?? '';
-    if (uid.isNotEmpty && _realCarsByUid.containsKey(uid)) {
+    final rawType = (user?.vehicleType ?? '').trim().toLowerCase();
+    final isMoto = rawType.contains('moto');
+
+    // Solo devolver el vehículo de _realCarsByUid si pertenece a este conductor y NO es mototaxi
+    if (uid.isNotEmpty && _realCarsByUid.containsKey(uid) && !isMoto) {
       return _realCarsByUid[uid]!;
     }
-    if (_realCarsByUid.isNotEmpty) {
-      return _realCarsByUid.values.first;
-    }
+
+    // Aislamiento estricto: NUNCA hacer fallback a `_realCarsByUid.values.first`,
+    // para evitar que mototaxistas u otros conductores vean viajes o destinos ajenos.
     final brand = (user?.vehicleBrand ?? '').trim();
     final model = (user?.vehicleModel ?? '').trim();
     final fullModel = '$brand $model'.trim();
@@ -464,6 +587,7 @@ class IntercityVehicleRepository extends ChangeNotifier {
       avatarUrl: user?.photoUrl ?? '',
       originCity: user?.city ?? 'Tarapoto',
       destinationCity: 'Yurimaguas',
+      tripStarted: false,
       seatStates: const {
         1: 'available',
         2: 'available',
@@ -668,12 +792,92 @@ class IntercityVehicleRepository extends ChangeNotifier {
       seatPassengers: existing?.seatPassengers ?? const {},
       pendingRequests: existing?.pendingRequests ?? const [],
       chatMessages: existing?.chatMessages ?? const [],
+      tripStarted: existing?.tripStarted ?? false,
     );
 
     _realCarsByUid[uid] = merged;
 
     if (publishIfMissing && existing == null) {
       unawaited(_persistCar(merged));
+    }
+  }
+
+  final Set<String> _enrichingPassengerIds = {};
+
+  /// Completa automáticamente los datos personales de los pasajeros (DNI, correo,
+  /// edad, ciudad, teléfono) consultando `users/{passengerId}` en Firestore.
+  Future<void> enrichPassengersFromFirestore(String carId) async {
+    final current = getCarById(carId);
+    if (current.seatPassengers.isEmpty) return;
+
+    bool anyUpdated = false;
+    final updatedPassengers = Map<int, SeatPassengerInfo>.from(
+      current.seatPassengers,
+    );
+
+    for (final entry in current.seatPassengers.entries) {
+      final seatNum = entry.key;
+      final pax = entry.value;
+      final pid = pax.passengerId.trim();
+      if (pid.isEmpty ||
+          pid == 'guest' ||
+          pid.startsWith('pax_manual_') ||
+          _enrichingPassengerIds.contains(pid)) {
+        continue;
+      }
+      if (pax.dni.trim().isNotEmpty && pax.email.trim().isNotEmpty) {
+        continue;
+      }
+
+      _enrichingPassengerIds.add(pid);
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(pid)
+            .get();
+        if (doc.exists && doc.data() != null) {
+          final d = doc.data()!;
+          final fullName = (d['name'] ?? pax.passengerName).toString().trim();
+          final phone = (d['phone'] ?? pax.phone).toString().trim();
+          final dni = (d['dni'] ?? pax.dni).toString().trim();
+          final email = (d['email'] ?? pax.email).toString().trim();
+          final age = (d['age'] as num?)?.toInt() ?? pax.age;
+          final city = (d['city'] ?? pax.city).toString().trim();
+          final photoUrl = (d['photoUrl'] ?? pax.photoUrl).toString().trim();
+
+          updatedPassengers[seatNum] = pax.copyWith(
+            passengerName: fullName.isNotEmpty ? fullName : pax.passengerName,
+            shortName: SeatPassengerInfo.formatShortName(
+              fullName.isNotEmpty ? fullName : pax.passengerName,
+            ),
+            phone: phone.isNotEmpty ? phone : pax.phone,
+            dni: dni,
+            email: email,
+            age: age,
+            city: city,
+            photoUrl: photoUrl,
+          );
+          anyUpdated = true;
+        }
+      } catch (_) {
+      } finally {
+        _enrichingPassengerIds.remove(pid);
+      }
+    }
+
+    if (anyUpdated) {
+      final latest = getCarById(carId);
+      final mergedPassengers = Map<int, SeatPassengerInfo>.from(
+        latest.seatPassengers,
+      );
+      for (final entry in updatedPassengers.entries) {
+        if (mergedPassengers.containsKey(entry.key)) {
+          mergedPassengers[entry.key] = entry.value;
+        }
+      }
+      final updatedCar = latest.copyWith(seatPassengers: mergedPassengers);
+      _updateLocalCar(updatedCar);
+      await _persistCar(updatedCar);
     }
   }
 
@@ -753,6 +957,48 @@ class IntercityVehicleRepository extends ChangeNotifier {
     await _persistCar(updated);
   }
 
+  /// Actualiza la capacidad total de asientos del vehículo (ej. 4, 6, 7, 8, etc.)
+  /// y reubica la disponibilidad manteniendo los datos de pasajeros previamente asignados.
+  Future<void> updateVehicleSeatCapacity({
+    required String carId,
+    required int totalSeats,
+  }) async {
+    final current = getCarById(carId);
+    final updatedSeats = <int, String>{};
+    final updatedPassengers = <int, SeatPassengerInfo>{};
+
+    for (int s = 1; s <= totalSeats; s++) {
+      updatedSeats[s] = current.seatStates[s] ?? 'available';
+      if (current.seatPassengers.containsKey(s) &&
+          updatedSeats[s] == 'occupied') {
+        updatedPassengers[s] = current.seatPassengers[s]!;
+      }
+    }
+
+    final updatedCar = current.copyWith(
+      seatStates: updatedSeats,
+      seatPassengers: updatedPassengers,
+    );
+
+    _updateLocalCar(updatedCar);
+    await _persistCar(updatedCar);
+
+    try {
+      final user = AuthService.instance.currentUser;
+      final uid = user?.uid ?? fb.FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null && uid.isNotEmpty) {
+        await FirebaseFirestore.instance.collection('drivers').doc(uid).set({
+          'totalSeats': totalSeats,
+          'vehicleCapacity': totalSeats,
+        }, SetOptions(merge: true));
+        await FirebaseFirestore.instance.collection('users').doc(uid).set({
+          'totalSeats': totalSeats,
+          'vehicleCapacity': totalSeats,
+        }, SetOptions(merge: true));
+      }
+    } catch (_) {}
+  }
+
   /// Cuando un pasajero confirma un asiento desde "Seleccionar Asiento":
   /// 1. El asiento pasa a 'occupied' con los datos reales del pasajero.
   /// 2. Se agrega una `PendingSeatRequest` para que al conductor le salga el
@@ -765,19 +1011,28 @@ class IntercityVehicleRepository extends ChangeNotifier {
     required String passengerId,
     required String passengerName,
     required String passengerPhone,
+    String passengerDni = '',
+    String passengerEmail = '',
+    int? passengerAge,
+    String passengerCity = '',
+    String passengerPhotoUrl = '',
     String etaText = 'ETA: 12 min a 15 min',
+    String tripId = '',
+    int? reservedAtMs,
     String? removeRequestId,
     bool createPendingBannerForDriver = false,
     String? originCity,
     String? destinationCity,
   }) async {
     final current = getCarById(carId);
+    final existingPax = current.seatPassengers[seatNumber];
     final updatedSeats = Map<int, String>.from(current.seatStates);
     updatedSeats[seatNumber] = 'occupied';
 
     final updatedPassengers = Map<int, SeatPassengerInfo>.from(
       current.seatPassengers,
     );
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
     updatedPassengers[seatNumber] = SeatPassengerInfo(
       seatNumber: seatNumber,
       passengerId: passengerId,
@@ -785,6 +1040,19 @@ class IntercityVehicleRepository extends ChangeNotifier {
       shortName: SeatPassengerInfo.formatShortName(passengerName),
       phone: passengerPhone.isNotEmpty ? passengerPhone : '+51987654321',
       etaText: etaText,
+      dni: passengerDni.isNotEmpty ? passengerDni : (existingPax?.dni ?? ''),
+      email: passengerEmail.isNotEmpty
+          ? passengerEmail
+          : (existingPax?.email ?? ''),
+      age: passengerAge ?? existingPax?.age,
+      city: passengerCity.isNotEmpty
+          ? passengerCity
+          : (existingPax?.city ?? ''),
+      photoUrl: passengerPhotoUrl.isNotEmpty
+          ? passengerPhotoUrl
+          : (existingPax?.photoUrl ?? ''),
+      reservedAtMs: reservedAtMs ?? (existingPax?.reservedAtMs != null && existingPax!.reservedAtMs > 0 ? existingPax.reservedAtMs : nowMs),
+      tripId: tripId.isNotEmpty ? tripId : (existingPax?.tripId ?? ''),
     );
 
     final updatedRequests = List<PendingSeatRequest>.from(
@@ -805,6 +1073,10 @@ class IntercityVehicleRepository extends ChangeNotifier {
           passengerId: passengerId,
           passengerName: passengerName,
           passengerPhone: passengerPhone,
+          passengerDni: passengerDni,
+          passengerEmail: passengerEmail,
+          passengerAge: passengerAge,
+          passengerCity: passengerCity,
           price: current.pricePerSeat,
           originCity: originCity ?? current.originCity,
           destinationCity: destinationCity ?? current.destinationCity,
@@ -820,6 +1092,7 @@ class IntercityVehicleRepository extends ChangeNotifier {
 
     _updateLocalCar(updatedCar);
     await _persistCar(updatedCar);
+    unawaited(enrichPassengersFromFirestore(carId));
   }
 
   /// El conductor acepta la solicitud pendiente en su pestaña "Vehículo":
@@ -834,10 +1107,56 @@ class IntercityVehicleRepository extends ChangeNotifier {
       passengerId: request.passengerId,
       passengerName: request.passengerName,
       passengerPhone: request.passengerPhone,
+      passengerDni: request.passengerDni,
+      passengerEmail: request.passengerEmail,
+      passengerAge: request.passengerAge,
+      passengerCity: request.passengerCity,
       etaText: 'ETA: 12 min a 15 min',
       removeRequestId: request.requestId,
       createPendingBannerForDriver: false,
     );
+  }
+
+  /// Inicia el viaje interprovincial cuando el vehículo está lleno (4/4) y el
+  /// conductor confirma "¿Estás seguro de iniciar el viaje?".
+  Future<void> startIntercityTrip(String carId) async {
+    final current = getCarById(carId);
+    final updatedPassengers = Map<int, SeatPassengerInfo>.from(
+      current.seatPassengers,
+    );
+    for (final entry in updatedPassengers.entries) {
+      updatedPassengers[entry.key] = entry.value.copyWith(
+        etaText: 'A bordo • En viaje hacia ${current.destinationCity}',
+      );
+    }
+    final updatedCar = current.copyWith(
+      tripStarted: true,
+      pendingRequests: const [],
+      seatPassengers: updatedPassengers,
+    );
+    _updateLocalCar(updatedCar);
+    await _persistCar(updatedCar);
+    await enrichPassengersFromFirestore(carId);
+  }
+
+  /// Finaliza el viaje interprovincial y deja los 4 asientos disponibles
+  /// para una nueva ruta.
+  Future<void> finishIntercityTrip(String carId) async {
+    final current = getCarById(carId);
+    final updatedCar = current.copyWith(
+      tripStarted: false,
+      seatStates: const {
+        1: 'available',
+        2: 'available',
+        3: 'available',
+        4: 'available',
+      },
+      seatPassengers: const {},
+      pendingRequests: const [],
+      chatMessages: const [],
+    );
+    _updateLocalCar(updatedCar);
+    await _persistCar(updatedCar);
   }
 
   /// Reapertura Automática por Cancelación:
@@ -1032,19 +1351,68 @@ class _AvailableCarsScreenState extends State<AvailableCarsScreen> {
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
                           onPressed: () async {
+                            final confirmed = await showDialog<bool>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                title: const Text('¿Cancelar reserva?'),
+                                content: Text(
+                                  'Se liberará tu Asiento ${res.seatNumber} en el vehículo de ${res.car.driverName}.',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, false),
+                                    child: const Text('Volver'),
+                                  ),
+                                  ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.redAccent,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                    onPressed: () => Navigator.pop(ctx, true),
+                                    child: const Text('Sí, cancelar'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (confirmed != true) return;
+
+                            // 1. Cancelar en repositorio local
                             await _repo.cancelSeatReservation(
                               carId: res.car.id,
                               seatNumber: res.seatNumber,
                             );
+
+                            // 2. Cancelar en Firestore trips
+                            try {
+                              final tripsQuery = await FirebaseFirestore.instance
+                                  .collection('trips')
+                                  .where('passengerId', isEqualTo: currentPassengerUid)
+                                  .where('seatNumber', isEqualTo: res.seatNumber)
+                                  .where('status', whereIn: ['pending', 'accepted', 'active'])
+                                  .get();
+                              for (final doc in tripsQuery.docs) {
+                                await doc.reference.update({
+                                  'status': 'cancelled',
+                                  'cancelledBy': 'passenger',
+                                  'cancelledAt': FieldValue.serverTimestamp(),
+                                });
+                              }
+                            } catch (_) {}
+
                             if (!context.mounted) return;
                             final updated = _repo.getCarById(res.car.id);
+                            ScaffoldMessenger.of(context).hideCurrentSnackBar();
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(
-                                  'Reserva cancelada en Asiento ${res.seatNumber}. '
-                                  'Vehículo ${res.car.vehiclePlate} actualizado (${updated.availableSeatsCount}/4 Disponibles).',
+                                  'Reserva del Asiento ${res.seatNumber} cancelada. '
+                                  'Vehículo ${res.car.vehiclePlate} (${updated.availableSeatsCount}/4 Disponibles).',
                                 ),
-                                backgroundColor: Colors.green.shade700,
+                                backgroundColor: Colors.red.shade700,
+                                duration: const Duration(seconds: 2),
                               ),
                             );
                           },
@@ -1296,7 +1664,7 @@ class _AvailableCarsScreenState extends State<AvailableCarsScreen> {
                                           ),
                                           const SizedBox(height: 4),
                                           Text(
-                                            '$freeSeats/4 Disponibles',
+                                            '$freeSeats/${car.seatStates.length} Disponibles',
                                             style: const TextStyle(
                                               fontSize: 11,
                                               color: Colors.black87,
@@ -1459,14 +1827,16 @@ class CarSeatSelectionScreen extends StatefulWidget {
 
 class _CarSeatSelectionScreenState extends State<CarSeatSelectionScreen> {
   final IntercityVehicleRepository _repo = IntercityVehicleRepository.instance;
-  late int _selectedSeat;
+  int _passengerCount = 1;
+  final Set<int> _selectedSeats = <int>{};
   bool _isSubmitting = false;
 
   @override
   void initState() {
     super.initState();
     final liveCar = _repo.getCarById(widget.car.id);
-    _selectedSeat = _firstAvailableSeat(liveCar);
+    final first = _firstAvailableSeat(liveCar);
+    _selectedSeats.add(first);
   }
 
   int _firstAvailableSeat(AvailableCarItem car) {
@@ -1477,7 +1847,11 @@ class _CarSeatSelectionScreenState extends State<CarSeatSelectionScreen> {
   }
 
   Future<void> _confirmSeatBooking(AvailableCarItem liveCar) async {
-    if (liveCar.seatStates[_selectedSeat] == 'occupied') return;
+    if (_selectedSeats.isEmpty) return;
+    for (final s in _selectedSeats) {
+      if (liveCar.seatStates[s] == 'occupied') return;
+    }
+
     setState(() => _isSubmitting = true);
 
     final user = AuthService.instance.currentUser;
@@ -1488,48 +1862,75 @@ class _CarSeatSelectionScreenState extends State<CarSeatSelectionScreen> {
     final rawPhone = user?.phone.trim() ?? '';
     final passengerPhone = rawPhone.isNotEmpty ? rawPhone : '+51987654321';
 
-    // 1. Ocupar asiento en tiempo real y enviar la Nueva Solicitud (Pendiente)
-    // a la pestaña "Vehículo" del conductor dueño de este auto.
-    await _repo.occupySeat(
-      carId: liveCar.id,
-      seatNumber: _selectedSeat,
-      passengerId: passengerId,
-      passengerName: passengerName,
-      passengerPhone: passengerPhone,
-      etaText: 'ETA: 12 min a 15 min',
-      createPendingBannerForDriver: true,
-      originCity: widget.originCity,
-      destinationCity: widget.destinationCity,
-    );
+    final rawDni = user?.dni ?? '';
+    final rawEmail = user?.email ?? '';
+    final rawAge = user?.age;
+    final rawCity = user?.city ?? '';
+    final rawPhoto = user?.photoUrl ?? '';
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
 
-    // 2. Registrar también en la colección `trips` vinculando `driverId: liveCar.id`
-    try {
-      await FirebaseFirestore.instance.collection('trips').add({
-        'passengerId': passengerId,
-        'passengerName': passengerName,
-        'passengerPhone': passengerPhone,
-        'originAddress': widget.originCity,
-        'destinationAddress': widget.destinationCity,
-        'fareAmount': liveCar.pricePerSeat,
-        'serviceType': 'Auto Interprovincial',
-        'vehicleType': 'Auto',
-        'carId': liveCar.id,
-        'driverId': liveCar.driverId.isNotEmpty ? liveCar.driverId : liveCar.id,
-        'driverName': liveCar.driverName,
-        'driverVehicleModel': liveCar.vehicleModel,
-        'driverVehiclePlate': liveCar.vehiclePlate,
-        'seatNumber': _selectedSeat,
-        'departureLabel': liveCar.departureLabel,
-        'status': 'pending',
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-    } catch (_) {}
+    final sortedSeats = _selectedSeats.toList()..sort();
+
+    // 1. Registrar cada asiento en `trips` y ocupar en el repositorio
+    for (final seatNum in sortedSeats) {
+      String createdTripId = '';
+      try {
+        final tripRef =
+            await FirebaseFirestore.instance.collection('trips').add({
+          'passengerId': passengerId,
+          'passengerName': passengerName,
+          'passengerPhone': passengerPhone,
+          'passengerDni': rawDni,
+          'passengerEmail': rawEmail,
+          'originAddress': widget.originCity,
+          'destinationAddress': widget.destinationCity,
+          'fareAmount': liveCar.pricePerSeat,
+          'serviceType': 'Auto Interprovincial',
+          'vehicleType': 'Auto',
+          'isIntercityCar': true,
+          'carId': liveCar.id,
+          'driverId': liveCar.driverId.isNotEmpty ? liveCar.driverId : liveCar.id,
+          'driverName': liveCar.driverName,
+          'driverPhone': liveCar.driverPhone,
+          'driverVehicleModel': liveCar.vehicleModel,
+          'driverVehiclePlate': liveCar.vehiclePlate,
+          'agencyName': liveCar.agencyName,
+          'seatNumber': seatNum,
+          'departureLabel': liveCar.departureLabel,
+          'status': 'pending',
+          'createdAtMs': nowMs,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        createdTripId = tripRef.id;
+      } catch (_) {}
+
+      await _repo.occupySeat(
+        carId: liveCar.id,
+        seatNumber: seatNum,
+        passengerId: passengerId,
+        passengerName: passengerName,
+        passengerPhone: passengerPhone,
+        passengerDni: rawDni,
+        passengerEmail: rawEmail,
+        passengerAge: rawAge,
+        passengerCity: rawCity,
+        passengerPhotoUrl: rawPhoto,
+        etaText: 'ETA: 15 min',
+        tripId: createdTripId,
+        reservedAtMs: nowMs,
+        createPendingBannerForDriver: true,
+        originCity: widget.originCity,
+        destinationCity: widget.destinationCity,
+      );
+    }
 
     if (!mounted) return;
     setState(() => _isSubmitting = false);
 
     final updatedCar = _repo.getCarById(liveCar.id);
     final isNowFull = updatedCar.availableSeatsCount == 0;
+    final totalFare = liveCar.pricePerSeat * sortedSeats.length;
+    final seatsText = sortedSeats.join(', ');
 
     await showDialog<void>(
       context: context,
@@ -1541,17 +1942,18 @@ class _CarSeatSelectionScreenState extends State<CarSeatSelectionScreen> {
             SizedBox(width: 8),
             Expanded(
               child: Text(
-                'Asiento Reservado',
+                'Reserva Confirmada',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
               ),
             ),
           ],
         ),
         content: Text(
-          'Has seleccionado el Asiento $_selectedSeat para la ruta '
-          '${widget.originCity} → ${widget.destinationCity} '
+          'Has reservado ${sortedSeats.length == 1 ? 'el Asiento $seatsText' : 'los Asientos $seatsText'} '
+          'para la ruta ${widget.originCity} → ${widget.destinationCity} '
           'con ${liveCar.driverName} (${liveCar.vehicleModel} - ${liveCar.vehiclePlate}).\n\n'
-          'Total: S/ ${liveCar.pricePerSeat.toStringAsFixed(2)}'
+          'Total: S/ ${totalFare.toStringAsFixed(2)} '
+          '(${sortedSeats.length} ${sortedSeats.length == 1 ? 'persona' : 'personas'})'
           '${isNowFull ? '\n\n¡Vehículo completo (4/4)! Se ha retirado automáticamente de la lista pública.' : ''}',
         ),
         actions: [
@@ -1580,10 +1982,17 @@ class _CarSeatSelectionScreenState extends State<CarSeatSelectionScreen> {
       listenable: _repo,
       builder: (context, _) {
         final liveCar = _repo.getCarById(widget.car.id);
-        if (liveCar.seatStates[_selectedSeat] == 'occupied' &&
-            liveCar.availableSeatsCount > 0) {
-          _selectedSeat = _firstAvailableSeat(liveCar);
+
+        // Limpiar asientos que se hayan ocupado externamente
+        _selectedSeats.removeWhere((s) => liveCar.seatStates[s] == 'occupied');
+        if (_selectedSeats.isEmpty && liveCar.availableSeatsCount > 0) {
+          _selectedSeats.add(_firstAvailableSeat(liveCar));
         }
+
+        final sortedSeats = _selectedSeats.toList()..sort();
+        final seatsLabel = sortedSeats.join(', ');
+        final totalFare = liveCar.pricePerSeat * _selectedSeats.length;
+        final isCompleteSelection = _selectedSeats.length == _passengerCount;
 
         return Scaffold(
           backgroundColor: Colors.white,
@@ -1632,59 +2041,158 @@ class _CarSeatSelectionScreenState extends State<CarSeatSelectionScreen> {
                           color: Colors.black54,
                         ),
                       ),
-                      const SizedBox(height: 18),
-                      // Diagrama interactivo del Auto
-                      SizedBox(
-                        width: 280,
-                        height: 330,
-                        child: Stack(
-                          alignment: Alignment.center,
+                      const SizedBox(height: 12),
+
+                      // SECCIÓN: Selector de cantidad de personas que viajan
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFBFBFB),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Positioned.fill(
-                              child: CustomPaint(
-                                painter: CarTopDownOutlinePainter(),
-                              ),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: const [
+                                    Icon(
+                                      Icons.people_alt,
+                                      size: 18,
+                                      color: Colors.black87,
+                                    ),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      '¿Cuántas personas viajan?',
+                                      style: TextStyle(
+                                        fontSize: 13.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: isCompleteSelection
+                                        ? const Color(0xFFE8F5E9)
+                                        : const Color(0xFFFFF3E0),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    '${_selectedSeats.length}/$_passengerCount asientos',
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: isCompleteSelection
+                                          ? const Color(0xFF2E7D32)
+                                          : const Color(0xFFE65100),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                            // Asiento 1 (Copiloto - Delantero derecho)
-                            Positioned(
-                              top: 86,
-                              right: 42,
-                              child: _SeatBoxWidget(
-                                seatNumber: 1,
-                                status: _seatStatus(liveCar, 1),
-                                onTap: () => _onSelectSeat(liveCar, 1),
-                              ),
-                            ),
-                            // Fila trasera: Asientos 2, 3 y 4
-                            Positioned(
-                              bottom: 62,
-                              left: 34,
-                              right: 34,
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  _SeatBoxWidget(
-                                    seatNumber: 2,
-                                    status: _seatStatus(liveCar, 2),
-                                    onTap: () => _onSelectSeat(liveCar, 2),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [1, 2, 3, 4].map((paxCount) {
+                                final isSelected = _passengerCount == paxCount;
+                                final isAllowed =
+                                    paxCount <= liveCar.availableSeatsCount;
+
+                                return Expanded(
+                                  child: Padding(
+                                    padding:
+                                        const EdgeInsets.symmetric(horizontal: 3),
+                                    child: InkWell(
+                                      onTap: isAllowed
+                                          ? () {
+                                              setState(() {
+                                                _passengerCount = paxCount;
+                                                // Recortar si sobran asientos
+                                                while (_selectedSeats.length >
+                                                    _passengerCount) {
+                                                  _selectedSeats.remove(
+                                                    _selectedSeats.last,
+                                                  );
+                                                }
+                                                // Autocompletar si faltan asientos y hay disponibles
+                                                for (final s in [2, 1, 4, 3]) {
+                                                  if (_selectedSeats.length >=
+                                                      _passengerCount) {
+                                                    break;
+                                                  }
+                                                  if (liveCar.seatStates[s] !=
+                                                          'occupied' &&
+                                                      !_selectedSeats
+                                                          .contains(s)) {
+                                                    _selectedSeats.add(s);
+                                                  }
+                                                }
+                                              });
+                                            }
+                                          : null,
+                                      borderRadius: BorderRadius.circular(10),
+                                      child: AnimatedContainer(
+                                        duration:
+                                            const Duration(milliseconds: 180),
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 7,
+                                        ),
+                                        alignment: Alignment.center,
+                                        decoration: BoxDecoration(
+                                          color: isSelected
+                                              ? const Color(0xFFF9D408)
+                                              : (isAllowed
+                                                  ? Colors.white
+                                                  : Colors.grey.shade100),
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                          border: Border.all(
+                                            color: isSelected
+                                                ? Colors.black87
+                                                : (isAllowed
+                                                    ? Colors.grey.shade300
+                                                    : Colors.grey.shade200),
+                                            width: isSelected ? 1.6 : 1.0,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          paxCount == 1
+                                              ? '1 persona'
+                                              : '$paxCount personas',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: isSelected
+                                                ? FontWeight.bold
+                                                : FontWeight.w600,
+                                            color: isAllowed
+                                                ? Colors.black87
+                                                : Colors.grey.shade400,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                   ),
-                                  _SeatBoxWidget(
-                                    seatNumber: 3,
-                                    status: _seatStatus(liveCar, 3),
-                                    onTap: () => _onSelectSeat(liveCar, 3),
-                                  ),
-                                  _SeatBoxWidget(
-                                    seatNumber: 4,
-                                    status: _seatStatus(liveCar, 4),
-                                    onTap: () => _onSelectSeat(liveCar, 4),
-                                  ),
-                                ],
-                              ),
+                                );
+                              }).toList(),
                             ),
                           ],
                         ),
                       ),
+                      const SizedBox(height: 14),
+
+                      // Diagrama interactivo del Auto o Van según modelo activo (Sedán, Van 8 o Van 16)
+                      _buildPassengerChassisDiagram(liveCar),
                       const SizedBox(height: 18),
                       // Leyenda de estados
                       Row(
@@ -1755,15 +2263,19 @@ class _CarSeatSelectionScreenState extends State<CarSeatSelectionScreen> {
                           elevation: 0,
                         ),
                         onPressed:
-                            (_isSubmitting || liveCar.availableSeatsCount == 0)
+                            (_isSubmitting ||
+                                liveCar.availableSeatsCount == 0 ||
+                                !isCompleteSelection)
                             ? null
                             : () => _confirmSeatBooking(liveCar),
                         child: Text(
                           _isSubmitting
                               ? 'Confirmando...'
-                              : 'Confirmar Asiento $_selectedSeat',
+                              : (isCompleteSelection
+                                  ? 'Confirmar Asiento${sortedSeats.length > 1 ? 's' : ''} $seatsLabel • S/ ${totalFare.toStringAsFixed(2)}'
+                                  : 'Selecciona $_passengerCount asiento${_passengerCount > 1 ? 's' : ''} (${_selectedSeats.length}/$_passengerCount)'),
                           style: const TextStyle(
-                            fontSize: 16,
+                            fontSize: 15.5,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -1779,17 +2291,186 @@ class _CarSeatSelectionScreenState extends State<CarSeatSelectionScreen> {
     );
   }
 
+  int _resolveModelIndex(int total) {
+    if (total <= 4) return 1;
+    if (total <= 8) return 2;
+    return 3;
+  }
+
+  String _resolveChassisAsset(int total) {
+    final model = _resolveModelIndex(total);
+    if (model == 1) return 'assets/images/chassis_car_4.jpg';
+    if (model == 2) return 'assets/images/chassis_van_8.jpg';
+    return 'assets/images/chassis_van_16.jpg';
+  }
+
+  List<Offset> _calculateChassisOffsets(int total) {
+    final model = _resolveModelIndex(total);
+
+    // --- MODELO 1: AUTO SEDÁN (1..4 asientos) ---
+    if (model == 1) {
+      final List<Offset> positions = [];
+      const copilotOffset = Offset(168, 136);
+      if (total >= 1) positions.add(copilotOffset);
+      if (total == 2) {
+        positions.add(const Offset(119, 234));
+      } else if (total == 3) {
+        positions.add(const Offset(72, 234));
+        positions.add(const Offset(164, 234));
+      } else if (total >= 4) {
+        positions.add(const Offset(64, 234));
+        positions.add(const Offset(119, 234));
+        positions.add(const Offset(174, 234));
+      }
+      return positions;
+    }
+
+    // --- MODELO 2: VAN MEDIANA (5..8 asientos) ---
+    if (model == 2) {
+      const van8Slots = [
+        Offset(54, 123),
+        Offset(108, 123),
+        Offset(57, 230),
+        Offset(111, 230),
+        Offset(165, 230),
+        Offset(57, 347),
+        Offset(111, 347),
+        Offset(165, 347),
+      ];
+      if (total >= 8) return van8Slots;
+      if (total == 7) {
+        return [
+          van8Slots[0],
+          van8Slots[2],
+          van8Slots[3],
+          van8Slots[4],
+          van8Slots[5],
+          van8Slots[6],
+          van8Slots[7],
+        ];
+      }
+      if (total == 6) {
+        return [
+          van8Slots[2],
+          van8Slots[3],
+          van8Slots[4],
+          van8Slots[5],
+          van8Slots[6],
+          van8Slots[7],
+        ];
+      }
+      return [
+        van8Slots[0],
+        van8Slots[1],
+        van8Slots[2],
+        van8Slots[3],
+        van8Slots[4],
+      ];
+    }
+
+    // --- MODELO 3: VAN GRANDE / MINIBÚS (9..16 asientos) ---
+    final List<Offset> positions = [];
+    positions.add(const Offset(60, 125));
+    final remaining = total - 1;
+    final rowYs = [190.0, 255.0, 320.0, 385.0, 450.0];
+    final colXs = [54.0, 114.0, 174.0];
+    int placed = 0;
+    for (int r = 0; r < rowYs.length && placed < remaining; r++) {
+      final y = rowYs[r];
+      final toPlaceInRow = (remaining - placed).clamp(1, 3);
+      if (toPlaceInRow == 1) {
+        positions.add(Offset(colXs[1], y));
+        placed++;
+      } else if (toPlaceInRow == 2) {
+        positions.add(Offset(colXs[0], y));
+        positions.add(Offset(colXs[2], y));
+        placed += 2;
+      } else {
+        positions.add(Offset(colXs[0], y));
+        positions.add(Offset(colXs[1], y));
+        positions.add(Offset(colXs[2], y));
+        placed += 3;
+      }
+    }
+    return positions;
+  }
+
+  Widget _buildPassengerChassisDiagram(AvailableCarItem liveCar) {
+    final total = liveCar.seatStates.length;
+    final model = _resolveModelIndex(total);
+    final width = model == 1 ? 290.0 : 270.0;
+    final height = model == 1 ? 390.0 : 560.0;
+    final offsets = _calculateChassisOffsets(total);
+    final asset = _resolveChassisAsset(total);
+
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Image.asset(
+                asset,
+                fit: BoxFit.fill,
+              ),
+            ),
+            for (int i = 0; i < offsets.length; i++) ...[
+              Positioned(
+                left: offsets[i].dx,
+                top: offsets[i].dy,
+                child: _SeatBoxWidget(
+                  seatNumber: i + 1,
+                  status: _seatStatus(liveCar, i + 1),
+                  onTap: () => _onSelectSeat(liveCar, i + 1),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   String _seatStatus(AvailableCarItem car, int seatNumber) {
     final baseState = car.seatStates[seatNumber] ?? 'available';
     if (baseState == 'occupied') return 'occupied';
-    if (_selectedSeat == seatNumber) return 'selected';
+    if (_selectedSeats.contains(seatNumber)) return 'selected';
     return 'available';
   }
 
   void _onSelectSeat(AvailableCarItem car, int seatNumber) {
     final baseState = car.seatStates[seatNumber] ?? 'available';
     if (baseState == 'occupied') return;
-    setState(() => _selectedSeat = seatNumber);
+
+    setState(() {
+      if (_selectedSeats.contains(seatNumber)) {
+        if (_selectedSeats.length > 1) {
+          _selectedSeats.remove(seatNumber);
+        }
+      } else {
+        if (_selectedSeats.length < _passengerCount) {
+          _selectedSeats.add(seatNumber);
+        } else if (_passengerCount == 1) {
+          _selectedSeats.clear();
+          _selectedSeats.add(seatNumber);
+        } else {
+          _selectedSeats.remove(_selectedSeats.first);
+          _selectedSeats.add(seatNumber);
+        }
+      }
+    });
   }
 }
 

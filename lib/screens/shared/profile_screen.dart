@@ -3,6 +3,7 @@ import '../../models/user_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
 import '../passenger/passenger_edit_profile_screen.dart';
+import '../driver/driver_vehicle_config_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -151,6 +152,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             context,
                             MaterialPageRoute(
                               builder: (_) => const PassengerEditProfileScreen(),
+                            ),
+                          );
+                          if (result == true && mounted) {
+                            setState(() {});
+                          }
+                        },
+                      ),
+                      const Divider(),
+                      ListTile(
+                        leading: const Icon(Icons.tune, color: Color(0xFFB26A00)),
+                        title: const Text(
+                          'Configura tu auto',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: const Text('Asientos y capacidad de tu vehículo'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () async {
+                          final result = await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const DriverVehicleConfigScreen(),
                             ),
                           );
                           if (result == true && mounted) {

@@ -14,6 +14,11 @@ class MarkerIcons {
   MarkerIcons._();
 
   static const String _assetPath = 'assets/images/ic_mototaxi_marker.png';
+  static const String _autoAssetPath = 'assets/images/auto_mijano.png';
+
+  static Uint8List? _autoSource;
+  static double _autoAspect = 1.0;
+  static final Map<int, BitmapDescriptor> _autoByWidth = {};
 
   /// Ancho lógico (px en pantalla) por nivel, de más lejos a más cerca.
   static const List<double> _levelWidths = [26, 32, 38, 44];
@@ -123,5 +128,56 @@ class MarkerIcons {
     probe.dispose();
 
     _source = bytes;
+  }
+
+  /// Marcador del auto Mijano (`assets/images/auto_mijano.png`) con ancho lógico fijo [width].
+  static Future<BitmapDescriptor?> autoMijanoWithWidth(double width) async {
+    final key = width.round();
+    final cached = _autoByWidth[key];
+    if (cached != null) return cached;
+
+    try {
+      await _ensureAutoSource();
+      final Uint8List source = _autoSource!;
+
+      final double rawDpr =
+          ui.PlatformDispatcher.instance.implicitView?.devicePixelRatio ?? 1.0;
+      final double dpr = rawDpr < 1.0 ? 1.0 : (rawDpr > 3.0 ? 3.0 : rawDpr);
+
+      final ui.Codec codec = await ui.instantiateImageCodec(
+        source,
+        targetWidth: (width * dpr).round(),
+      );
+      final ui.FrameInfo frame = await codec.getNextFrame();
+      final ByteData? png =
+          await frame.image.toByteData(format: ui.ImageByteFormat.png);
+      frame.image.dispose();
+      codec.dispose();
+      if (png == null) return null;
+
+      final icon = BitmapDescriptor.bytes(
+        png.buffer.asUint8List(),
+        width: width,
+        height: width * _autoAspect,
+      );
+      _autoByWidth[key] = icon;
+      return icon;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> _ensureAutoSource() async {
+    if (_autoSource != null) return;
+    final ByteData data = await rootBundle.load(_autoAssetPath);
+    final Uint8List bytes = data.buffer.asUint8List();
+
+    final ui.Codec probe = await ui.instantiateImageCodec(bytes);
+    final ui.FrameInfo probeFrame = await probe.getNextFrame();
+    _autoAspect = probeFrame.image.height / probeFrame.image.width;
+    probeFrame.image.dispose();
+    probe.dispose();
+
+    _autoSource = bytes;
   }
 }

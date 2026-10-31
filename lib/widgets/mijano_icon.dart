@@ -20,7 +20,30 @@ class MototaxiIcon extends StatelessWidget {
       fit: BoxFit.contain,
       filterQuality: FilterQuality.medium,
       // Si el asset falta, no rompe la pantalla: cae al icono de Material.
-      errorBuilder: (_, __, ___) => Icon(Icons.two_wheeler, size: size),
+      errorBuilder: (_, _, _) => Icon(Icons.two_wheeler, size: size),
+    );
+    if (opacity >= 1.0) return image;
+    return Opacity(opacity: opacity, child: image);
+  }
+}
+
+/// Icono del Auto Mijano (`assets/images/auto_mijano.png`).
+class AutoMijanoIcon extends StatelessWidget {
+  static const String asset = 'assets/images/auto_mijano.png';
+
+  final double size;
+  final double opacity;
+
+  const AutoMijanoIcon({super.key, this.size = 28, this.opacity = 1.0});
+
+  @override
+  Widget build(BuildContext context) {
+    final image = Image.asset(
+      asset,
+      height: size,
+      fit: BoxFit.contain,
+      filterQuality: FilterQuality.medium,
+      errorBuilder: (_, _, _) => Icon(Icons.directions_car, size: size),
     );
     if (opacity >= 1.0) return image;
     return Opacity(opacity: opacity, child: image);

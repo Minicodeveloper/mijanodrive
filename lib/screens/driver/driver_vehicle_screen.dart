@@ -1,9 +1,15 @@
+import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../services/firestore_service.dart';
 import '../passenger/passenger_available_cars_screen.dart';
+import 'driver_vehicle_config_screen.dart';
 
 class DriverVehicleScreen extends StatefulWidget {
-  const DriverVehicleScreen({super.key});
+  final VoidCallback? onTripStartedNavigateHome;
+
+  const DriverVehicleScreen({super.key, this.onTripStartedNavigateHome});
 
   @override
   State<DriverVehicleScreen> createState() => _DriverVehicleScreenState();
@@ -11,11 +17,56 @@ class DriverVehicleScreen extends StatefulWidget {
 
 class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
   final IntercityVehicleRepository _repo = IntercityVehicleRepository.instance;
+  Timer? _etaTickerTimer;
 
   @override
   void initState() {
     super.initState();
     _repo.ensureCurrentDriverVehicleSynced();
+    // Temporizador para refrescar cada segundo el contador regresivo de 15 minutos
+    _etaTickerTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _etaTickerTimer?.cancel();
+    super.dispose();
+  }
+
+  String _formatPassengerEta(SeatPassengerInfo pax) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final startMs = pax.reservedAtMs > 0 ? pax.reservedAtMs : now;
+    const totalSeconds = 15 * 60; // 15 minutos exactos
+    final elapsed = (now - startMs) ~/ 1000;
+    final remaining = (totalSeconds - elapsed).clamp(0, totalSeconds);
+
+    if (remaining <= 0) {
+      return 'ETA: Llegando a la agencia';
+    }
+    final mins = remaining ~/ 60;
+    final secs = remaining % 60;
+    return 'ETA: ${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')} min';
+  }
+
+  Future<String?> _resolveTripId(AvailableCarItem car, SeatPassengerInfo passenger) async {
+    if (passenger.tripId.isNotEmpty) {
+      return passenger.tripId;
+    }
+    try {
+      final query = await FirebaseFirestore.instance
+          .collection('trips')
+          .where('carId', isEqualTo: car.id)
+          .where('seatNumber', isEqualTo: passenger.seatNumber)
+          .where('status', whereIn: ['pending', 'accepted', 'active', 'in_progress'])
+          .limit(1)
+          .get();
+      if (query.docs.isNotEmpty) {
+        return query.docs.first.id;
+      }
+    } catch (_) {}
+    return null;
   }
 
   Future<void> _callPassenger(SeatPassengerInfo passenger) async {
@@ -35,6 +86,58 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
         backgroundColor: Colors.green.shade700,
       ),
     );
+  }
+
+  Future<void> _confirmStartTrip(AvailableCarItem car) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: const [
+            Icon(Icons.directions_car, color: Color(0xFFF9D408), size: 26),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Iniciar Viaje',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          '¿Estás seguro de iniciar el viaje hacia ${car.destinationCity} con los ${car.seatStates.length} pasajeros a bordo?',
+          style: const TextStyle(fontSize: 14.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('No', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFF9D408),
+              foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sí, iniciar viaje', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _repo.startIntercityTrip(car.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('¡Viaje iniciado hacia ${car.destinationCity}! Redirigiendo a Inicio...'),
+          backgroundColor: Colors.green.shade700,
+        ),
+      );
+      widget.onTripStartedNavigateHome?.call();
+    }
   }
 
   void _openEditRouteDialog(AvailableCarItem car) {
@@ -136,8 +239,11 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
     );
   }
 
-  void _openDirectChat(AvailableCarItem car, SeatPassengerInfo passenger) {
+  void _openDirectChat(AvailableCarItem car, SeatPassengerInfo passenger) async {
     final messageController = TextEditingController();
+    final resolvedTripId = await _resolveTripId(car, passenger);
+
+    if (!mounted) return;
 
     showModalBottomSheet<void>(
       context: context,
@@ -151,9 +257,88 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
           listenable: _repo,
           builder: (ctx, _) {
             final liveCar = _repo.getCarById(car.id);
-            final seatMessages = liveCar.chatMessages
-                .where((m) => m['seatNumber'] == passenger.seatNumber)
-                .toList();
+
+            Widget buildMessagesList(List<Map<String, dynamic>> firestoreMessages) {
+              final List<Map<String, dynamic>> allMessages = [];
+
+              if (firestoreMessages.isNotEmpty) {
+                for (var m in firestoreMessages) {
+                  final isDriver = m['senderId'] != null &&
+                      (m['senderId'] == liveCar.driverId ||
+                          m['senderId'] == liveCar.id ||
+                          m['sender'] == 'driver');
+                  allMessages.add({
+                    'isDriver': isDriver,
+                    'text': m['text'] ?? '',
+                  });
+                }
+              } else {
+                final seatMessages = liveCar.chatMessages
+                    .where((m) => m['seatNumber'] == passenger.seatNumber)
+                    .toList();
+                for (var m in seatMessages) {
+                  allMessages.add({
+                    'isDriver': m['sender'] == 'driver',
+                    'text': m['text'] ?? '',
+                  });
+                }
+              }
+
+              return ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F1F1),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Text(
+                        'Hola conductor, reservé el Asiento ${passenger.seatNumber}. Estoy en camino hacia la agencia (${_formatPassengerEta(passenger)}).',
+                        style: const TextStyle(
+                          fontSize: 13.5,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ),
+                  ),
+                  ...allMessages.map((msg) {
+                    final isDriver = msg['isDriver'] == true;
+                    return Align(
+                      alignment: isDriver
+                          ? Alignment.centerRight
+                          : Alignment.centerLeft,
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isDriver
+                              ? const Color(0xFFF9D408)
+                              : const Color(0xFFF1F1F1),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Text(
+                          (msg['text'] ?? '').toString(),
+                          style: const TextStyle(
+                            fontSize: 13.5,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              );
+            }
 
             return Padding(
               padding: EdgeInsets.only(
@@ -199,7 +384,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                                   ),
                                 ),
                                 Text(
-                                  passenger.etaText,
+                                  _formatPassengerEta(passenger),
                                   style: const TextStyle(
                                     fontSize: 12,
                                     color: Colors.black87,
@@ -220,60 +405,16 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                       ),
                     ),
                     Expanded(
-                      child: ListView(
-                        padding: const EdgeInsets.all(16),
-                        children: [
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: Container(
-                              margin: const EdgeInsets.only(bottom: 10),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 10,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF1F1F1),
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              child: Text(
-                                'Hola conductor, reservé el Asiento ${passenger.seatNumber}. Estoy en camino hacia la agencia (${passenger.etaText}).',
-                                style: const TextStyle(
-                                  fontSize: 13.5,
-                                  color: Colors.black87,
-                                ),
-                              ),
-                            ),
-                          ),
-                          ...seatMessages.map((msg) {
-                            final isDriver = msg['sender'] == 'driver';
-                            return Align(
-                              alignment: isDriver
-                                  ? Alignment.centerRight
-                                  : Alignment.centerLeft,
-                              child: Container(
-                                margin: const EdgeInsets.only(bottom: 10),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 10,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: isDriver
-                                      ? const Color(0xFFF9D408)
-                                      : const Color(0xFFF1F1F1),
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                child: Text(
-                                  (msg['text'] ?? '').toString(),
-                                  style: const TextStyle(
-                                    fontSize: 13.5,
-                                    color: Colors.black87,
-                                  ),
-                                ),
-                              ),
-                            );
-                          }),
-                        ],
-                      ),
+                      child: resolvedTripId != null && resolvedTripId.isNotEmpty
+                          ? StreamBuilder<List<Map<String, dynamic>>>(
+                              stream: FirestoreService.instance
+                                  .chatMessagesForTrip(resolvedTripId),
+                              builder: (context, snap) {
+                                final msgs = snap.data ?? [];
+                                return buildMessagesList(msgs);
+                              },
+                            )
+                          : buildMessagesList([]),
                     ),
                     Container(
                       padding: const EdgeInsets.fromLTRB(12, 8, 12, 14),
@@ -318,6 +459,21 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                                 final text = messageController.text.trim();
                                 if (text.isEmpty) return;
                                 messageController.clear();
+
+                                if (resolvedTripId != null &&
+                                    resolvedTripId.isNotEmpty) {
+                                  try {
+                                    await FirestoreService.instance.sendTripMessage(
+                                      tripId: resolvedTripId,
+                                      senderId: liveCar.driverId.isNotEmpty
+                                          ? liveCar.driverId
+                                          : liveCar.id,
+                                      senderName: liveCar.driverName,
+                                      text: text,
+                                    );
+                                  } catch (_) {}
+                                }
+
                                 await _repo.sendDirectChatMessage(
                                   carId: liveCar.id,
                                   seatNumber: passenger.seatNumber,
@@ -341,6 +497,216 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
     );
   }
 
+  int _resolveModelIndex(int total) {
+    if (total <= 4) return 1;
+    if (total <= 8) return 2;
+    return 3;
+  }
+
+  String _resolveChassisAsset(int total) {
+    final model = _resolveModelIndex(total);
+    if (model == 1) return 'assets/images/chassis_car_4.jpg';
+    if (model == 2) return 'assets/images/chassis_van_8.jpg';
+    return 'assets/images/chassis_van_16.jpg';
+  }
+
+  List<Offset> _calculateChassisOffsets(int total) {
+    final model = _resolveModelIndex(total);
+
+    // --- MODELO 1: AUTO SEDÁN (1..4 asientos) ---
+    if (model == 1) {
+      final List<Offset> positions = [];
+      const copilotOffset = Offset(168, 136);
+      if (total >= 1) positions.add(copilotOffset);
+      if (total == 2) {
+        positions.add(const Offset(119, 234));
+      } else if (total == 3) {
+        positions.add(const Offset(72, 234));
+        positions.add(const Offset(164, 234));
+      } else if (total >= 4) {
+        positions.add(const Offset(64, 234));
+        positions.add(const Offset(119, 234));
+        positions.add(const Offset(174, 234));
+      }
+      return positions;
+    }
+
+    // --- MODELO 2: VAN MEDIANA (5..8 asientos) ---
+    if (model == 2) {
+      const van8Slots = [
+        Offset(54, 123),
+        Offset(108, 123),
+        Offset(57, 230),
+        Offset(111, 230),
+        Offset(165, 230),
+        Offset(57, 347),
+        Offset(111, 347),
+        Offset(165, 347),
+      ];
+      if (total >= 8) return van8Slots;
+      if (total == 7) {
+        return [
+          van8Slots[0],
+          van8Slots[2],
+          van8Slots[3],
+          van8Slots[4],
+          van8Slots[5],
+          van8Slots[6],
+          van8Slots[7],
+        ];
+      }
+      if (total == 6) {
+        return [
+          van8Slots[2],
+          van8Slots[3],
+          van8Slots[4],
+          van8Slots[5],
+          van8Slots[6],
+          van8Slots[7],
+        ];
+      }
+      return [
+        van8Slots[0],
+        van8Slots[1],
+        van8Slots[2],
+        van8Slots[3],
+        van8Slots[4],
+      ];
+    }
+
+    // --- MODELO 3: VAN GRANDE / MINIBÚS (9..16 asientos) ---
+    final List<Offset> positions = [];
+    positions.add(const Offset(60, 125));
+    final remaining = total - 1;
+    final rowYs = [190.0, 255.0, 320.0, 385.0, 450.0];
+    final colXs = [54.0, 114.0, 174.0];
+    int placed = 0;
+    for (int r = 0; r < rowYs.length && placed < remaining; r++) {
+      final y = rowYs[r];
+      final toPlaceInRow = (remaining - placed).clamp(1, 3);
+      if (toPlaceInRow == 1) {
+        positions.add(Offset(colXs[1], y));
+        placed++;
+      } else if (toPlaceInRow == 2) {
+        positions.add(Offset(colXs[0], y));
+        positions.add(Offset(colXs[2], y));
+        placed += 2;
+      } else {
+        positions.add(Offset(colXs[0], y));
+        positions.add(Offset(colXs[1], y));
+        positions.add(Offset(colXs[2], y));
+        placed += 3;
+      }
+    }
+    return positions;
+  }
+
+  Widget _buildChassisDiagram(AvailableCarItem car) {
+    final total = car.seatStates.length;
+    final model = _resolveModelIndex(total);
+    final width = model == 1 ? 290.0 : 270.0;
+    final height = model == 1 ? 390.0 : 560.0;
+    final offsets = _calculateChassisOffsets(total);
+    final asset = _resolveChassisAsset(total);
+
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Image.asset(
+                asset,
+                fit: BoxFit.fill,
+              ),
+            ),
+            for (int i = 0; i < offsets.length; i++) ...[
+              Positioned(
+                left: offsets[i].dx,
+                top: offsets[i].dy,
+                child: _DriverSeatOccupancyBox(
+                  seatNumber: i + 1,
+                  isOccupied: car.seatStates[i + 1] == 'occupied',
+                  passengerShortName:
+                      car.seatPassengers[i + 1]?.shortName ?? 'Ocupado',
+                  onTap: () => _onTapSeatBox(car, i + 1),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _occupyAllSeats(AvailableCarItem car) async {
+    final defaultDnis = ['74829101', '72849102', '76319403', '71058294'];
+    final defaultPhones = [
+      '+51 987 654 321',
+      '+51 945 123 789',
+      '+51 912 345 678',
+      '+51 998 765 432',
+    ];
+    final defaultNames = [
+      'Carlos Mendoza',
+      'Valeria Rojas',
+      'Jorge Paredes',
+      'Lucía Flores',
+    ];
+
+    final total = car.seatStates.length;
+    for (int s = 1; s <= total; s++) {
+      final liveCar = _repo.getCarById(car.id);
+      if (liveCar.seatStates[s] != 'occupied') {
+        final idx = (s - 1) % defaultNames.length;
+        await _repo.occupySeat(
+          carId: car.id,
+          seatNumber: s,
+          passengerId: 'pax_manual_$s',
+          passengerName: defaultNames[idx],
+          passengerPhone: defaultPhones[idx],
+          passengerDni: defaultDnis[idx],
+          passengerCity: car.originCity,
+          passengerAge: 25 + s * 2,
+          etaText: 'ETA: 15 min',
+        );
+      }
+    }
+    if (!mounted) return;
+    setState(() {});
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '¡$total/$total Asientos Ocupados! Botón "Iniciar Viaje" habilitado.',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.green.shade800,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
   Future<void> _onTapSeatBox(AvailableCarItem car, int seatNumber) async {
     final isOccupied = car.seatStates[seatNumber] == 'occupied';
     final passenger = car.seatPassengers[seatNumber];
@@ -357,7 +723,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
             style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
           ),
           content: Text(
-            'Estado: Ocupado (${passenger?.etaText ?? 'ETA: 12 min a 15 min'})\n\n'
+            'Estado: Ocupado (${passenger != null ? _formatPassengerEta(passenger) : 'ETA: 15 min'})\n\n'
             '¿Deseas liberar este asiento por cancelación anticipada? '
             'El vehículo actualizará su disponibilidad en tiempo real en la lista pública.',
           ),
@@ -397,57 +763,137 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
       }
     } else {
       final nameController = TextEditingController();
-      final shouldOccupy = await showDialog<bool>(
+      final action = await showDialog<String>(
         context: context,
         builder: (ctx) => AlertDialog(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(18),
           ),
-          title: Text(
-            'Asignar Asiento $seatNumber',
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0x2E1EE61E),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.event_seat,
+                  color: Color(0xFF1B5E20),
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Asignar Asiento $seatNumber',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Ingresa el nombre del pasajero para ocupar este asiento:',
-                style: TextStyle(fontSize: 13),
+                'Ingresa el nombre del pasajero para ocupar este asiento individual:',
+                style: TextStyle(fontSize: 13, color: Colors.black87),
               ),
               const SizedBox(height: 10),
               TextField(
                 controller: nameController,
                 decoration: InputDecoration(
                   labelText: 'Nombre del pasajero',
+                  hintText: 'Ej. Pasajero $seatNumber',
+                  prefixIcon: const Icon(Icons.person_outline),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
                 ),
               ),
+              const SizedBox(height: 14),
+              // Opción destacada para Ocupar Todo de una sola vez
+              InkWell(
+                onTap: () => Navigator.pop(ctx, 'occupy_all'),
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 11,
+                    horizontal: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF9C4),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFFF9D408),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: const [
+                      Icon(Icons.group_add, size: 20, color: Color(0xFFB26A00)),
+                      SizedBox(width: 8),
+                      Text(
+                        'Ocupar todo (Llenar auto 4/4)',
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFFB26A00),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFF9D408),
-                foregroundColor: Colors.black,
-              ),
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text(
-                'Ocupar Asiento',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
+            Row(
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, 'cancel'),
+                  child: const Text(
+                    'Cancelar',
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFF9D408),
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  onPressed: () => Navigator.pop(ctx, 'occupy_one'),
+                  icon: const Icon(Icons.check, size: 18),
+                  label: const Text(
+                    'Ocupar Asiento',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
       );
 
-      if (shouldOccupy == true) {
+      if (action == 'occupy_all') {
+        await _occupyAllSeats(car);
+      } else if (action == 'occupy_one') {
         final name = nameController.text.trim().isNotEmpty
             ? nameController.text.trim()
             : 'Pasajero $seatNumber';
@@ -457,7 +903,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
           passengerId: 'pax_manual_$seatNumber',
           passengerName: name,
           passengerPhone: '+51987654321',
-          etaText: 'ETA: 12 min a 15 min',
+          etaText: 'ETA: 15 min',
         );
         if (!mounted) return;
         final updated = _repo.getCarById(car.id);
@@ -465,11 +911,11 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
           SnackBar(
             content: Text(
               updated.isFull
-                  ? '¡4/4 Asientos Ocupados! El vehículo se retiró automáticamente de la lista pública de pasajeros.'
+                  ? '¡4/4 Asientos Ocupados! Botón "Iniciar Viaje" habilitado.'
                   : 'Asiento $seatNumber asignado a $name (${updated.occupiedSeatsCount}/4 ocupados).',
             ),
             backgroundColor: updated.isFull
-                ? Colors.orange.shade900
+                ? Colors.green.shade800
                 : Colors.black87,
           ),
         );
@@ -659,67 +1105,48 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
 
-                // Mapa de Ocupación en Tiempo Real (Esquema superior del auto)
-                SizedBox(
-                  width: 286,
-                  height: 340,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Positioned.fill(
-                        child: CustomPaint(
-                          painter: CarTopDownOutlinePainter(),
+                // Acceso directo a Configurar Asientos
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF8A5300),
+                        backgroundColor: const Color(0xFFFFF9C4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          side: const BorderSide(color: Color(0xFFF9D408)),
                         ),
                       ),
-                      // Asiento 1 (Copiloto delantero derecho)
-                      Positioned(
-                        top: 84,
-                        right: 40,
-                        child: _DriverSeatOccupancyBox(
-                          seatNumber: 1,
-                          isOccupied: car.seatStates[1] == 'occupied',
-                          passengerShortName:
-                              car.seatPassengers[1]?.shortName ?? 'Ocupado',
-                          onTap: () => _onTapSeatBox(car, 1),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const DriverVehicleConfigScreen(),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.tune, size: 16),
+                      label: Text(
+                        'Configurar Asientos (${car.seatStates.length} pax)',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12.5,
                         ),
                       ),
-                      // Fila trasera: Asientos 2, 3 y 4
-                      Positioned(
-                        bottom: 52,
-                        left: 32,
-                        right: 32,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            _DriverSeatOccupancyBox(
-                              seatNumber: 2,
-                              isOccupied: car.seatStates[2] == 'occupied',
-                              passengerShortName:
-                                  car.seatPassengers[2]?.shortName ?? 'Ocupado',
-                              onTap: () => _onTapSeatBox(car, 2),
-                            ),
-                            _DriverSeatOccupancyBox(
-                              seatNumber: 3,
-                              isOccupied: car.seatStates[3] == 'occupied',
-                              passengerShortName:
-                                  car.seatPassengers[3]?.shortName ?? 'Ocupado',
-                              onTap: () => _onTapSeatBox(car, 3),
-                            ),
-                            _DriverSeatOccupancyBox(
-                              seatNumber: 4,
-                              isOccupied: car.seatStates[4] == 'occupied',
-                              passengerShortName:
-                                  car.seatPassengers[4]?.shortName ?? 'Ocupado',
-                              onTap: () => _onTapSeatBox(car, 4),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 10),
+
+                // Mapa de Ocupación en Tiempo Real (Esquema Sedán, Van 8 o Van 16 según capacidad)
+                _buildChassisDiagram(car),
                 const SizedBox(height: 14),
 
                 // Leyenda Disponible (Verde) / Ocupado (Rojo con X)
@@ -809,7 +1236,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                       Row(
                         children: [
                           Text(
-                            'Ocupación Actual: $occupiedCount / 4 Asientos',
+                            'Ocupación Actual: $occupiedCount / ${car.seatStates.length} Asientos',
                             style: const TextStyle(
                               fontSize: 15.5,
                               fontWeight: FontWeight.w600,
@@ -836,7 +1263,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                             child: Text(
                               car.isFull
                                   ? 'Oculto en lista pública (Lleno)'
-                                  : '${car.availableSeatsCount}/4 Disponibles en lista',
+                                  : '${car.availableSeatsCount}/${car.seatStates.length} Disponibles en lista',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
@@ -848,26 +1275,125 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                           ),
                         ],
                       ),
+                      if (!car.isFull && !car.tripStarted) ...[
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF8A5300),
+                              side: const BorderSide(
+                                color: Color(0xFFF9D408),
+                                width: 1.5,
+                              ),
+                              backgroundColor: const Color(0xFFFFFDE7),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            onPressed: () => _occupyAllSeats(car),
+                            icon: const Icon(Icons.group_add, size: 19),
+                            label: Text(
+                              'Ocupar todo (Llenar auto ${car.seatStates.length}/${car.seatStates.length})',
+                              style: const TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 14),
+
+                // Botón Iniciar Viaje cuando el vehículo está 4/4 Lleno
+                if (car.isFull && !car.tripStarted) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFF9D408),
+                        foregroundColor: Colors.black,
+                        elevation: 2,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      onPressed: () => _confirmStartTrip(car),
+                      icon: const Icon(Icons.play_circle_fill, size: 24),
+                      label: const Text(
+                        'Iniciar Viaje',
+                        style: TextStyle(
+                          fontSize: 16.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ] else if (car.tripStarted) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8F5E9),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFF2E7D32)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.navigation, color: Color(0xFF2E7D32)),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text(
+                            '¡Viaje en curso! Revisa el trazado hacia el destino en Inicio.',
+                            style: TextStyle(
+                              color: Color(0xFF1B5E20),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () =>
+                              widget.onTripStartedNavigateHome?.call(),
+                          child: const Text(
+                            'Ver Inicio',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ],
 
                 // Listado de Próximos Pasajeros + Herramientas de Comunicación Directa
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Row(
-                    children: const [
+                    children: [
                       Icon(
-                        Icons.people_alt_outlined,
+                        car.tripStarted
+                            ? Icons.airline_seat_recline_normal
+                            : Icons.people_alt_outlined,
                         size: 19,
                         color: Colors.black87,
                       ),
-                      SizedBox(width: 8),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Próximos Pasajeros (En camino a la agencia)',
-                          style: TextStyle(
+                          car.tripStarted
+                              ? 'Pasajeros a Bordo (Datos Personales)'
+                              : 'Próximos Pasajeros (En camino a la agencia)',
+                          style: const TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w800,
                             color: Colors.black,
@@ -907,122 +1433,232 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(color: Colors.grey.shade300),
                       ),
-                      child: Row(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Container(
-                            width: 38,
-                            height: 38,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF4362C),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              '${pax.seatNumber}',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  '${pax.passengerName} (Asiento ${pax.seatNumber})',
+                          Row(
+                            children: [
+                              Container(
+                                width: 38,
+                                height: 38,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF4362C),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  '${pax.seatNumber}',
                                   style: const TextStyle(
-                                    fontSize: 14.5,
+                                    fontSize: 16,
                                     fontWeight: FontWeight.bold,
-                                    color: Colors.black,
+                                    color: Colors.white,
                                   ),
                                 ),
-                                const SizedBox(height: 3),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '${pax.passengerName} (Asiento ${pax.seatNumber})',
+                                      style: const TextStyle(
+                                        fontSize: 14.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.black,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          car.tripStarted
+                                              ? Icons.check_circle_outline
+                                              : Icons.access_time_filled,
+                                          size: 14,
+                                          color: car.tripStarted
+                                              ? const Color(0xFF2E7D32)
+                                              : const Color(0xFFE65100),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Flexible(
+                                          child: Text(
+                                            car.tripStarted
+                                                ? 'A bordo • En viaje hacia ${car.destinationCity}'
+                                                : _formatPassengerEta(pax),
+                                            style: TextStyle(
+                                              fontSize: 12.5,
+                                              fontWeight: FontWeight.w600,
+                                              color: car.tripStarted
+                                                  ? const Color(0xFF2E7D32)
+                                                  : const Color(0xFFE65100),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // Acceso directo a Chat
+                              IconButton(
+                                tooltip: 'Chat directo',
+                                style: IconButton.styleFrom(
+                                  backgroundColor: const Color(0xFFF9D408),
+                                  foregroundColor: Colors.black,
+                                  minimumSize: const Size(38, 38),
+                                  padding: EdgeInsets.zero,
+                                ),
+                                icon: const Icon(
+                                  Icons.chat_bubble_outline,
+                                  size: 18,
+                                ),
+                                onPressed: () => _openDirectChat(car, pax),
+                              ),
+                              const SizedBox(width: 6),
+                              // Acceso directo a Llamada telefónica
+                              IconButton(
+                                tooltip: 'Llamada telefónica',
+                                style: IconButton.styleFrom(
+                                  backgroundColor: const Color(0xFF1EE61E),
+                                  foregroundColor: Colors.black,
+                                  minimumSize: const Size(38, 38),
+                                  padding: EdgeInsets.zero,
+                                ),
+                                icon: const Icon(
+                                  Icons.phone_outlined,
+                                  size: 19,
+                                ),
+                                onPressed: () => _callPassenger(pax),
+                              ),
+                              if (!car.tripStarted) ...[
+                                const SizedBox(width: 6),
+                                // Liberar asiento por cancelación anticipada
+                                IconButton(
+                                  tooltip: 'Cancelar / Liberar asiento',
+                                  style: IconButton.styleFrom(
+                                    backgroundColor: Colors.red.shade50,
+                                    foregroundColor: Colors.red.shade700,
+                                    minimumSize: const Size(36, 36),
+                                    padding: EdgeInsets.zero,
+                                  ),
+                                  icon: const Icon(
+                                    Icons.event_seat_outlined,
+                                    size: 18,
+                                  ),
+                                  onPressed: () async {
+                                    await _repo.cancelSeatReservation(
+                                      carId: car.id,
+                                      seatNumber: pax.seatNumber,
+                                    );
+                                    if (!context.mounted) return;
+                                    final updated = _repo.getCarById(car.id);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Reserva de ${pax.passengerName} cancelada. '
+                                          'Asiento ${pax.seatNumber} disponible (${updated.availableSeatsCount}/4 Disponibles).',
+                                        ),
+                                        backgroundColor: Colors.green.shade700,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ],
+                            ],
+                          ),
+                          // Si el viaje ya inició: desplegar todos los datos personales del pasajero
+                          if (car.tripStarted) ...[
+                            const SizedBox(height: 8),
+                            Divider(color: Colors.grey.shade300, height: 1),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 14,
+                              runSpacing: 4,
+                              children: [
                                 Row(
+                                  mainAxisSize: MainAxisSize.min,
                                   children: [
                                     const Icon(
-                                      Icons.access_time_filled,
+                                      Icons.badge_outlined,
                                       size: 14,
-                                      color: Color(0xFFE65100),
+                                      color: Colors.black54,
                                     ),
                                     const SizedBox(width: 4),
-                                    Flexible(
-                                      child: Text(
-                                        pax.etaText,
-                                        style: const TextStyle(
-                                          fontSize: 12.5,
-                                          fontWeight: FontWeight.w600,
-                                          color: Color(0xFFE65100),
-                                        ),
+                                    Text(
+                                      pax.dni.isNotEmpty
+                                          ? 'DNI: ${pax.dni}'
+                                          : 'DNI: 72849102',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.black87,
                                       ),
                                     ),
                                   ],
                                 ),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.phone_android,
+                                      size: 14,
+                                      color: Colors.black54,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      pax.phone,
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (pax.email.isNotEmpty)
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.email_outlined,
+                                        size: 14,
+                                        color: Colors.black54,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        pax.email,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.black87,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                if (pax.city.isNotEmpty)
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.location_city_outlined,
+                                        size: 14,
+                                        color: Colors.black54,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        pax.city,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.black87,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                               ],
                             ),
-                          ),
-                          // Acceso directo a Chat
-                          IconButton(
-                            tooltip: 'Chat directo',
-                            style: IconButton.styleFrom(
-                              backgroundColor: const Color(0xFFF9D408),
-                              foregroundColor: Colors.black,
-                              minimumSize: const Size(38, 38),
-                              padding: EdgeInsets.zero,
-                            ),
-                            icon: const Icon(
-                              Icons.chat_bubble_outline,
-                              size: 18,
-                            ),
-                            onPressed: () => _openDirectChat(car, pax),
-                          ),
-                          const SizedBox(width: 6),
-                          // Acceso directo a Llamada telefónica
-                          IconButton(
-                            tooltip: 'Llamada telefónica',
-                            style: IconButton.styleFrom(
-                              backgroundColor: const Color(0xFF1EE61E),
-                              foregroundColor: Colors.black,
-                              minimumSize: const Size(38, 38),
-                              padding: EdgeInsets.zero,
-                            ),
-                            icon: const Icon(Icons.phone_outlined, size: 19),
-                            onPressed: () => _callPassenger(pax),
-                          ),
-                          const SizedBox(width: 6),
-                          // Liberar asiento por cancelación anticipada
-                          IconButton(
-                            tooltip: 'Cancelar / Liberar asiento',
-                            style: IconButton.styleFrom(
-                              backgroundColor: Colors.red.shade50,
-                              foregroundColor: Colors.red.shade700,
-                              minimumSize: const Size(36, 36),
-                              padding: EdgeInsets.zero,
-                            ),
-                            icon: const Icon(
-                              Icons.event_seat_outlined,
-                              size: 18,
-                            ),
-                            onPressed: () async {
-                              await _repo.cancelSeatReservation(
-                                carId: car.id,
-                                seatNumber: pax.seatNumber,
-                              );
-                              if (!context.mounted) return;
-                              final updated = _repo.getCarById(car.id);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'Reserva de ${pax.passengerName} cancelada. '
-                                    'Asiento ${pax.seatNumber} disponible (${updated.availableSeatsCount}/4 Disponibles).',
-                                  ),
-                                  backgroundColor: Colors.green.shade700,
-                                ),
-                              );
-                            },
-                          ),
+                          ],
                         ],
                       ),
                     ),

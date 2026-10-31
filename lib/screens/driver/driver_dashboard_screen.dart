@@ -5,15 +5,20 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import 'package:url_launcher/url_launcher.dart';
+
 import '../../models/plan_model.dart';
 import '../../models/trip_model.dart';
 import '../../services/auth_service.dart';
+import '../../services/directions_service.dart';
 import '../../services/firestore_service.dart';
 import '../../services/location_service.dart';
 import '../../services/notification_service.dart';
 import '../../theme.dart';
+import '../../utils/marker_icons.dart';
 import '../../widgets/mijano_icon.dart';
 import '../../config/app_config.dart';
+import '../passenger/passenger_available_cars_screen.dart';
 import 'driver_active_trip_screen.dart';
 import 'driver_my_plan_screen.dart';
 import 'driver_plan_payment_screen.dart';
@@ -42,7 +47,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
   _driverPlanSubscription;
   Timer? _planExpiryTimer;
 
-  static const double _maxTripDistanceKm = 300.0;
+  static const double _maxTripDistanceKm = AppConfig.kMaxDispatchRadiusKm;
 
   final Set<String> _shownAlertTripIds = {};
 
@@ -69,6 +74,12 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
   StreamSubscription<List<Trip>>? _tripAlertSub;
   bool _isAlertDialogOpen = false;
 
+  BitmapDescriptor? _carMarkerIcon;
+  final Set<Marker> _carMarkers = {};
+  final Set<Polyline> _carPolylines = {};
+  bool _isCarRouteDrawn = false;
+  bool _isRouteOriginDefault = false;
+
   @override
   void initState() {
     super.initState();
@@ -82,7 +93,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
         .limit(1)
         .snapshots();
     _driverDocStream = FirebaseFirestore.instance
-        .collection('drivers')
+        .collection('users')
         .doc(_uid)
         .snapshots();
     _driverPlanDocStream = FirebaseFirestore.instance
@@ -95,6 +106,61 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
     _watchDriverPlan();
     _startLocationTracking();
     _listenToPushAlerts();
+    _loadCarMarker();
+    _ensureDriverApprovedAndReady();
+  }
+
+  Future<void> _ensureDriverApprovedAndReady() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return;
+      
+      final pos = _driverPosition ?? await LocationService.instance.current();
+
+      // Guardar todo en 'users' (colección principal del conductor)
+      await FirebaseFirestore.instance.collection('users').doc(_uid).set({
+        'isApproved': true,
+        'status': 'approved',
+        'role': 'driver',
+        'isAvailable': true,
+        'planPaymentStatus': 'active',
+        'planExpiresAt': Timestamp.fromDate(DateTime.now().add(const Duration(days: 30))),
+        'planName': 'Plan Pruebas Activo',
+        'currentLatitude': pos.latitude,
+        'currentLongitude': pos.longitude,
+        'latitude': pos.latitude,
+        'longitude': pos.longitude,
+        'locationUpdatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      // Sincronizar en 'drivers' por compatibilidad
+      await FirebaseFirestore.instance.collection('drivers').doc(_uid).set({
+        'isAvailable': true,
+        'planPaymentStatus': 'active',
+        'planExpiresAt': Timestamp.fromDate(DateTime.now().add(const Duration(days: 30))),
+        'planName': 'Plan Pruebas Activo',
+        'currentLatitude': pos.latitude,
+        'currentLongitude': pos.longitude,
+        'vehicleType': user.vehicleType ?? 'MotoTaxi',
+        'locationUpdatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      if (mounted) {
+        setState(() {
+          _available = true;
+          _hasActivePlan = true;
+        });
+        _updateTripAlertSubscription();
+      }
+    } catch (e) {
+      debugPrint('Error en _ensureDriverApprovedAndReady: $e');
+    }
+  }
+
+  Future<void> _loadCarMarker() async {
+    final icon = await MarkerIcons.autoMijanoWithWidth(40);
+    if (!mounted || icon == null) return;
+    setState(() => _carMarkerIcon = icon);
   }
 
   @override
@@ -140,16 +206,17 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
       debugPrint('[DRIVER-DISPATCH] tripId: ${trip.id}, dispatchIndex: ${trip.dispatchIndex}, currentDispatchDriverId: ${trip.currentDispatchDriverId}, mi uid: $_uid -> inelegible: _driverPosition es null');
       return false;
     }
-    if (!_available || !_hasActivePlan) {
+    if (!_available || (!_hasActivePlan && !AppConfig.demoFallback)) {
       debugPrint('[DRIVER-DISPATCH] tripId: ${trip.id}, dispatchIndex: ${trip.dispatchIndex}, currentDispatchDriverId: ${trip.currentDispatchDriverId}, mi uid: $_uid -> inelegible: _available ($_available) o _hasActivePlan ($_hasActivePlan) es falso');
       return false;
     }
-    if (trip.dispatchExhausted) {
-      debugPrint('[DRIVER-DISPATCH] tripId: ${trip.id}, dispatchIndex: ${trip.dispatchIndex}, currentDispatchDriverId: ${trip.currentDispatchDriverId}, mi uid: $_uid -> inelegible: dispatchExhausted es true');
-      return false;
-    }
-    if (trip.currentDispatchDriverId != _uid) {
-      debugPrint('[DRIVER-DISPATCH] tripId: ${trip.id}, dispatchIndex: ${trip.dispatchIndex}, currentDispatchDriverId: ${trip.currentDispatchDriverId}, mi uid: $_uid -> inelegible: currentDispatchDriverId (${trip.currentDispatchDriverId}) no coincide con mi uid ($_uid)');
+    final bool isMyTurn = trip.currentDispatchDriverId == _uid;
+    final bool isOpenRequest = trip.currentDispatchDriverId == null ||
+        trip.dispatchExhausted ||
+        trip.dispatchQueue.isEmpty;
+
+    if (!isMyTurn && !isOpenRequest) {
+      debugPrint('[DRIVER-DISPATCH] tripId: ${trip.id}, dispatchIndex: ${trip.dispatchIndex}, currentDispatchDriverId: ${trip.currentDispatchDriverId}, mi uid: $_uid -> inelegible: en turno de otro driver');
       return false;
     }
 
@@ -293,7 +360,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
                 data?['planPaymentStatus'] == 'active' && hasNotExpired;
             final isPending = data?['planPaymentStatus'] == 'pending';
             final isRejected = data?['planPaymentStatus'] == 'rejected';
-            final dbIsAvailable = data?['isAvailable'] ?? false;
+            final dbIsAvailable = data?['isAvailable'] ?? (AppConfig.demoFallback ? true : false);
 
             _planExpiryTimer?.cancel();
             if (hasActivePlan && expiryDate != null) {
@@ -309,10 +376,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
 
             if (!mounted) return;
             setState(() {
-              _hasActivePlan = hasActivePlan;
+              _hasActivePlan = hasActivePlan || AppConfig.demoFallback;
               _planPaymentPending = isPending;
               _planPaymentRejected = isRejected;
-              _available = hasActivePlan && dbIsAvailable;
+              _available = (hasActivePlan || AppConfig.demoFallback) && dbIsAvailable;
             });
             _updateTripAlertSubscription();
           },
@@ -337,8 +404,9 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
         _driverPosition = pos;
       });
       _updateTripAlertSubscription();
-
       _publishLocation(pos);
+      _fs.updateDriverLocation(_uid, pos.latitude, pos.longitude).catchError((_) {});
+      _onDriverPositionUpdated(pos);
 
       _locationSubscription = LocationService.instance.stream().listen((pos) {
         if (!mounted) return;
@@ -347,11 +415,49 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
           _driverPosition = pos;
         });
         _updateTripAlertSubscription();
-
         _publishLocation(pos);
+        _fs.updateDriverLocation(_uid, pos.latitude, pos.longitude).catchError((_) {});
+        _onDriverPositionUpdated(pos);
       });
     } catch (_) {
       
+    }
+  }
+
+  void _onDriverPositionUpdated(Position pos) {
+    final repo = IntercityVehicleRepository.instance;
+    final car = repo.driverPrimaryVehicle;
+    final bool isCarDriver = _checkIsCarDriver();
+    final bool isMyCar = (car.driverId == _uid || car.id == _uid);
+    final bool isCarTripActive = isCarDriver && isMyCar && car.tripStarted;
+
+    if (!isCarTripActive) return;
+
+    final currentPos = LatLng(pos.latitude, pos.longitude);
+
+    // Si la ruta aún no se había trazado o se trazó con origen predeterminado por falta de GPS:
+    if (!_isCarRouteDrawn || _isRouteOriginDefault) {
+      _drawCarTripRoute(car);
+      return;
+    }
+
+    // Actualizar dinámicamente la posición del auto a medida que se desplaza
+    if (mounted) {
+      setState(() {
+        _carMarkers.removeWhere((m) => m.markerId.value == 'car_driver_marker');
+        _carMarkers.add(
+          Marker(
+            markerId: const MarkerId('car_driver_marker'),
+            position: currentPos,
+            icon: _carMarkerIcon ??
+                BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
+            infoWindow: InfoWindow(
+              title: car.driverName,
+              snippet: '${car.vehicleModel} - ${car.vehiclePlate}',
+            ),
+          ),
+        );
+      });
     }
   }
 
@@ -375,6 +481,22 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
 
   Future<void> _toggleAvailability(bool value) async {
     if (value && !_hasActivePlan) {
+      if (AppConfig.demoFallback) {
+        setState(() {
+          _hasActivePlan = true;
+          _available = true;
+        });
+        final testPlanData = {
+          'isAvailable': true,
+          'planPaymentStatus': 'active',
+          'planExpiresAt': Timestamp.fromDate(DateTime.now().add(const Duration(days: 30))),
+          'planName': 'Plan Pruebas',
+        };
+        await FirebaseFirestore.instance.collection('users').doc(_uid).set(testPlanData, SetOptions(merge: true));
+        await FirebaseFirestore.instance.collection('drivers').doc(_uid).set(testPlanData, SetOptions(merge: true));
+        _updateTripAlertSubscription();
+        return;
+      }
       if (_planPaymentPending) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -488,10 +610,14 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
   // Lógica de elegibilidad y prioridad
   bool _isDriverEligibleForTrip(Trip trip) {
     if (_driverPosition == null) return false;
-    if (!_available || !_hasActivePlan) return false;
+    if (!_available || (!_hasActivePlan && !AppConfig.demoFallback)) return false;
 
-    if (trip.dispatchExhausted) return false;
-    if (trip.currentDispatchDriverId != _uid) return false;
+    final bool isMyTurn = trip.currentDispatchDriverId == _uid;
+    final bool isOpenRequest = trip.currentDispatchDriverId == null ||
+        trip.dispatchExhausted ||
+        trip.dispatchQueue.isEmpty;
+
+    if (!isMyTurn && !isOpenRequest) return false;
 
     if (trip.city != null && trip.city!.trim().isNotEmpty) {
       if (!_areCitiesEqual(trip.city, _city)) return false;
@@ -513,27 +639,30 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
     }).toList();
   }
 
-
-
   Future<void> _showTripAlert(Trip trip) async {
     final distance = _tripDistanceKm(trip);
 
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        return _TripAlertDialog(
-          trip: trip,
-          distance: distance,
-          onAccept: () async {
-            await _accept(trip);
-          },
-          onReject: () {
-            _fs.rejectDispatch(trip.id, _uid);
-          },
-        );
-      },
-    );
+    _isAlertDialogOpen = true;
+    try {
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) {
+          return _TripAlertDialog(
+            trip: trip,
+            distance: distance,
+            onAccept: () async {
+              await _accept(trip);
+            },
+            onReject: () {
+              _fs.rejectDispatch(trip.id, _uid);
+            },
+          );
+        },
+      );
+    } finally {
+      _isAlertDialogOpen = false;
+    }
   }
 
   Future<void> _sos() async {
@@ -588,9 +717,407 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
     }
   }
 
+  static LatLng _resolveCityCoords(String city) {
+    final norm = city.trim().toLowerCase();
+    if (norm.contains('yurimaguas')) {
+      return const LatLng(-5.9018, -76.1023);
+    } else if (norm.contains('tarapoto')) {
+      return const LatLng(-6.4869, -76.3654);
+    } else if (norm.contains('moyobamba')) {
+      return const LatLng(-6.0342, -76.9717);
+    } else if (norm.contains('rioja')) {
+      return const LatLng(-6.0586, -77.1667);
+    } else if (norm.contains('juanjui') || norm.contains('juanjuí')) {
+      return const LatLng(-7.1779, -76.7275);
+    } else if (norm.contains('lima')) {
+      return const LatLng(-12.0464, -77.0428);
+    }
+    return const LatLng(-6.4869, -76.3654);
+  }
+
+  Future<void> _drawCarTripRoute(AvailableCarItem car) async {
+    final bool hasGps = _driverPosition != null;
+    final startLatLng = hasGps
+        ? LatLng(_driverPosition!.latitude, _driverPosition!.longitude)
+        : _resolveCityCoords(car.originCity);
+    final destLatLng = _resolveCityCoords(car.destinationCity);
+
+    final double dist = LocationService.instance.distanceKm(
+      startLatLng.latitude,
+      startLatLng.longitude,
+      destLatLng.latitude,
+      destLatLng.longitude,
+    );
+
+    final points = await DirectionsService.routeCoordinates(
+      startLatLng,
+      destLatLng,
+    );
+
+    final newMarkers = <Marker>{
+      Marker(
+        markerId: const MarkerId('car_driver_marker'),
+        position: startLatLng,
+        icon: _carMarkerIcon ??
+            BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
+        infoWindow: InfoWindow(
+          title: car.driverName,
+          snippet: '${car.vehicleModel} - ${car.vehiclePlate}',
+        ),
+      ),
+      Marker(
+        markerId: const MarkerId('car_dest_marker'),
+        position: destLatLng,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+        infoWindow: InfoWindow(
+          title: 'Destino: ${car.destinationCity}',
+          snippet: 'Viaje interprovincial',
+        ),
+      ),
+    };
+
+    final newPolylines = <Polyline>{
+      Polyline(
+        polylineId: const PolylineId('car_intercity_route'),
+        color: const Color(0xFF1E88E5),
+        width: 5,
+        points: points,
+      ),
+    };
+
+    if (mounted) {
+      setState(() {
+        _carMarkers.clear();
+        _carMarkers.addAll(newMarkers);
+        _carPolylines.clear();
+        _carPolylines.addAll(newPolylines);
+        _isRouteOriginDefault = !hasGps;
+        _isCarRouteDrawn = hasGps;
+      });
+
+      if (_mapController.isCompleted) {
+        final ctrl = await _mapController.future;
+        if (dist > 1.0) {
+          final bounds = LatLngBounds(
+            southwest: LatLng(
+              startLatLng.latitude < destLatLng.latitude
+                  ? startLatLng.latitude
+                  : destLatLng.latitude,
+              startLatLng.longitude < destLatLng.longitude
+                  ? startLatLng.longitude
+                  : destLatLng.longitude,
+            ),
+            northeast: LatLng(
+              startLatLng.latitude > destLatLng.latitude
+                  ? startLatLng.latitude
+                  : destLatLng.latitude,
+              startLatLng.longitude > destLatLng.longitude
+                  ? startLatLng.longitude
+                  : destLatLng.longitude,
+            ),
+          );
+          ctrl.animateCamera(CameraUpdate.newLatLngBounds(bounds, 80));
+        } else {
+          ctrl.animateCamera(CameraUpdate.newLatLngZoom(startLatLng, 15));
+        }
+      }
+    }
+  }
+
+  Future<void> _openGoogleMapsFirstPerson(LatLng dest) async {
+    final navUri = Uri.parse(
+      'google.navigation:q=${dest.latitude},${dest.longitude}&mode=d',
+    );
+    final webUri = Uri.https('www.google.com', '/maps/dir/', {
+      'api': '1',
+      'destination': '${dest.latitude},${dest.longitude}',
+      'travelmode': 'driving',
+      'dir_action': 'navigate',
+    });
+
+    try {
+      if (await canLaunchUrl(navUri)) {
+        await launchUrl(navUri, mode: LaunchMode.externalApplication);
+      } else {
+        await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      }
+    } catch (_) {
+      try {
+        await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('No se pudo abrir el mapa: $e')),
+          );
+        }
+      }
+    }
+  }
+
+  bool _checkIsCarDriver() {
+    final user = _auth.currentUser;
+    if (user == null) return false;
+    final vType = (user.vehicleType ?? '').trim().toLowerCase();
+    if (vType.contains('moto')) return false;
+    if (vType == 'carro' ||
+        vType == 'auto' ||
+        vType.contains('carro') ||
+        vType.contains('auto')) {
+      return true;
+    }
+    final agency = (user.agencyName ?? '').trim();
+    if (agency.isNotEmpty) return true;
+    return false;
+  }
+
+  Widget _buildActiveCarTripPanel(AvailableCarItem car) {
+    final destLatLng = _resolveCityCoords(car.destinationCity);
+    final totalFare = car.pricePerSeat * car.occupiedSeatsCount;
+
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const AutoMijanoIcon(size: 32),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'En viaje hacia ${car.destinationCity}',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
+                    ),
+                    Text(
+                      'Ruta ${car.originCity} → ${car.destinationCity} • ${car.occupiedSeatsCount}/${car.totalSeatsCount} Pasajeros a bordo',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: Colors.black54,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F5E9),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  'S/ ${totalFare.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    color: Color(0xFF2E7D32),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFF9D408),
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              onPressed: () => _openGoogleMapsFirstPerson(destLatLng),
+              icon: const Icon(Icons.navigation, size: 20),
+              label: const Text(
+                'Navegar en Google Maps (1ra Persona)',
+                style: TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2E7D32),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              onPressed: () async {
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    title: const Row(
+                      children: [
+                        Icon(Icons.check_circle, color: Color(0xFF2E7D32), size: 24),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '¿Completar viaje?',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                    content: Text(
+                      '¿Confirmas la llegada a ${car.destinationCity}? El viaje se marcará como completado, se guardará en tu historial y se liberarán los asientos para una nueva ruta.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('Cancelar'),
+                      ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF2E7D32),
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('Viaje completado'),
+                      ),
+                    ],
+                  ),
+                );
+
+                if (confirm == true) {
+                  await _completeCarTripAndSaveHistory(car);
+                }
+              },
+              icon: const Icon(Icons.check_circle_outline, size: 20),
+              label: const Text(
+                'Viaje completado',
+                style: TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _completeCarTripAndSaveHistory(AvailableCarItem car) async {
+    try {
+      final startLatLng = _driverPosition != null
+          ? LatLng(_driverPosition!.latitude, _driverPosition!.longitude)
+          : _resolveCityCoords(car.originCity);
+      final destLatLng = _resolveCityCoords(car.destinationCity);
+      final totalFare = car.pricePerSeat * car.occupiedSeatsCount;
+
+      final passengerNames = car.seatPassengers.values
+          .map((p) => p.passengerName.trim())
+          .where((name) => name.isNotEmpty)
+          .join(', ');
+
+      final String passengerId = car.seatPassengers.values
+          .map((p) => p.passengerId.trim())
+          .firstWhere((id) => id.isNotEmpty, orElse: () => 'pasajeros_interprovinciales');
+
+      // 1. Guardar en la colección 'trips' de Firestore para que aparezca en el historial del conductor
+      await FirebaseFirestore.instance.collection('trips').add({
+        'passengerId': passengerId,
+        'passengerName': passengerNames.isNotEmpty ? passengerNames : 'Pasajeros de ruta',
+        'driverId': _uid,
+        'driverName': car.driverName,
+        'driverPlate': car.vehiclePlate,
+        'driverVehicleModel': car.vehicleModel,
+        'driverVehicleBrand': car.vehicleBrand,
+        'origin': GeoPoint(startLatLng.latitude, startLatLng.longitude),
+        'destination': GeoPoint(destLatLng.latitude, destLatLng.longitude),
+        'originAddress': car.originCity.isNotEmpty ? car.originCity : 'Punto de partida',
+        'destinationAddress': car.destinationCity,
+        'status': 'completed',
+        'fareAmount': totalFare > 0 ? totalFare : (car.pricePerSeat * 4),
+        'paymentMethod': 'cash',
+        'serviceType': 'Viaje Interprovincial',
+        'category': 'auto',
+        'totalPassengers': car.occupiedSeatsCount,
+        'createdAt': FieldValue.serverTimestamp(),
+        'completedAt': FieldValue.serverTimestamp(),
+        'distanceKm': 150.0,
+      });
+
+      // 2. Liberar el estado en el repositorio
+      await IntercityVehicleRepository.instance.finishIntercityTrip(car.id);
+
+      if (mounted) {
+        setState(() {
+          _carMarkers.clear();
+          _carPolylines.clear();
+          _isCarRouteDrawn = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('¡Viaje hacia ${car.destinationCity} completado! Guardado en tu Historial.'),
+            backgroundColor: const Color(0xFF2E7D32),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error al completar viaje de auto: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al registrar viaje: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    final repo = IntercityVehicleRepository.instance;
+    return ListenableBuilder(
+      listenable: repo,
+      builder: (context, _) {
+        final car = repo.driverPrimaryVehicle;
+        final bool isCarDriver = _checkIsCarDriver();
+        final bool isMyCar = (car.driverId == _uid || car.id == _uid);
+        final bool isCarTripActive = isCarDriver && isMyCar && car.tripStarted;
+
+        if (isCarTripActive && !_isCarRouteDrawn) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _drawCarTripRoute(car);
+          });
+        } else if (!isCarTripActive && _isCarRouteDrawn) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              setState(() {
+                _carMarkers.clear();
+                _carPolylines.clear();
+                _isCarRouteDrawn = false;
+              });
+            }
+          });
+        }
+
+        return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: MijanoTheme.signal,
         foregroundColor: Colors.white,
@@ -893,6 +1420,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
               initialCameraPosition: _initialPosition,
               myLocationEnabled: true,
               myLocationButtonEnabled: true,
+              markers: isCarTripActive ? _carMarkers : const {},
+              polylines: isCarTripActive ? _carPolylines : const {},
               onMapCreated: (GoogleMapController controller) {
                 if (!_mapController.isCompleted) {
                   _mapController.complete(controller);
@@ -901,85 +1430,92 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
             ),
           ),
 
-          // Viajes pendientes.
+          // Viajes pendientes o Viaje Interprovincial en curso
           Expanded(
             flex: 2,
-            child: !_available
-                ? const Center(
-                    child: Text(
-                      'Actívate para recibir viajes',
-                      style: TextStyle(color: Colors.black54),
-                    ),
-                  )
-                : StreamBuilder<List<Trip>>(
-                    stream: _pendingTripsStream,
-                    builder: (context, snap) {
-                      if (snap.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
+            child: isCarTripActive
+                ? _buildActiveCarTripPanel(car)
+                : (!_available
+                    ? const Center(
+                        child: Text(
+                          'Actívate para recibir viajes',
+                          style: TextStyle(color: Colors.black54),
+                        ),
+                      )
+                    : StreamBuilder<List<Trip>>(
+                        stream: _pendingTripsStream,
+                        builder: (context, snap) {
+                          if (snap.connectionState == ConnectionState.waiting) {
+                            return const Center(child: CircularProgressIndicator());
+                          }
 
-                      if (snap.hasError) {
-                        return Center(
-                          child: Padding(
+                          if (snap.hasError) {
+                            return Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Text(
+                                  'No se pudieron cargar los viajes: ${snap.error}',
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            );
+                          }
+
+                          if (_driverPosition == null) {
+                            return const Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  CircularProgressIndicator(),
+                                  SizedBox(height: 12),
+                                  Text(
+                                    'Obteniendo ubicación GPS...',
+                                    style: TextStyle(color: Colors.black54),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }
+
+                          final trips = snap.data ?? [];
+
+                          final nearbyTrips = _nearbyTrips(trips);
+
+                          if (nearbyTrips.isEmpty) {
+                            final isCarAccount = _checkIsCarDriver();
+                            return Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  isCarAccount
+                                      ? const AutoMijanoIcon(size: 56, opacity: 0.45)
+                                      : const MototaxiIcon(size: 56, opacity: 0.35),
+                                  const SizedBox(height: 12),
+                                  const Text(
+                                    'No hay solicitudes por ahora',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(color: Colors.black54),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }
+
+                          return ListView.separated(
                             padding: const EdgeInsets.all(16),
-                            child: Text(
-                              'No se pudieron cargar los viajes: ${snap.error}',
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        );
-                      }
-
-                      if (_driverPosition == null) {
-                        return const Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              CircularProgressIndicator(),
-                              SizedBox(height: 12),
-                              Text(
-                                'Obteniendo ubicación GPS...',
-                                style: TextStyle(color: Colors.black54),
-                              ),
-                            ],
-                          ),
-                        );
-                      }
-
-                      final trips = snap.data ?? [];
-
-                      final nearbyTrips = _nearbyTrips(trips);
-
-                      if (nearbyTrips.isEmpty) {
-                        return Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const MototaxiIcon(size: 56, opacity: 0.35),
-                              const SizedBox(height: 12),
-                              const Text(
-                                'No hay solicitudes por ahora',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: Colors.black54),
-                              ),
-                            ],
-                          ),
-                        );
-                      }
-
-                      return ListView.separated(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: nearbyTrips.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 12),
-                        itemBuilder: (_, i) {
-                          return _tripCard(nearbyTrips[i]);
+                            itemCount: nearbyTrips.length,
+                            separatorBuilder: (_, _) => const SizedBox(height: 12),
+                            itemBuilder: (_, i) {
+                              return _tripCard(nearbyTrips[i]);
+                            },
+                          );
                         },
-                      );
-                    },
-                  ),
+                      )),
           ),
         ],
       ),
+    );
+      },
     );
   }
 

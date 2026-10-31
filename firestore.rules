@@ -52,8 +52,8 @@ service cloud.firestore {
 
     function isApprovedDriver() {
       return hasUserDoc()
-             && getRole() == 'driver'
-             && (getUserData().get('status', '') == 'approved' || getUserData().get('isApproved', false) == true);
+             && (getRole() == 'driver' || getUserData().get('role', '') == 'driver')
+             && getUserData().get('isBlocked', false) == false;
     }
 
     // =====================================================================
@@ -85,29 +85,9 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isBlocked','isApproved','isRejected','isReported','status','documents'])
       ) || (
         request.auth.uid == userId
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fcmTokens'])
-      ) || (
-        request.auth.uid == userId
+        // El usuario no puede auto-desbloquearse ni cambiarse de rol arbitrariamente
         && request.resource.data.get('isBlocked', false) == resource.data.get('isBlocked', false)
-        && request.resource.data.get('isApproved', false) == resource.data.get('isApproved', false)
-        && request.resource.data.get('isRejected', false) == resource.data.get('isRejected', false)
-        && request.resource.data.get('isReported', false) == resource.data.get('isReported', false)
-        && (
-          (request.resource.data.get('role', '') == resource.data.get('role', '')
-           && request.resource.data.get('status', 'approved') == resource.data.get('status', 'approved'))
-          ||
-          (
-            request.resource.data.get('role', '').lower() in ['passenger', 'pasajero', 'driver']
-            && (
-              (request.resource.data.get('role', '').lower() == 'driver'
-               && request.resource.data.get('status', '') == 'pending'
-               && request.resource.data.get('isApproved', false) == false)
-              ||
-              (request.resource.data.get('role', '').lower() in ['passenger', 'pasajero']
-               && request.resource.data.get('status', 'approved') == 'approved')
-            )
-          )
-        )
+        && request.resource.data.get('role', '') == resource.data.get('role', '')
       );
 
       allow delete: if isSuperAdmin();
@@ -161,11 +141,14 @@ service cloud.firestore {
           // Pasajero dueño actualiza (incluye campos de despacho y temporizador)
           request.auth.uid == resource.data.get('passengerId', '')
           ||
-          // Conductor acepta su turno
+          // Conductor acepta su turno o una solicitud abierta
           (resource.data.get('status', '') == 'pending'
            && request.resource.data.get('driverId', '') == request.auth.uid
-           && request.auth.uid == resource.data.get('currentDispatchDriverId', '')
-           && resource.data.get('dispatchExhausted', false) == false
+           && (
+             request.auth.uid == resource.data.get('currentDispatchDriverId', '')
+             || resource.data.get('dispatchExhausted', false) == true
+             || resource.data.get('currentDispatchDriverId', '') == ''
+           )
            && isApprovedDriver())
           ||
           // Conductor rechaza su turno o el temporizador del cliente lo avanza (actualiza solo campos de despacho)
@@ -180,6 +163,10 @@ service cloud.firestore {
           (resource.data.get('driverId', '') == request.auth.uid
            && request.resource.data.get('driverId', '') == resource.data.get('driverId', ''))
         )
+      ) || (
+        // Permitir vincular el viaje de mototaxi al viaje interprovincial de auto
+        request.auth.uid != null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['linkedMototaxiTripId'])
       );
       allow delete: if isSuperAdmin();
 
@@ -331,7 +318,8 @@ service cloud.firestore {
     }
 
     match /intercity_vehicles/{vehicleId} {
-      allow read, write: if true;
+      allow read: if isAuth();
+      allow write: if isStaff() || (isAuth() && request.auth.uid == vehicleId);
     }
   }
 }

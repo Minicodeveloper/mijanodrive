@@ -9,9 +9,9 @@ class Validators {
       return 'El correo no puede contener espacios';
     }
     // Regex estándar para emails
-    final regex = RegExp(r"^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$");
+    final regex = RegExp(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$");
     if (!regex.hasMatch(email)) {
-      return 'Ingresa un correo electrónico válido';
+      return 'Ingresa un correo electrónico válido (ej. usuario@gmail.com)';
     }
     return null;
   }

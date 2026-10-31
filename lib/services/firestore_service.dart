@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
 import '../models/trip_model.dart';
@@ -67,7 +68,7 @@ class FirestoreService {
     if (cleanDni.isEmpty) return false;
 
     try {
-      // Consulta directa y segura al índice público de DNI (permitido por las reglas de Firestore)
+      // Consulta directa y segura al Ã­ndice pÃºblico de DNI (permitido por las reglas de Firestore)
       final indexDoc = await _db.collection('dni_index').doc(cleanDni).get();
       if (indexDoc.exists) return true;
     } catch (e) {
@@ -78,50 +79,44 @@ class FirestoreService {
   }
 
   // ---- Conductores ----
-  Future<void> saveDriver(Driver driver) => _db
-      .collection('drivers')
-      .doc(driver.uid)
-      .set(driver.toMap(), SetOptions(merge: true));
+  Future<void> saveDriver(Driver driver) async {
+    final batch = _db.batch();
+    batch.set(_db.collection('users').doc(driver.uid), driver.toMap(), SetOptions(merge: true));
+    batch.set(_db.collection('drivers').doc(driver.uid), driver.toMap(), SetOptions(merge: true));
+    await batch.commit();
+  }
 
   Future<Driver?> getDriver(String uid) async {
     try {
+      final userDoc = await _db.collection('users').doc(uid).get();
+      if (userDoc.exists) return Driver.fromFirestore(userDoc);
       final doc = await _db.collection('drivers').doc(uid).get();
-      if (!doc.exists) return null;
-      return Driver.fromFirestore(doc);
+      if (doc.exists) return Driver.fromFirestore(doc);
+      return null;
     } catch (_) {
       return null;
     }
   }
 
-  Future<void> setDriverAvailability(String uid, bool available) => _db
-      .collection('drivers')
-      .doc(uid)
-      .set({'isAvailable': available}, SetOptions(merge: true));
-
-  Future<void> updateDriverLocation(String uid, double lat, double lng) =>
-      _db.collection('drivers').doc(uid).set({
-        'currentLatitude': lat,
-        'currentLongitude': lng,
-        'locationUpdatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-
-  static String _normalizeCity(String? city) {
-    if (city == null) return '';
-    var s = city.trim().toLowerCase();
-    s = s.replaceAll('á', 'a')
-         .replaceAll('é', 'e')
-         .replaceAll('í', 'i')
-         .replaceAll('ó', 'o')
-         .replaceAll('ú', 'u')
-         .replaceAll('ü', 'u');
-    return s;
+  Future<void> setDriverAvailability(String uid, bool available) async {
+    final batch = _db.batch();
+    batch.set(_db.collection('users').doc(uid), {'isAvailable': available}, SetOptions(merge: true));
+    batch.set(_db.collection('drivers').doc(uid), {'isAvailable': available}, SetOptions(merge: true));
+    await batch.commit();
   }
 
-  static bool _areCitiesEqual(String? city1, String? city2) {
-    final c1 = _normalizeCity(city1);
-    final c2 = _normalizeCity(city2);
-    if (c1.isEmpty || c2.isEmpty) return true;
-    return c1 == c2;
+  Future<void> updateDriverLocation(String uid, double lat, double lng) async {
+    final data = {
+      'currentLatitude': lat,
+      'currentLongitude': lng,
+      'latitude': lat,
+      'longitude': lng,
+      'locationUpdatedAt': FieldValue.serverTimestamp(),
+    };
+    final batch = _db.batch();
+    batch.set(_db.collection('users').doc(uid), data, SetOptions(merge: true));
+    batch.set(_db.collection('drivers').doc(uid), data, SetOptions(merge: true));
+    await batch.commit();
   }
 
   // ---- Viajes ----
@@ -129,84 +124,107 @@ class FirestoreService {
     double maxDispatchRadiusKm = AppConfig.kMaxDispatchRadiusKm;
     try {
       final pricing = await getPricingSettings();
-      if (pricing.maxOfferRadiusKm > 0) {
+      if (pricing.maxOfferRadiusKm > 0 && pricing.maxOfferRadiusKm > maxDispatchRadiusKm) {
         maxDispatchRadiusKm = pricing.maxOfferRadiusKm;
       }
     } catch (_) {}
 
-    final driversSnapshot = await _db.collection('drivers')
-        .where('isAvailable', isEqualTo: true)
-        .where('planPaymentStatus', isEqualTo: 'active')
-        .get();
-
-    // Mapear la ciudad de cada conductor
-    final Map<String, String> driverCities = {};
-    for (var doc in driversSnapshot.docs) {
-      final dData = doc.data();
-      if (dData['city'] != null && dData['city'].toString().trim().isNotEmpty) {
-        driverCities[doc.id] = dData['city'].toString();
-      }
-    }
-
-    final missingUids = driversSnapshot.docs
-        .map((d) => d.id)
-        .where((id) => !driverCities.containsKey(id) || driverCities[id]!.trim().isEmpty)
-        .toList();
-
-    if (missingUids.isNotEmpty) {
-      for (var i = 0; i < missingUids.length; i += 10) {
-        final chunk = missingUids.sublist(i, (i + 10 > missingUids.length) ? missingUids.length : i + 10);
-        try {
-          final usersSnap = await _db.collection('users').where(FieldPath.documentId, whereIn: chunk).get();
-          for (var userDoc in usersSnap.docs) {
-            final uCity = userDoc.data()['city']?.toString() ?? '';
-            if (uCity.trim().isNotEmpty) {
-              driverCities[userDoc.id] = uCity;
-            }
-          }
-        } catch (_) {}
-      }
-    }
-        
     final List<DispatchCandidate> candidates = [];
     final Map<String, PlanTier> candidateTiers = {};
+    final Map<String, Map<String, dynamic>> driversMap = {};
 
-    for (var doc in driversSnapshot.docs) {
-      final data = doc.data();
-      final driverId = doc.id;
-      final driverCity = driverCities[driverId] ?? data['city']?.toString() ?? '';
-
-      if (city != null && city.trim().isNotEmpty && driverCity.trim().isNotEmpty) {
-        if (!_areCitiesEqual(city, driverCity)) {
-          continue;
-        }
+    // 1. Obtener conductores ÃšNICAMENTE de 'users' donde role == 'driver'
+    try {
+      final usersSnapshot = await _db
+          .collection('users')
+          .where('role', isEqualTo: 'driver')
+          .get();
+      for (var doc in usersSnapshot.docs) {
+        driversMap[doc.id] = doc.data();
       }
-      
+    } catch (e) {
+      debugPrint('Error leyendo conductores de users: $e');
+    }
+
+    for (var entry in driversMap.entries) {
+      final id = entry.key;
+      final data = entry.value;
+
+      final rawType = (data['vehicleType'] ?? '').toString().trim().toLowerCase();
+      final hasAgency = (data['agencyName'] ?? '').toString().trim().isNotEmpty;
+      final isIntercity = data['isIntercityCar'] == true;
+      final isCar = rawType == 'carro' ||
+          rawType == 'auto' ||
+          rawType.contains('carro') ||
+          rawType.contains('auto') ||
+          hasAgency ||
+          isIntercity;
+
+      // Si es carro / auto interprovincial, EXCLUIR rotundamente del despacho de mototaxis
+      if (isCar) {
+        continue;
+      }
+
       final expiresAt = (data['planExpiresAt'] as Timestamp?)?.toDate();
-      final hasNotExpired = expiresAt?.isAfter(DateTime.now()) ?? false;
+      final hasNotExpired = expiresAt != null
+          ? expiresAt.isAfter(DateTime.now())
+          : (data['isAvailable'] == true);
 
-      if (hasNotExpired) {
-        final double? lat = (data['currentLatitude'] as num?)?.toDouble();
-        final double? lng = (data['currentLongitude'] as num?)?.toDouble();
+      final isAvailable = data['isAvailable'] == true || AppConfig.demoFallback;
 
+      if (isAvailable && (hasNotExpired || AppConfig.demoFallback)) {
+        final double? lat = (data['currentLatitude'] as num?)?.toDouble() ??
+            (data['latitude'] as num?)?.toDouble();
+        final double? lng = (data['currentLongitude'] as num?)?.toDouble() ??
+            (data['longitude'] as num?)?.toDouble();
+
+        double distance = 0.5;
         if (lat != null && lng != null) {
-          final distance = LocationService.instance.distanceKm(
+          distance = LocationService.instance.distanceKm(
             lat,
             lng,
             origin.latitude,
             origin.longitude,
           );
-
-          if (distance <= maxDispatchRadiusKm) {
-            final tier = PlanTier.resolve(data);
-            candidates.add(DispatchCandidate(
-              id: doc.id,
-              distanceKm: distance,
-              tier: tier,
-            ));
-            candidateTiers[doc.id] = tier;
-          }
         }
+
+        if (distance <= maxDispatchRadiusKm) {
+          final tier = PlanTier.resolve(data);
+          candidates.add(DispatchCandidate(
+            id: id,
+            distanceKm: distance,
+            tier: tier,
+          ));
+          candidateTiers[id] = tier;
+        }
+      }
+    }
+
+    // Fallback: si no hubo candidatos con GPS o en pruebas, incluir ÃšNICAMENTE a mototaxis de users
+    if (candidates.isEmpty) {
+      for (var entry in driversMap.entries) {
+        final id = entry.key;
+        final data = entry.value;
+        final rawType = (data['vehicleType'] ?? '').toString().trim().toLowerCase();
+        final hasAgency = (data['agencyName'] ?? '').toString().trim().isNotEmpty;
+        final isIntercity = data['isIntercityCar'] == true;
+        final isCar = rawType == 'carro' ||
+            rawType == 'auto' ||
+            rawType.contains('carro') ||
+            rawType.contains('auto') ||
+            hasAgency ||
+            isIntercity;
+
+        // JamÃ¡s incluir autos
+        if (isCar) continue;
+
+        final tier = PlanTier.resolve(data);
+        candidates.add(DispatchCandidate(
+          id: id,
+          distanceKm: 0.5,
+          tier: tier,
+        ));
+        candidateTiers[id] = tier;
       }
     }
 
@@ -230,13 +248,9 @@ class FirestoreService {
   }
 
   Future<String> createTrip(Trip trip) async {
-    final tripData = trip.toMap();
-    final tripCity = trip.city ?? AuthService.instance.currentUser?.city;
-    if (tripCity != null && tripCity.isNotEmpty) {
-      tripData['city'] = tripCity;
-    }
+    final tripData = Map<String, dynamic>.from(trip.toMap());
     
-    final dispatchData = await _buildDispatchData(trip.origin, city: tripCity);
+    final dispatchData = await _buildDispatchData(trip.origin, city: trip.city);
     tripData.addAll(dispatchData);
 
     // cleanup
@@ -251,21 +265,20 @@ class FirestoreService {
   }
 
   Future<DocumentReference> createTripWithDispatch(Map<String, dynamic> tripData, {required GeoPoint origin}) async {
-    final tripCity = tripData['city']?.toString() ?? AuthService.instance.currentUser?.city;
-    if (tripCity != null && tripCity.isNotEmpty) {
-      tripData['city'] = tripCity;
-    }
-
-    final dispatchData = await _buildDispatchData(origin, city: tripCity);
-    tripData.addAll(dispatchData);
-    return await _db.collection('trips').add(tripData);
+    final dispatchData = await _buildDispatchData(origin);
+    final mutableTripData = Map<String, dynamic>.from(tripData);
+    mutableTripData.addAll(dispatchData);
+    return await _db.collection('trips').add(mutableTripData);
   }
 
   Future<void> _advanceDispatchInTx(Transaction tx, DocumentReference tripRef, Map<String, dynamic> data, int nextIndex) async {
     List<dynamic> queueDyn = data['dispatchQueue'] ?? [];
     if (nextIndex < queueDyn.length) {
       final nextDriverId = queueDyn[nextIndex].toString();
-      final nextDriverDoc = await tx.get(_db.collection('drivers').doc(nextDriverId));
+      final nextDriverUserDoc = await tx.get(_db.collection('users').doc(nextDriverId));
+      final nextDriverDoc = nextDriverUserDoc.exists
+          ? nextDriverUserDoc
+          : await tx.get(_db.collection('drivers').doc(nextDriverId));
       String planKey = 'diario';
       if (nextDriverDoc.exists) {
         final driverData = nextDriverDoc.data();
@@ -423,7 +436,7 @@ class FirestoreService {
   }
 
   // =====================================================
-  //  ADMIN (panel web) — consume la MISMA colección
+  //  ADMIN (panel web) â€” consume la MISMA colecciÃ³n
   // =====================================================
 
   
@@ -510,13 +523,13 @@ class FirestoreService {
     return _allDriversStream!;
   }
 
-  /// Conductores pendientes de aprobación optimizados para la consola web.
+  /// Conductores pendientes de aprobaciÃ³n optimizados para la consola web.
   Stream<List<Driver>> pendingDrivers() => 
       allDrivers().map((drivers) => drivers.where((d) => d.status == 'pending').toList());
 
   /// Actualiza la cuenta en `users` (login / estado de la cuenta) y, si existe,
   /// en `drivers` (listado del panel), para que ambas colecciones no se
-  /// desincronicen. Sirve también para pasajeros: ahí `drivers/{uid}` no existe.
+  /// desincronicen. Sirve tambiÃ©n para pasajeros: ahÃ­ `drivers/{uid}` no existe.
   Future<void> _updateAccountDocs(String uid, Map<String, dynamic> data) async {
     await _db.collection('users').doc(uid).set(data, SetOptions(merge: true));
     final driverRef = _db.collection('drivers').doc(uid);
@@ -662,7 +675,7 @@ class FirestoreService {
     return controller.stream;
   }
 
-  /// Perfil de una cuenta del panel recién creada en Firebase Auth.
+  /// Perfil de una cuenta del panel reciÃ©n creada en Firebase Auth.
   Future<void> saveStaffProfile({
     required String uid,
     required String name,
@@ -709,13 +722,13 @@ class FirestoreService {
         .map((q) => q.docs.map((d) => {'id': d.id, ...d.data()}).toList());
   }
 
-  /// Marcar notificación como leída
+  /// Marcar notificaciÃ³n como leÃ­da
   Future<void> markNotificationRead(String notifId) => _db
       .collection('notifications')
       .doc(notifId)
       .set({'isRead': true}, SetOptions(merge: true));
 
-  /// Añadir transacción manual y actualizar billetera
+  /// AÃ±adir transacciÃ³n manual y actualizar billetera
   Future<void> addManualTransaction(
     String walletId,
     double amount,
@@ -776,7 +789,7 @@ class FirestoreService {
   //  SOPORTE CENTRALIZADO (`support_chats`)
   // =====================================================
 
-  /// Envío de mensaje de soporte para el Administrador hacia cualquier usuario
+  /// EnvÃ­o de mensaje de soporte para el Administrador hacia cualquier usuario
   Future<void> sendAdminSupportMessage({
     required String userId,
     required String userName,
@@ -799,7 +812,7 @@ class FirestoreService {
     }, SetOptions(merge: true));
   }
 
-  /// Envío de mensaje de soporte desde la app del Conductor
+  /// EnvÃ­o de mensaje de soporte desde la app del Conductor
   Future<void> sendDriverSupportMessage({
     required String driverUid,
     required String driverName,
@@ -827,7 +840,7 @@ class FirestoreService {
     }, SetOptions(merge: true));
   }
 
-  /// Envío de mensaje de soporte para el Pasajero
+  /// EnvÃ­o de mensaje de soporte para el Pasajero
   Future<void> sendPassengerSupportMessage({
     required String passengerUid,
     required String passengerName,
@@ -915,14 +928,14 @@ class FirestoreService {
     });
   }
 
-  /// Transmite en tiempo real la configuración de tarifas (`settings/pricing`).
+  /// Transmite en tiempo real la configuraciÃ³n de tarifas (`settings/pricing`).
   Stream<PricingSettings> streamPricingSettings() => _db
       .collection('settings')
       .doc('pricing')
       .snapshots()
       .map((snap) => PricingSettings.fromMap(snap.data()));
 
-  /// Obtiene la configuración actual de tarifas (`settings/pricing`).
+  /// Obtiene la configuraciÃ³n actual de tarifas (`settings/pricing`).
   Future<PricingSettings> getPricingSettings() async {
     try {
       final snap = await _db.collection('settings').doc('pricing').get();
@@ -989,7 +1002,7 @@ class FirestoreService {
       });
 
   // =====================================================================
-  // PUBLICIDAD (ADS) Y MÉTRICAS DE SEGUIMIENTO
+  // PUBLICIDAD (ADS) Y MÃ‰TRICAS DE SEGUIMIENTO
   // =====================================================================
   Stream<List<Map<String, dynamic>>> streamAds() {
     return _db.collection('ads').orderBy('createdAt', descending: true).snapshots().map(
@@ -1014,7 +1027,7 @@ class FirestoreService {
     await _db.collection('ads').doc(id).delete();
   }
 
-  // Métodos añadidos para registrar Vistas y Clics en tiempo real
+  // MÃ©todos aÃ±adidos para registrar Vistas y Clics en tiempo real
   Future<void> trackAdView(String adId) async {
     try {
       await _db.collection('ads').doc(adId).update({
@@ -1066,7 +1079,7 @@ class FirestoreService {
       'durationDays': 1,
       'priority': 1,
       'tier': 'diario',
-      'benefits': ['Carreras ilimitadas', 'Visibilidad normal', 'Soporte estándar'],
+      'benefits': ['Carreras ilimitadas', 'Visibilidad normal', 'Soporte estÃ¡ndar'],
       'isActive': true,
     }, SetOptions(merge: true));
 
@@ -1090,7 +1103,7 @@ class FirestoreService {
       'durationDays': 30,
       'priority': 3,
       'tier': 'mensual',
-      'benefits': ['Ahorras S/25.00', 'Mejor plan valor/precio', 'Visibilidad TOP', 'Prioridad en la asignación de viajes'],
+      'benefits': ['Ahorras S/25.00', 'Mejor plan valor/precio', 'Visibilidad TOP', 'Prioridad en la asignaciÃ³n de viajes'],
       'isActive': true,
     }, SetOptions(merge: true));
 
@@ -1134,7 +1147,7 @@ class FirestoreService {
       }
     }
     
-    // Asegurar compatibilidad de duración si el plan usa horas o días
+    // Asegurar compatibilidad de duraciÃ³n si el plan usa horas o dÃ­as
     if (!data.containsKey('durationValue')) {
       data['durationValue'] = data['days'] ?? 1;
       data['durationUnit'] = 'days';
@@ -1172,7 +1185,7 @@ class FirestoreService {
       final driverPlanDoc = await transaction.get(driverPlanRef);
 
       // =====================================================================
-      // 2. CÁLCULOS LÓGICOS Y DE FECHAS
+      // 2. CÃLCULOS LÃ“GICOS Y DE FECHAS
       // =====================================================================
       int priority = (request['priority'] as num?)?.toInt() ?? 1;
       Map<String, dynamic> planMergeData = {};
@@ -1181,7 +1194,7 @@ class FirestoreService {
         priority = (planMergeData['priority'] as num?)?.toInt() ?? priority;
       }
 
-      // Extraer la cantidad y la unidad (horas o días)
+      // Extraer la cantidad y la unidad (horas o dÃ­as)
       final int durationValue = (request['durationValue'] as num?)?.toInt() 
           ?? (request['days'] as num?)?.toInt() 
           ?? 1;
@@ -1197,7 +1210,7 @@ class FirestoreService {
       DateTime startsAt = DateTime.now();
       DateTime expiresAt = DateTime.now();
 
-      // Calcular fecha de expiración según la unidad
+      // Calcular fecha de expiraciÃ³n segÃºn la unidad
       if (durationUnit == 'hours') {
         expiresAt = startsAt.add(Duration(hours: durationValue));
       } else {
@@ -1219,7 +1232,7 @@ class FirestoreService {
       }
 
       // =====================================================================
-      // 3. TODAS LAS ESCRITURAS (WRITES) DESPUÉS
+      // 3. TODAS LAS ESCRITURAS (WRITES) DESPUÃ‰S
       // =====================================================================
       // Marcar el request como aprobado
       transaction.update(reqRef, {
@@ -1241,10 +1254,9 @@ class FirestoreService {
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      // Actualizar el estado general en el perfil del conductor
+      // Actualizar el estado general en el perfil del conductor (tanto users como drivers)
       if (driverId.isNotEmpty) {
-        final driverRef = _db.collection('drivers').doc(driverId);
-        transaction.set(driverRef, {
+        final planUpdateData = {
           'planPaymentStatus': 'active',
           'activePlanId': planId,
           'planName': planName,
@@ -1253,7 +1265,9 @@ class FirestoreService {
           'planExpiresAt': expiresAt,
           'pendingPlanId': FieldValue.delete(),
           'pendingPlanName': FieldValue.delete(),
-        }, SetOptions(merge: true));
+        };
+        transaction.set(_db.collection('users').doc(driverId), planUpdateData, SetOptions(merge: true));
+        transaction.set(_db.collection('drivers').doc(driverId), planUpdateData, SetOptions(merge: true));
       }
     });
   }
@@ -1318,7 +1332,7 @@ class FirestoreService {
 
     final batch = _db.batch();
 
-    // 1. Notificación al conductor
+    // 1. NotificaciÃ³n al conductor
     final notifRef = _db.collection('notifications').doc();
     batch.set(notifRef, {
       'userId': driverId,
@@ -1340,7 +1354,7 @@ class FirestoreService {
   }
 
   // =====================================================================
-  // CONFIGURACIÓN Y QR DE PAGO
+  // CONFIGURACIÃ“N Y QR DE PAGO
   // =====================================================================
   Stream<Map<String, dynamic>?> streamPaymentQr() {
     return _db

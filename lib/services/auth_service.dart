@@ -115,6 +115,75 @@ class AuthService {
   }
 
   // ==========================================
+  // 1.1 RECUPERACIÓN DE CONTRASEÑA POR EMAIL
+  // ==========================================
+  Future<(bool, String)> sendPasswordResetEmail(String email) async {
+    try {
+      final cleanEmail = email.trim();
+      if (cleanEmail.isEmpty) {
+        return (false, 'Ingresa tu correo electrónico.');
+      }
+      final emailRegex =
+          RegExp(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$");
+      if (!emailRegex.hasMatch(cleanEmail)) {
+        return (
+          false,
+          'Ingresa un correo electrónico válido (ej. usuario@gmail.com).',
+        );
+      }
+
+      await _fbAuth.sendPasswordResetEmail(email: cleanEmail);
+      return (
+        true,
+        'Hemos enviado un enlace de recuperación a $cleanEmail. Revisa tu bandeja de entrada o spam.',
+      );
+    } on fb.FirebaseAuthException catch (e) {
+      String message = 'Error al enviar el correo de recuperación';
+      if (e.code == 'user-not-found') {
+        message = 'No se encontró ninguna cuenta registrada con este correo.';
+      } else if (e.code == 'invalid-email') {
+        message = 'El formato del correo es inválido.';
+      } else if (e.code == 'too-many-requests') {
+        message =
+            'Demasiados intentos. Espera unos minutos antes de volver a solicitarlo.';
+      }
+      return (false, message);
+    } catch (e) {
+      return (false, 'Error inesperado: $e');
+    }
+  }
+
+  // ==========================================
+  // 1.2 VALIDACIÓN / VERIFICACIÓN DE EMAIL
+  // ==========================================
+  Future<(bool, String)> sendEmailVerification() async {
+    try {
+      final user = _fbAuth.currentUser;
+      if (user == null) {
+        return (false, 'No hay ninguna sesión activa para verificar.');
+      }
+      if (user.emailVerified) {
+        return (true, 'Tu correo ya se encuentra verificado.');
+      }
+      await user.sendEmailVerification();
+      return (
+        true,
+        'Correo de verificación enviado a ${user.email}. Por favor revisa tu bandeja de entrada o spam.',
+      );
+    } on fb.FirebaseAuthException catch (e) {
+      if (e.code == 'too-many-requests') {
+        return (
+          false,
+          'Demasiadas solicitudes. Espera un momento antes de volver a intentar.',
+        );
+      }
+      return (false, 'Error al enviar verificación: ${e.message}');
+    } catch (e) {
+      return (false, 'Error al enviar verificación: $e');
+    }
+  }
+
+  // ==========================================
   // 2. ENVIAR CÓDIGO OTP POR SMS
   // ==========================================
   Future<(bool, String)> sendOtp(String phone) async {
@@ -501,9 +570,17 @@ class AuthService {
         unawaited(syncCarDriverToPublicIndex(currentUser!));
       }
 
+      // Enviar correo de verificación automáticamente al registrar la cuenta
+      try {
+        await userCredential.user?.sendEmailVerification();
+      } catch (_) {}
+
       await _getOrCreateWallet(uid);
 
-      return (true, '¡Cuenta registrada con éxito!');
+      return (
+        true,
+        '¡Cuenta registrada con éxito! Te hemos enviado un correo de validación.',
+      );
     } on fb.FirebaseAuthException catch (e) {
       String message = 'Error en el registro';
       if (e.code == 'weak-password') {
@@ -566,7 +643,7 @@ class AuthService {
         'dni': dni,
         'city': city,
         'role': role.name,
-        if (photoUrl != null) 'photoUrl': photoUrl,
+        ...? (photoUrl != null ? {'photoUrl': photoUrl} : null),
       });
 
       batch.set(dniRef, {
@@ -624,7 +701,7 @@ class AuthService {
           'updatedAt': FieldValue.serverTimestamp(),
         });
       }
-    } catch (e) {}
+    } catch (_) {}
   }
 
   Future<void> signOut() async {

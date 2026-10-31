@@ -7,9 +7,23 @@ import '../../services/firestore_service.dart';
 import '../../theme.dart';
 import 'driver_my_plan_screen.dart';
 import 'driver_support_chat_screen.dart'; 
+import 'driver_vehicle_config_screen.dart'; 
 
 class DriverAccountScreen extends StatelessWidget {
   const DriverAccountScreen({super.key});
+
+  bool _isCarDriver(dynamic user, Map<String, dynamic>? userData) {
+    final rawType = (userData?['vehicleType'] ?? user?.vehicleType ?? '').toString().trim().toLowerCase();
+    if (rawType.contains('moto')) return false;
+    final hasAgency = (userData?['agencyName'] ?? user?.agencyName ?? '').toString().trim().isNotEmpty;
+    final isCar = rawType == 'carro' ||
+        rawType == 'auto' ||
+        rawType.contains('carro') ||
+        rawType.contains('auto') ||
+        hasAgency ||
+        (userData?['isIntercityCar'] == true);
+    return isCar;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -20,10 +34,10 @@ class DriverAccountScreen extends StatelessWidget {
 
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
-          .collection('drivers')
+          .collection('users')
           .doc(uid)
           .snapshots(),
-      builder: (context, driverSnap) {
+      builder: (context, userSnap) {
         return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
           stream: FirebaseFirestore.instance
               .collection('driver_plans')
@@ -33,26 +47,28 @@ class DriverAccountScreen extends StatelessWidget {
             return StreamBuilder<List<Map<String, dynamic>>>(
               stream: FirestoreService.instance.streamPlans(),
               builder: (context, plansSnap) {
-                final driverData = driverSnap.data?.data();
+                final userData = userSnap.data?.data();
                 final driverPlanData = driverPlanSnap.data?.data();
                 final rawPlans = plansSnap.data ?? [];
                 final plans = rawPlans
                     .map((e) => PlanModel.fromMap(e, e['id']))
                     .toList();
 
+                final isCarDriver = _isCarDriver(user, userData);
+
                 final expiresAt =
-                    (driverData?['planExpiresAt'] as Timestamp?)?.toDate() ??
+                    (userData?['planExpiresAt'] as Timestamp?)?.toDate() ??
                     (driverPlanData?['expiresAt'] as Timestamp?)?.toDate();
                 final hasNotExpired =
                     expiresAt != null && expiresAt.isAfter(DateTime.now());
                 final hasActivePlan =
-                    (driverData?['planPaymentStatus'] == 'active' ||
+                    (userData?['planPaymentStatus'] == 'active' ||
                         driverPlanData?['status'] == 'active') &&
                     hasNotExpired;
 
                 final currentPlanName = hasActivePlan
                     ? DriverPlanHelper.resolvePlanName(
-                        driverData: driverData,
+                        driverData: userData,
                         driverPlanData: driverPlanData,
                         plans: plans,
                       )
@@ -226,6 +242,24 @@ class DriverAccountScreen extends StatelessWidget {
                         },
                       ),
                       const SizedBox(height: 8),
+
+                      if (isCarDriver) ...[
+                        // Configuración de Asientos del Auto (solo para conductores de Carro / Van)
+                        _buildOptionTile(
+                          icon: Icons.tune,
+                          title: 'Configura tu auto',
+                          subtitle: 'Configura los asientos y capacidad de tu auto o van',
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const DriverVehicleConfigScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                      ],
                       
                       // --- SOPORTE CENTRALIZADO ---
                       _buildOptionTile(

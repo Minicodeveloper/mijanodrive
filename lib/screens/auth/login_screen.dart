@@ -17,8 +17,10 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
-  
-  
+  bool _isPasswordObscure = true;
+  int _failedAttempts = 0;
+  String? _lastAttemptEmail;
+
   bool _isDriver = false;
 
   final _auth = AuthService.instance;
@@ -32,22 +34,204 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     setState(() => _isLoading = true);
 
     final email = _emailController.text.trim();
-    final password = _passwordController.text; 
+    final password = _passwordController.text;
 
     final (ok, msg, role, status) = await _auth.login(email, password);
 
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    _snack(msg);
-
     if (ok) {
+      _failedAttempts = 0;
+      _lastAttemptEmail = null;
+      _snack(msg);
       _routeAfterAuth();
+    } else {
+      if (_lastAttemptEmail == email) {
+        _failedAttempts++;
+      } else {
+        _lastAttemptEmail = email;
+        _failedAttempts = 1;
+      }
+
+      if (_failedAttempts >= 3) {
+        _showRecoveryDialog(email);
+      } else {
+        final remaining = 3 - _failedAttempts;
+        _snack(
+          '$msg (Intento $_failedAttempts/3. Tras $remaining ${remaining == 1 ? "fallo" : "fallos"} podrás recuperar tu cuenta)',
+        );
+      }
     }
+  }
+
+  void _showRecoveryDialog(String email) {
+    final resetEmailController = TextEditingController(text: email);
+    bool isSending = false;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          title: Row(
+            children: const [
+              Icon(Icons.lock_reset, color: Color(0xFFF9D408), size: 28),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Recuperar Cuenta',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF9C4),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFF9D408)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded, color: Color(0xFF8A5300), size: 22),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Has superado los 3 intentos fallidos de inicio de sesión.',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF8A5300),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Confirma tu correo para enviarte un enlace de recuperación de contraseña:',
+                style: TextStyle(fontSize: 13.5, color: Colors.black87),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: resetEmailController,
+                keyboardType: TextInputType.emailAddress,
+                decoration: InputDecoration(
+                  labelText: 'Correo electrónico',
+                  hintText: 'ejemplo@gmail.com',
+                  prefixIcon: const Icon(Icons.email_outlined),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: isSending ? null : () => Navigator.pop(ctx),
+              child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFF9D408),
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              onPressed: isSending
+                  ? null
+                  : () async {
+                      final targetEmail = resetEmailController.text.trim();
+                      if (targetEmail.isEmpty) {
+                        _snack('Ingresa tu correo');
+                        return;
+                      }
+                      setModalState(() => isSending = true);
+                      final (sent, message) =
+                          await _auth.sendPasswordResetEmail(targetEmail);
+                      if (!ctx.mounted) return;
+                      Navigator.pop(ctx);
+                      _failedAttempts = 0;
+                      _showRecoverySuccessDialog(targetEmail, sent, message);
+                    },
+              child: isSending
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation(Colors.black),
+                      ),
+                    )
+                  : const Text(
+                      'Enviar enlace',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showRecoverySuccessDialog(String email, bool success, String message) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+        ),
+        title: Row(
+          children: [
+            Icon(
+              success ? Icons.mark_email_read_outlined : Icons.error_outline,
+              color: success ? const Color(0xFF2E7D32) : Colors.red,
+              size: 28,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                success ? 'Enlace Enviado' : 'No se pudo enviar',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          message,
+          style: const TextStyle(fontSize: 14),
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFF9D408),
+              foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Entendido', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _biometricLogin() async {
@@ -74,6 +258,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } else if (user.role == UserRole.driver) {
       if (user.status == 'approved') {
         await FirestoreService.instance.setDriverAvailability(user.uid, false);
+        if (!mounted) return;
         Navigator.of(context).pushNamedAndRemoveUntil('/driver', (r) => false);
       } else {
         Navigator.of(context).pushAndRemoveUntil(
@@ -167,14 +352,44 @@ class _LoginScreenState extends State<LoginScreen> {
 
                       TextFormField(
                         controller: _passwordController,
-                        obscureText: true,
+                        obscureText: _isPasswordObscure,
                         validator: Validators.validatePassword,
                         decoration: InputDecoration(
                           hintText: '******',
                           labelText: 'Contraseña',
                           prefixIcon: const Icon(Icons.lock_outline),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _isPasswordObscure
+                                  ? Icons.visibility_off
+                                  : Icons.visibility,
+                              color: Colors.grey,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _isPasswordObscure = !_isPasswordObscure;
+                              });
+                            },
+                          ),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () {
+                            _showRecoveryDialog(_emailController.text.trim());
+                          },
+                          child: const Text(
+                            '¿Olvidaste tu contraseña?',
+                            style: TextStyle(
+                              color: Color(0xFF8A5300),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
                           ),
                         ),
                       ),

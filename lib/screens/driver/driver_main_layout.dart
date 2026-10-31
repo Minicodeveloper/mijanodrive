@@ -164,7 +164,10 @@ class _DriverMainLayoutState extends State<DriverMainLayout> {
   Widget build(BuildContext context) {
     final screens = <Widget>[
       const DriverDashboardScreen(),
-      if (_isCarDriver) const DriverVehicleScreen(),
+      if (_isCarDriver)
+        DriverVehicleScreen(
+          onTripStartedNavigateHome: () => setState(() => _currentIndex = 0),
+        ),
       const DriverHistoryScreen(),
       const DriverAccountScreen(),
     ];

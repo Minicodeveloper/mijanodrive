@@ -26,7 +26,9 @@ class AppConfig {
   static const Duration staleLocationThreshold = Duration(seconds: 90);
 
   /// Radio máximo para el despacho (en kilómetros).
-  static const double kMaxDispatchRadiusKm = 300.0; // Cambiar a 3.0 en producción
+  /// En modo pruebas se usa 1000.0 km para permitir probar desde cualquier ciudad remota (ej. Lima a Yurimaguas ~700 km).
+  /// En producción urbana se configura a 3.0 km.
+  static const double kMaxDispatchRadiusKm = 1000.0;
 
   /// Tiempo de espera por conductor para que acepte un viaje.
   static const int kDispatchTimeoutSeconds = 30;

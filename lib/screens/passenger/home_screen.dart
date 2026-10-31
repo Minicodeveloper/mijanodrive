@@ -13,6 +13,7 @@ import 'passenger_available_cars_screen.dart';
 import 'passenger_history_screen.dart';
 import 'passenger_reserved_trips_screen.dart';
 import 'active_trip_screen.dart';
+import 'passenger_intercity_trip_screen.dart';
 import '../../services/notification_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../config/app_config.dart';
@@ -368,9 +369,48 @@ class _HomeScreenState extends State<HomeScreen> {
         return true;
       }).toList();
 
+      // Ordenar por fecha descendente (el más reciente primero)
+      activeDocs.sort((a, b) {
+        final aTime = (a.data()['createdAtMs'] as num?)?.toInt() ?? 0;
+        final bTime = (b.data()['createdAtMs'] as num?)?.toInt() ?? 0;
+        return bTime.compareTo(aTime);
+      });
+
+      // Limpiar viajes huérfanos obsoletos si hubiese más de uno
+      if (activeDocs.length > 1) {
+        for (int i = 1; i < activeDocs.length; i++) {
+          final oldDoc = activeDocs[i];
+          final oldData = oldDoc.data();
+          if (oldData['status'] == 'pending') {
+            try {
+              await FirebaseFirestore.instance
+                  .collection('trips')
+                  .doc(oldDoc.id)
+                  .update({'status': 'cancelled'});
+            } catch (_) {}
+          }
+        }
+      }
+
       if (activeDocs.isNotEmpty && mounted) {
         final doc = activeDocs.first;
         final data = doc.data();
+        final isAuto = _isAutoTrip(data);
+
+        // Si es un auto pendiente antiguo (más de 12h), cancelarlo para no bloquear
+        final createdAtMs = (data['createdAtMs'] as num?)?.toInt() ?? 0;
+        final isStale = createdAtMs > 0 &&
+            (DateTime.now().millisecondsSinceEpoch - createdAtMs) >
+                12 * 60 * 60 * 1000;
+        if (isAuto && data['status'] == 'pending' && isStale) {
+          try {
+            await FirebaseFirestore.instance
+                .collection('trips')
+                .doc(doc.id)
+                .update({'status': 'cancelled'});
+          } catch (_) {}
+          return;
+        }
 
         setState(() {
           _activeTripId = doc.id;
@@ -380,20 +420,28 @@ class _HomeScreenState extends State<HomeScreen> {
           _distanceKm = (data['distanceKm'] ?? 0.0).toDouble();
           _durationText = data['durationText'] ?? '';
           _selectedPaymentMethod = data['paymentMethod'] ?? 'Efectivo';
-          // Los viajes antiguos de paquetería se normalizan a viaje normal.
-          _selectedServiceType = data['serviceType'] == 'Encomienda'
-              ? 'Viaje'
-              : (data['serviceType'] ?? 'Viaje');
+          _selectedServiceType = data['serviceType'] == 'Programar viaje'
+              ? 'Programar viaje'
+              : 'Viaje';
 
-          if (data['status'] == 'pending') {
-            _isSearchingDriver = true;
-            _startSearchTimer();
-            _listenToTripUpdates(doc.id);
+          if (isAuto) {
+            // Los viajes de auto no muestran el panel de búsqueda de conductor urbano
+            _isSearchingDriver = false;
+            _tripSelected = false;
+          } else {
+            if (data['status'] == 'pending') {
+              _isSearchingDriver = true;
+              _startSearchTimer();
+              _listenToTripUpdates(doc.id);
+            } else {
+              _isSearchingDriver = false;
+            }
+            _tripSelected = true;
           }
-          _tripSelected = true;
         });
 
-        if (_destinationController.text.isNotEmpty) {
+        // Solo trazar ruta urbana si NO es viaje de auto interprovincial
+        if (!isAuto && _destinationController.text.isNotEmpty) {
           _selectDestination(_destinationController.text);
         }
       }
@@ -404,6 +452,25 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
     }
+  }
+
+  bool _isAutoTrip(Map<String, dynamic> data) {
+    final vehicle = (data['vehicleType'] ?? '').toString().toLowerCase();
+    final category = (data['category'] ?? '').toString().toLowerCase();
+    final service = (data['serviceType'] ?? '').toString();
+    // Los viajes urbanos de mototaxi nunca son autos interprovinciales
+    if (vehicle.contains('moto') || category == 'moto' || data['isIntercityCar'] == false) {
+      return false;
+    }
+    if (service == 'Viaje' || service == 'Programar viaje' || service == 'Viaje a Agencia') {
+      return false;
+    }
+    final isIntercity =
+        data['isIntercityCar'] == true || data['carId'] != null;
+    return isIntercity ||
+        service == 'Auto Interprovincial' ||
+        vehicle == 'auto' ||
+        vehicle == 'carro';
   }
 
   void _startSearchTimer() {
@@ -1366,7 +1433,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                 'durationMinutes': _durationMinutes,
                                 'durationText': _durationText,
                                 'paymentMethod': _selectedPaymentMethod,
-                                'serviceType': _selectedServiceType,
+                                'serviceType': _selectedServiceType == 'Programar viaje'
+                                    ? 'Programar viaje'
+                                    : 'Viaje',
+                                'vehicleType': 'MotoTaxi',
+                                'category': 'moto',
+                                'isIntercityCar': false,
                                 'carriesCargo': carriesCargo,
                                 'city': user.city ?? 'Tarapoto',
                                 if (_selectedServiceType ==
@@ -1572,10 +1644,33 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (_activeTripId != null) {
       try {
+        final docSnap = await FirebaseFirestore.instance
+            .collection('trips')
+            .doc(_activeTripId)
+            .get();
+        if (docSnap.exists) {
+          final data = docSnap.data() ?? {};
+          if (_isAutoTrip(data)) {
+            final carId = data['carId']?.toString() ??
+                data['driverId']?.toString() ??
+                '';
+            final seatNumber = (data['seatNumber'] as num?)?.toInt() ?? 2;
+            if (carId.isNotEmpty) {
+              await IntercityVehicleRepository.instance.cancelSeatReservation(
+                carId: carId,
+                seatNumber: seatNumber,
+              );
+            }
+          }
+        }
         await FirebaseFirestore.instance
             .collection('trips')
             .doc(_activeTripId)
-            .update({'status': 'cancelled'});
+            .update({
+          'status': 'cancelled',
+          'cancelledBy': 'passenger',
+          'cancelledAt': FieldValue.serverTimestamp(),
+        });
       } catch (e) {}
     }
 
@@ -1706,6 +1801,43 @@ class _HomeScreenState extends State<HomeScreen> {
                     final tripData =
                         snapshot.data!.data() as Map<String, dynamic>;
                     final String status = tripData['status'] ?? 'pending';
+
+                    // Si el viaje fue cancelado:
+                    if (status == 'cancelled') {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted && _activeTripId != null) {
+                          setState(() {
+                            _activeTripId = null;
+                            _tripSelected = false;
+                            _isSearchingDriver = false;
+                            _polylines.clear();
+                          });
+                        }
+                      });
+                      return _buildMainContent(user);
+                    }
+
+                    // Si es viaje en auto interprovincial reservado:
+                    if (_isAutoTrip(tripData)) {
+                      if (status == 'completed') {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted && _activeTripId != null) {
+                            setState(() {
+                              _activeTripId = null;
+                              _tripSelected = false;
+                              _isSearchingDriver = false;
+                              _polylines.clear();
+                            });
+                          }
+                        });
+                        return _buildMainContent(user);
+                      }
+                      return PassengerIntercityTripScreen(
+                        tripId: _activeTripId!,
+                        tripData: tripData,
+                        onCancelTrip: _cancelSearch,
+                      );
+                    }
 
                     if (status == 'accepted' ||
                         status == 'arrived' ||
