@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:mijano_drive_app/services/auth_service.dart';
 import '../passenger/passenger_available_cars_screen.dart';
 
 class DriverVehicleConfigScreen extends StatefulWidget {
@@ -12,7 +13,17 @@ class DriverVehicleConfigScreen extends StatefulWidget {
 class _DriverVehicleConfigScreenState extends State<DriverVehicleConfigScreen> {
   final IntercityVehicleRepository _repo = IntercityVehicleRepository.instance;
   late int _seatCount;
+  late String _selectedAgency;
   bool _isSaving = false;
+
+  static const List<String> kAvailableAgencies = [
+    'Autos San Martín',
+    'Turismo Cajamarca / Autos Cajamarca',
+    'Empresa de Transporte Sol Naciente',
+    'Turismo Selva (Combis)',
+    'TOCSAC (Autos)',
+    'Grupo Vilela',
+  ];
 
   @override
   void initState() {
@@ -20,6 +31,19 @@ class _DriverVehicleConfigScreenState extends State<DriverVehicleConfigScreen> {
     final car = _repo.driverPrimaryVehicle;
     final existingCount = car.seatStates.length;
     _seatCount = existingCount > 0 ? existingCount : 4;
+
+    final currentAgency = car.agencyName.trim();
+    if (currentAgency.isNotEmpty) {
+      _selectedAgency = currentAgency;
+    } else {
+      final userAgency = AuthService.instance.currentUser?.agencyName?.trim();
+      _selectedAgency = (userAgency != null && userAgency.isNotEmpty)
+          ? userAgency
+          : kAvailableAgencies.first;
+    }
+    if (!kAvailableAgencies.contains(_selectedAgency)) {
+      _selectedAgency = kAvailableAgencies.first;
+    }
   }
 
   void _setSeatCount(int count) {
@@ -70,7 +94,15 @@ class _DriverVehicleConfigScreenState extends State<DriverVehicleConfigScreen> {
       await _repo.updateVehicleSeatCapacity(
         carId: car.id,
         totalSeats: _seatCount,
+        agencyName: _selectedAgency,
       );
+
+      final currentAuthUser = AuthService.instance.currentUser;
+      if (currentAuthUser != null) {
+        AuthService.instance.currentUser = currentAuthUser.copyWith(
+          agencyName: _selectedAgency,
+        );
+      }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -81,7 +113,7 @@ class _DriverVehicleConfigScreenState extends State<DriverVehicleConfigScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  '¡Configuración guardada! Vehículo configurado con $_seatCount asientos ($_vehicleModelName).',
+                  '¡Configuración guardada! Vehículo de $_selectedAgency con $_seatCount asientos.',
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ),
@@ -238,7 +270,120 @@ class _DriverVehicleConfigScreenState extends State<DriverVehicleConfigScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Tarjeta de configuración superior
+            // Tarjeta de configuración de Agencia
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.grey.shade200),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF9C4),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(
+                          Icons.apartment,
+                          color: Color(0xFF8A5300),
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Agencia a la que pertenece',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _selectedAgency,
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF8A5300),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF7F7F7),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        isExpanded: true,
+                        value: _selectedAgency,
+                        icon: const Icon(Icons.keyboard_arrow_down, color: Colors.black87),
+                        borderRadius: BorderRadius.circular(14),
+                        items: kAvailableAgencies.map((agency) {
+                          return DropdownMenuItem<String>(
+                            value: agency,
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.directions_bus,
+                                  size: 18,
+                                  color: Color(0xFF8A5300),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    agency,
+                                    style: const TextStyle(
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.black87,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (val) {
+                          if (val != null) {
+                            setState(() => _selectedAgency = val);
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // Tarjeta de configuración de capacidad
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(16),
@@ -403,7 +548,7 @@ class _DriverVehicleConfigScreenState extends State<DriverVehicleConfigScreen> {
                   const SizedBox(width: 6),
                   Flexible(
                     child: Text(
-                      '$_vehicleModelName • $_seatCount ubicados',
+                      '$_selectedAgency • $_vehicleModelName • $_seatCount ubicados',
                       textAlign: TextAlign.center,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(

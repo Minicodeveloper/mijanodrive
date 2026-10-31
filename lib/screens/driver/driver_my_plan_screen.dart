@@ -31,7 +31,8 @@ class DriverPlanHelper {
             .trim();
     if (directName != null &&
         directName.isNotEmpty &&
-        directName.toLowerCase() != 'plan activo') {
+        directName.toLowerCase() != 'plan activo' &&
+        !directName.contains('Plan Pruebas')) {
       return formatPlanTitle(directName);
     }
 
@@ -199,10 +200,14 @@ class DriverMyPlanScreen extends StatelessWidget {
                       final startsAt =
                           (driverPlanData?['startsAt'] as Timestamp?)?.toDate();
 
+                      final rawPlanName = (driverPlanData?['planName'] ?? driverData?['planName'] ?? '').toString();
+                      final isMockPlan = rawPlanName.contains('Plan Pruebas');
+
                       final hasNotExpired =
                           expiresAt != null &&
                           expiresAt.isAfter(DateTime.now());
                       final hasActivePlan =
+                          !isMockPlan &&
                           (driverData?['planPaymentStatus'] == 'active' ||
                               driverPlanData?['status'] == 'active') &&
                           hasNotExpired;

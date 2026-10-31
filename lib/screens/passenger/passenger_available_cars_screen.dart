@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../models/user_model.dart';
 import '../../models/tariff_model.dart';
 import '../../services/auth_service.dart';
+import '../../services/firestore_service.dart';
 
 class SeatPassengerInfo {
   final int seatNumber;
@@ -192,7 +193,7 @@ class PendingSeatRequest {
       passengerEmail: (map['passengerEmail'] ?? '').toString(),
       passengerAge: (map['passengerAge'] as num?)?.toInt(),
       passengerCity: (map['passengerCity'] ?? '').toString(),
-      price: (map['price'] as num?)?.toDouble() ?? 45.0,
+      price: (map['price'] as num?)?.toDouble() ?? 30.0,
       originCity: (map['originCity'] ?? 'Tarapoto').toString(),
       destinationCity: (map['destinationCity'] ?? 'Yurimaguas').toString(),
     );
@@ -218,6 +219,8 @@ class AvailableCarItem {
   final List<PendingSeatRequest> pendingRequests;
   final List<Map<String, dynamic>> chatMessages;
   final bool tripStarted;
+  final bool isAvailable;
+  final bool hasActivePlan;
 
   const AvailableCarItem({
     required this.id,
@@ -229,7 +232,7 @@ class AvailableCarItem {
     required this.vehiclePlate,
     this.agencyName = '',
     required this.departureLabel,
-    required this.pricePerSeat,
+    this.pricePerSeat = 30.0,
     required this.avatarUrl,
     this.originCity = 'Tarapoto',
     this.destinationCity = 'Yurimaguas',
@@ -238,6 +241,8 @@ class AvailableCarItem {
     this.pendingRequests = const [],
     this.chatMessages = const [],
     this.tripStarted = false,
+    this.isAvailable = false,
+    this.hasActivePlan = false,
   });
 
   int get availableSeatsCount =>
@@ -269,6 +274,8 @@ class AvailableCarItem {
     List<PendingSeatRequest>? pendingRequests,
     List<Map<String, dynamic>>? chatMessages,
     bool? tripStarted,
+    bool? isAvailable,
+    bool? hasActivePlan,
   }) {
     return AvailableCarItem(
       id: id ?? this.id,
@@ -293,6 +300,8 @@ class AvailableCarItem {
       chatMessages:
           chatMessages ?? List<Map<String, dynamic>>.from(this.chatMessages),
       tripStarted: tripStarted ?? this.tripStarted,
+      isAvailable: isAvailable ?? this.isAvailable,
+      hasActivePlan: hasActivePlan ?? this.hasActivePlan,
     );
   }
 
@@ -325,9 +334,11 @@ class AvailableCarItem {
       'pendingRequests': pendingRequests.map((r) => r.toMap()).toList(),
       'chatMessages': chatMessages,
       'tripStarted': tripStarted,
+      'isAvailable': isAvailable,
+      'hasActivePlan': hasActivePlan,
       'availableSeats': availableSeatsCount,
       'occupiedSeats': occupiedSeatsCount,
-      'isPubliclyVisible': availableSeatsCount > 0 && !tripStarted,
+      'isPubliclyVisible': availableSeatsCount > 0 && !tripStarted && isAvailable && hasActivePlan,
       'isIntercityCar': true,
       'updatedAt': FieldValue.serverTimestamp(),
     };
@@ -342,17 +353,18 @@ class AvailableCarItem {
         ? rawDocId.substring('CAR_VEHICLE_'.length)
         : (data['driverId'] ?? data['id'] ?? rawDocId).toString();
 
+    final maxSeats = (data['totalSeats'] as num?)?.toInt() ??
+        (data['vehicleCapacity'] as num?)?.toInt();
+
     final rawSeats = data['seatStates'];
     final parsedSeats = <int, String>{};
     if (fallback != null && fallback.seatStates.isNotEmpty) {
       parsedSeats.addAll(fallback.seatStates);
     } else {
-      parsedSeats.addAll({
-        1: 'available',
-        2: 'available',
-        3: 'available',
-        4: 'available',
-      });
+      final defaultCount = (maxSeats != null && maxSeats > 0) ? maxSeats : 4;
+      for (int i = 1; i <= defaultCount; i++) {
+        parsedSeats[i] = 'available';
+      }
     }
     if (rawSeats is Map && rawSeats.isNotEmpty) {
       parsedSeats.clear();
@@ -362,6 +374,10 @@ class AvailableCarItem {
           parsedSeats[seatNum] = entry.value.toString();
         }
       }
+    }
+
+    if (maxSeats != null && maxSeats > 0 && parsedSeats.length > maxSeats) {
+      parsedSeats.removeWhere((k, _) => k > maxSeats);
     }
 
     final rawPassengers = data['seatPassengers'];
@@ -431,6 +447,24 @@ class AvailableCarItem {
       displayModel = 'Toyota Yaris';
     }
 
+    final planStatus = (data['planPaymentStatus'] ?? (fallback?.hasActivePlan == true ? 'active' : '')).toString();
+    final planExpiresAt = data['planExpiresAt'];
+    DateTime? expiryDate;
+    if (planExpiresAt is Timestamp) {
+      expiryDate = planExpiresAt.toDate();
+    } else if (planExpiresAt is DateTime) {
+      expiryDate = planExpiresAt;
+    }
+    final planName = (data['planName'] ?? '').toString();
+    final isMock = planName.contains('Plan Pruebas');
+    final bool hasActivePlan = (data['hasActivePlan'] == true || planStatus == 'active') &&
+        (expiryDate == null || expiryDate.isAfter(DateTime.now())) &&
+        !isMock;
+
+    final bool isAvailable = data['isAvailable'] is bool
+        ? (data['isAvailable'] as bool)
+        : (fallback?.isAvailable ?? false);
+
     final rawPlate =
         (data['vehiclePlate'] ?? data['plate'] ?? fallback?.vehiclePlate ?? '')
             .toString()
@@ -458,9 +492,11 @@ class AvailableCarItem {
           (data['departureLabel'] ?? fallback?.departureLabel ?? 'Hoy, 14:30')
               .toString(),
       pricePerSeat:
-          (data['pricePerSeat'] as num?)?.toDouble() ??
-          fallback?.pricePerSeat ??
-          PricingSettings.defaultCarPricePerSeat,
+          IntercityVehicleRepository.cachedAdminPrice > 0
+              ? IntercityVehicleRepository.cachedAdminPrice
+              : ((data['pricePerSeat'] as num?)?.toDouble() ??
+                  fallback?.pricePerSeat ??
+                  PricingSettings.defaultCarPricePerSeat),
       avatarUrl:
           (data['avatarUrl'] ?? data['photoUrl'] ?? fallback?.avatarUrl ?? '')
               .toString(),
@@ -477,6 +513,8 @@ class AvailableCarItem {
       tripStarted: data['tripStarted'] is bool
           ? data['tripStarted'] as bool
           : (fallback?.tripStarted ?? false),
+      isAvailable: isAvailable,
+      hasActivePlan: hasActivePlan,
     );
   }
 }
@@ -496,6 +534,8 @@ class IntercityVehicleRepository extends ChangeNotifier {
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _intercitySub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _usersSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _driversSub;
+  StreamSubscription<PricingSettings>? _pricingSub;
+  static double cachedAdminPrice = PricingSettings.defaultCarPricePerSeat;
 
   /// Mapa de autos reales registrados en Firebase (key = uid del conductor).
   final Map<String, AvailableCarItem> _realCarsByUid = {};
@@ -549,6 +589,10 @@ class IntercityVehicleRepository extends ChangeNotifier {
       if (c.vehiclePlate == 'ABC-123' && c.agencyName.trim().isEmpty) {
         return false;
       }
+      // Solo mostrar si el conductor tiene plan activo y está disponible
+      if (!c.hasActivePlan || !c.isAvailable) {
+        return false;
+      }
       return c.availableSeatsCount > 0 && !c.tripStarted;
     }).toList();
   }
@@ -588,6 +632,8 @@ class IntercityVehicleRepository extends ChangeNotifier {
       originCity: user?.city ?? 'Tarapoto',
       destinationCity: 'Yurimaguas',
       tripStarted: false,
+      isAvailable: user?.status == 'approved',
+      hasActivePlan: true,
       seatStates: const {
         1: 'available',
         2: 'available',
@@ -609,6 +655,25 @@ class IntercityVehicleRepository extends ChangeNotifier {
 
   void _initFirestoreStreams() {
     final db = FirebaseFirestore.instance;
+
+    // 0. Escuchar Tarifario oficial del panel administrativo (`settings/pricing`)
+    try {
+      _pricingSub = FirestoreService.instance.streamPricingSettings().listen((pricing) {
+        final newPrice = pricing.effectiveCarPricePerSeat;
+        if (newPrice > 0) {
+          cachedAdminPrice = newPrice;
+          bool changed = false;
+          for (final carId in _realCarsByUid.keys.toList()) {
+            final existing = _realCarsByUid[carId]!;
+            if (existing.pricePerSeat != newPrice) {
+              _realCarsByUid[carId] = existing.copyWith(pricePerSeat: newPrice);
+              changed = true;
+            }
+          }
+          if (changed) notifyListeners();
+        }
+      });
+    } catch (_) {}
 
     // 1. Escuchar `plate_index` (colección pública con lectura/escritura abierta
     // para usuarios autenticados en las reglas desplegadas).
@@ -761,9 +826,11 @@ class IntercityVehicleRepository extends ChangeNotifier {
           (userMap['departureLabel'] ?? existing?.departureLabel ?? 'Hoy, 14:30')
               .toString(),
       pricePerSeat:
-          (userMap['pricePerSeat'] as num?)?.toDouble() ??
-          existing?.pricePerSeat ??
-          PricingSettings.defaultCarPricePerSeat,
+          cachedAdminPrice > 0
+              ? cachedAdminPrice
+              : ((userMap['pricePerSeat'] as num?)?.toDouble() ??
+                  existing?.pricePerSeat ??
+                  PricingSettings.defaultCarPricePerSeat),
       avatarUrl:
           (userMap['photoUrl'] ??
                   userMap['avatarUrl'] ??
@@ -793,6 +860,12 @@ class IntercityVehicleRepository extends ChangeNotifier {
       pendingRequests: existing?.pendingRequests ?? const [],
       chatMessages: existing?.chatMessages ?? const [],
       tripStarted: existing?.tripStarted ?? false,
+      isAvailable: userMap['isAvailable'] == true,
+      hasActivePlan: ((userMap['planPaymentStatus'] == 'active' || userMap['hasActivePlan'] == true) &&
+          !((userMap['planName'] ?? '').toString().contains('Plan Pruebas')) &&
+          ((userMap['planExpiresAt'] is Timestamp)
+              ? (userMap['planExpiresAt'] as Timestamp).toDate().isAfter(DateTime.now())
+              : true)),
     );
 
     _realCarsByUid[uid] = merged;
@@ -922,14 +995,14 @@ class IntercityVehicleRepository extends ChangeNotifier {
       await db
           .collection('plate_index')
           .doc('CAR_VEHICLE_${car.id}')
-          .set(payload, SetOptions(merge: true));
+          .set(payload);
     } catch (_) {}
 
     try {
       await db
           .collection('intercity_vehicles')
           .doc(car.id)
-          .set(payload, SetOptions(merge: true));
+          .set(payload);
     } catch (_) {}
   }
 
@@ -962,6 +1035,7 @@ class IntercityVehicleRepository extends ChangeNotifier {
   Future<void> updateVehicleSeatCapacity({
     required String carId,
     required int totalSeats,
+    String? agencyName,
   }) async {
     final current = getCarById(carId);
     final updatedSeats = <int, String>{};
@@ -978,23 +1052,63 @@ class IntercityVehicleRepository extends ChangeNotifier {
     final updatedCar = current.copyWith(
       seatStates: updatedSeats,
       seatPassengers: updatedPassengers,
+      agencyName: (agencyName != null && agencyName.trim().isNotEmpty)
+          ? agencyName.trim()
+          : current.agencyName,
     );
 
     _updateLocalCar(updatedCar);
     await _persistCar(updatedCar);
 
+    final db = FirebaseFirestore.instance;
+    final seatStatesMap = <String, String>{};
+    for (final entry in updatedSeats.entries) {
+      seatStatesMap[entry.key.toString()] = entry.value;
+    }
+    final passengersMap = <String, dynamic>{};
+    for (final entry in updatedPassengers.entries) {
+      passengersMap[entry.key.toString()] = entry.value.toMap();
+    }
+
+    try {
+      await db.collection('plate_index').doc('CAR_VEHICLE_${updatedCar.id}').set({
+        ...updatedCar.toFirestoreMap(),
+        'seatStates': seatStatesMap,
+        'seatPassengers': passengersMap,
+        'totalSeats': totalSeats,
+        'vehicleCapacity': totalSeats,
+      });
+    } catch (_) {}
+
+    try {
+      await db.collection('intercity_vehicles').doc(updatedCar.id).set({
+        ...updatedCar.toFirestoreMap(),
+        'seatStates': seatStatesMap,
+        'seatPassengers': passengersMap,
+        'totalSeats': totalSeats,
+        'vehicleCapacity': totalSeats,
+      });
+    } catch (_) {}
+
     try {
       final user = AuthService.instance.currentUser;
       final uid = user?.uid ?? fb.FirebaseAuth.instance.currentUser?.uid;
       if (uid != null && uid.isNotEmpty) {
-        await FirebaseFirestore.instance.collection('drivers').doc(uid).set({
+        final dataToUpdate = <String, dynamic>{
           'totalSeats': totalSeats,
           'vehicleCapacity': totalSeats,
-        }, SetOptions(merge: true));
-        await FirebaseFirestore.instance.collection('users').doc(uid).set({
-          'totalSeats': totalSeats,
-          'vehicleCapacity': totalSeats,
-        }, SetOptions(merge: true));
+          'seatStates': seatStatesMap,
+          if (agencyName != null && agencyName.trim().isNotEmpty)
+            'agencyName': agencyName.trim(),
+        };
+        await db.collection('drivers').doc(uid).set(
+          dataToUpdate,
+          SetOptions(merge: true),
+        );
+        await db.collection('users').doc(uid).set(
+          dataToUpdate,
+          SetOptions(merge: true),
+        );
       }
     } catch (_) {}
   }
@@ -1169,6 +1283,8 @@ class IntercityVehicleRepository extends ChangeNotifier {
     required int seatNumber,
   }) async {
     final current = getCarById(carId);
+    final pax = current.seatPassengers[seatNumber];
+
     final updatedSeats = Map<int, String>.from(current.seatStates);
     updatedSeats[seatNumber] = 'available';
 
@@ -1188,6 +1304,55 @@ class IntercityVehicleRepository extends ChangeNotifier {
 
     _updateLocalCar(updatedCar);
     await _persistCar(updatedCar);
+
+    final db = FirebaseFirestore.instance;
+    try {
+      await db.collection('plate_index').doc('CAR_VEHICLE_$carId').update({
+        'seatPassengers.$seatNumber': FieldValue.delete(),
+        'seatStates.$seatNumber': 'available',
+        'isPubliclyVisible': true,
+      });
+    } catch (_) {}
+
+    try {
+      await db.collection('intercity_vehicles').doc(carId).update({
+        'seatPassengers.$seatNumber': FieldValue.delete(),
+        'seatStates.$seatNumber': 'available',
+        'isPubliclyVisible': true,
+      });
+    } catch (_) {}
+
+    if (pax != null) {
+      if (pax.tripId.isNotEmpty) {
+        try {
+          await db.collection('trips').doc(pax.tripId).update({
+            'status': 'cancelled',
+            'cancelledBy': 'driver',
+            'cancelReason': 'Asiento liberado por el conductor',
+            'cancelledAt': FieldValue.serverTimestamp(),
+          });
+        } catch (_) {}
+      }
+      if (pax.passengerId.isNotEmpty) {
+        try {
+          final q = await db
+              .collection('trips')
+              .where('carId', isEqualTo: carId)
+              .where('passengerId', isEqualTo: pax.passengerId)
+              .where('seatNumber', isEqualTo: seatNumber)
+              .where('status', isEqualTo: 'pending')
+              .get();
+          for (final doc in q.docs) {
+            await doc.reference.update({
+              'status': 'cancelled',
+              'cancelledBy': 'driver',
+              'cancelReason': 'Asiento liberado por el conductor',
+              'cancelledAt': FieldValue.serverTimestamp(),
+            });
+          }
+        } catch (_) {}
+      }
+    }
   }
 
   /// El conductor rechaza una solicitud pendiente y libera el asiento.
@@ -1225,6 +1390,7 @@ class IntercityVehicleRepository extends ChangeNotifier {
 
   @override
   void dispose() {
+    _pricingSub?.cancel();
     _plateIndexSub?.cancel();
     _intercitySub?.cancel();
     _usersSub?.cancel();

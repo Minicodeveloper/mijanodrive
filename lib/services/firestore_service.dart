@@ -265,7 +265,7 @@ class FirestoreService {
   }
 
   Future<DocumentReference> createTripWithDispatch(Map<String, dynamic> tripData, {required GeoPoint origin}) async {
-    final dispatchData = await _buildDispatchData(origin);
+    final dispatchData = await _buildDispatchData(origin, city: tripData['city']?.toString());
     final mutableTripData = Map<String, dynamic>.from(tripData);
     mutableTripData.addAll(dispatchData);
     return await _db.collection('trips').add(mutableTripData);
@@ -929,6 +929,8 @@ class FirestoreService {
   }
 
   /// Transmite en tiempo real la configuraciÃ³n de tarifas (`settings/pricing`).
+  Stream<PricingSettings> pricingStream() => streamPricingSettings();
+
   Stream<PricingSettings> streamPricingSettings() => _db
       .collection('settings')
       .doc('pricing')

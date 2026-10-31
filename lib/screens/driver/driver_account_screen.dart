@@ -56,12 +56,26 @@ class DriverAccountScreen extends StatelessWidget {
 
                 final isCarDriver = _isCarDriver(user, userData);
 
+                final rawPlanName = (driverPlanData?['planName'] ?? userData?['planName'] ?? '').toString();
+                final isMockPlan = rawPlanName.contains('Plan Pruebas');
+
+                // Si aún existían residuos del plan falso de pruebas en Firestore, limpiarlos de inmediato
+                if (isMockPlan && uid != 'demo-driver') {
+                  FirebaseFirestore.instance.collection('users').doc(uid).update({
+                    'planPaymentStatus': FieldValue.delete(),
+                    'planName': FieldValue.delete(),
+                    'planExpiresAt': FieldValue.delete(),
+                    'isAvailable': false,
+                  }).catchError((_) {});
+                }
+
                 final expiresAt =
                     (userData?['planExpiresAt'] as Timestamp?)?.toDate() ??
                     (driverPlanData?['expiresAt'] as Timestamp?)?.toDate();
                 final hasNotExpired =
                     expiresAt != null && expiresAt.isAfter(DateTime.now());
                 final hasActivePlan =
+                    !isMockPlan &&
                     (userData?['planPaymentStatus'] == 'active' ||
                         driverPlanData?['status'] == 'active') &&
                     hasNotExpired;
@@ -175,8 +189,10 @@ class DriverAccountScreen extends StatelessWidget {
                                           child: Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              const Icon(
-                                                Icons.workspace_premium,
+                                              Icon(
+                                                hasActivePlan
+                                                    ? Icons.workspace_premium
+                                                    : Icons.cancel_outlined,
                                                 size: 13,
                                                 color: Colors.white,
                                               ),

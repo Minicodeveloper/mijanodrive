@@ -64,6 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _carOriginCity = 'Yurimaguas';
   String? _carDestinationCity = 'Tarapoto';
   static const List<String> _intercityOptions = [
+    'Lima',
     'Yurimaguas',
     'Tarapoto',
     'Iquitos',

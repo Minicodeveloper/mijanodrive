@@ -140,13 +140,21 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
     }
   }
 
-  void _openEditRouteDialog(AvailableCarItem car) {
+  Future<void> _openEditRouteDialog(AvailableCarItem car) async {
     final originCtrl = TextEditingController(text: car.originCity);
     final destCtrl = TextEditingController(text: car.destinationCity);
     final timeCtrl = TextEditingController(text: car.departureLabel);
-    final priceCtrl = TextEditingController(
-      text: car.pricePerSeat.toStringAsFixed(2),
-    );
+
+    // Obtener la tarifa oficial de autos/combis fijada desde el panel administrativo
+    double officialCarPrice = car.pricePerSeat;
+    try {
+      final pricing = await FirestoreService.instance.getPricingSettings();
+      if (pricing.carPricePerSeat > 0) {
+        officialCarPrice = pricing.carPricePerSeat;
+      }
+    } catch (_) {}
+
+    if (!mounted) return;
 
     showDialog<void>(
       context: context,
@@ -183,15 +191,48 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                   border: OutlineInputBorder(),
                 ),
               ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: priceCtrl,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
+              const SizedBox(height: 14),
+              // Tarjeta informativa vinculada a la tarifa oficial del panel administrativo
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF9C4),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFF9D408)),
                 ),
-                decoration: const InputDecoration(
-                  labelText: 'Precio por asiento (S/)',
-                  border: OutlineInputBorder(),
+                child: Row(
+                  children: [
+                    const Icon(Icons.info_outline, color: Color(0xFF8A5300), size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Tarifa por Asiento (Oficial)',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: Color(0xFF8A5300),
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            'S/ ${officialCarPrice.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black,
+                            ),
+                          ),
+                          const Text(
+                            'Esta tarifa es administrada centralmente desde el panel de Tarifas (Autos / Combis).',
+                            style: TextStyle(fontSize: 10.5, color: Colors.black54),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -217,15 +258,13 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
               final label = timeCtrl.text.trim().isNotEmpty
                   ? timeCtrl.text.trim()
                   : car.departureLabel;
-              final price =
-                  double.tryParse(priceCtrl.text.trim()) ?? car.pricePerSeat;
 
               await _repo.updateVehicleRouteAndSchedule(
                 carId: car.id,
                 originCity: origin,
                 destinationCity: dest,
                 departureLabel: label,
-                pricePerSeat: price,
+                pricePerSeat: officialCarPrice,
               );
               if (ctx.mounted) Navigator.pop(ctx);
             },
@@ -237,6 +276,53 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _confirmCancelSeat(
+    AvailableCarItem car,
+    SeatPassengerInfo pax,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('¿Liberar Asiento #${pax.seatNumber}?'),
+        content: Text(
+          'Se cancelará la reserva de ${pax.passengerName} y el Asiento #${pax.seatNumber} quedará libre y disponible inmediatamente para otros pasajeros.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Volver'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade600,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sí, liberar asiento'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _repo.cancelSeatReservation(
+        carId: car.id,
+        seatNumber: pax.seatNumber,
+      );
+      if (!mounted) return;
+      final updated = _repo.getCarById(car.id);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '¡Asiento #${pax.seatNumber} liberado! Reserva de ${pax.passengerName} cancelada (${updated.availableSeatsCount}/${updated.seatStates.length} disponibles).',
+          ),
+          backgroundColor: Colors.green.shade700,
+        ),
+      );
+    }
   }
 
   void _openDirectChat(AvailableCarItem car, SeatPassengerInfo passenger) async {
@@ -1124,13 +1210,17 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                           side: const BorderSide(color: Color(0xFFF9D408)),
                         ),
                       ),
-                      onPressed: () {
-                        Navigator.push(
+                      onPressed: () async {
+                        final result = await Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (_) => const DriverVehicleConfigScreen(),
                           ),
                         );
+                        if (result == true && mounted) {
+                          await _repo.ensureCurrentDriverVehicleSynced();
+                          setState(() {});
+                        }
                       },
                       icon: const Icon(Icons.tune, size: 16),
                       label: Text(
@@ -1546,23 +1636,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                                     Icons.event_seat_outlined,
                                     size: 18,
                                   ),
-                                  onPressed: () async {
-                                    await _repo.cancelSeatReservation(
-                                      carId: car.id,
-                                      seatNumber: pax.seatNumber,
-                                    );
-                                    if (!context.mounted) return;
-                                    final updated = _repo.getCarById(car.id);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          'Reserva de ${pax.passengerName} cancelada. '
-                                          'Asiento ${pax.seatNumber} disponible (${updated.availableSeatsCount}/4 Disponibles).',
-                                        ),
-                                        backgroundColor: Colors.green.shade700,
-                                      ),
-                                    );
-                                  },
+                                  onPressed: () => _confirmCancelSeat(car, pax),
                                 ),
                               ],
                             ],

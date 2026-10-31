@@ -100,7 +100,7 @@ class PricingSettings {
   static const int defaultNightStartHour = 22;
   static const int defaultNightEndHour = 6;
   static const double defaultMaxOfferRadiusKm = 5.0;
-  static const double defaultCarPricePerSeat = 45.0;
+  static const double defaultCarPricePerSeat = 30.0;
 
   final Map<VehicleCategory, VehicleTariff> tariffs;
   final int nightStartHour;
@@ -120,6 +120,12 @@ class PricingSettings {
 
   factory PricingSettings.fromMap(Map<String, dynamic>? map) {
     final data = map ?? const <String, dynamic>{};
+    final carBase = (data['car_baseFare'] as num?)?.toDouble();
+    final carSeat = (data['car_pricePerSeat'] as num?)?.toDouble();
+    final resolvedSeatPrice = (carBase != null && carBase > 0)
+        ? carBase
+        : (carSeat ?? defaultCarPricePerSeat);
+
     return PricingSettings(
       tariffs: {
         for (final category in VehicleCategory.values)
@@ -131,8 +137,7 @@ class PricingSettings {
           (data['nightEndHour'] as num?)?.toInt() ?? defaultNightEndHour,
       maxOfferRadiusKm: (data['max_offer_radius_km'] as num?)?.toDouble() ??
           defaultMaxOfferRadiusKm,
-      carPricePerSeat: (data['car_pricePerSeat'] as num?)?.toDouble() ??
-          defaultCarPricePerSeat,
+      carPricePerSeat: resolvedSeatPrice,
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
     );
   }
@@ -163,6 +168,13 @@ class PricingSettings {
       carPricePerSeat: carPricePerSeat ?? this.carPricePerSeat,
       updatedAt: updatedAt ?? this.updatedAt,
     );
+  }
+
+  double get effectiveCarPricePerSeat {
+    final carBase = tariffs[VehicleCategory.car]?.baseFare;
+    if (carBase != null && carBase > 0) return carBase;
+    if (carPricePerSeat > 0) return carPricePerSeat;
+    return defaultCarPricePerSeat;
   }
 
   VehicleTariff tariffFor(VehicleCategory category) =>

@@ -125,7 +125,9 @@ class _TariffsModuleState extends State<TariffsModule> {
       ctrls[_TariffField.minFare]!.text = _amount(tariff.minFare);
       ctrls[_TariffField.nightSurcharge]!.text = _amount(tariff.nightSurcharge);
     }
-    _carPricePerSeatCtrl.text = _amount(settings.carPricePerSeat);
+    final carBase = settings.tariffFor(VehicleCategory.car).baseFare;
+    final seatPrice = (carBase > 0) ? carBase : settings.carPricePerSeat;
+    _carPricePerSeatCtrl.text = _amount(seatPrice);
     _nightStartCtrl.text = '${settings.nightStartHour}';
     _nightEndCtrl.text = '${settings.nightEndHour}';
     _radiusCtrl.text = settings.maxOfferRadiusKm.toString();
@@ -182,7 +184,10 @@ class _TariffsModuleState extends State<TariffsModule> {
       );
     }
 
-    final carSeatPrice = _parse(_carPricePerSeatCtrl.text) ?? PricingSettings.defaultCarPricePerSeat;
+    final carBaseFare = tariffs[VehicleCategory.car]?.baseFare;
+    final carSeatPrice = (carBaseFare != null && carBaseFare > 0)
+        ? carBaseFare
+        : (_parse(_carPricePerSeatCtrl.text) ?? PricingSettings.defaultCarPricePerSeat);
     final nightStart = int.tryParse(_nightStartCtrl.text.trim());
     final nightEnd = int.tryParse(_nightEndCtrl.text.trim());
     final radius = _parse(_radiusCtrl.text);

@@ -85,16 +85,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   String? _phoneDuplicateError;
   String? _dniDuplicateError;
+  String? _emailDuplicateError;
   String? _licenseDuplicateError;
   String? _plateDuplicateError;
 
   bool _checkingPhone = false;
   bool _checkingDni = false;
+  bool _checkingEmail = false;
   bool _checkingLicense = false;
   bool _checkingPlate = false;
 
   Timer? _phoneDebounce;
   Timer? _dniDebounce;
+  Timer? _emailDebounce;
   Timer? _licenseDebounce;
   Timer? _plateDebounce;
 
@@ -108,6 +111,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   void dispose() {
     _phoneDebounce?.cancel();
     _dniDebounce?.cancel();
+    _emailDebounce?.cancel();
     _licenseDebounce?.cancel();
     _plateDebounce?.cancel();
     _pageController.dispose();
@@ -150,6 +154,33 @@ class _RegisterScreenState extends State<RegisterScreen> {
       });
       if (taken) {
         _showSnackBar('Este número ya está registrado.');
+      }
+    });
+  }
+
+  void _onEmailChanged(String value) {
+    _emailDebounce?.cancel();
+    final trimmed = value.trim().toLowerCase();
+    if (_emailDuplicateError != null) {
+      setState(() => _emailDuplicateError = null);
+    }
+    final emailRegex = RegExp(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$");
+    if (!emailRegex.hasMatch(trimmed)) {
+      if (_checkingEmail) setState(() => _checkingEmail = false);
+      return;
+    }
+    setState(() => _checkingEmail = true);
+    _emailDebounce = Timer(const Duration(milliseconds: 350), () async {
+      final current = _emailController.text.trim().toLowerCase();
+      if (current != trimmed) return;
+      final taken = await _auth.isEmailRegistered(current);
+      if (!mounted || _emailController.text.trim().toLowerCase() != current) return;
+      setState(() {
+        _checkingEmail = false;
+        _emailDuplicateError = taken ? 'Este correo ya está registrado.' : null;
+      });
+      if (taken) {
+        _showSnackBar('Este correo ya está registrado.');
       }
     });
   }
@@ -389,27 +420,60 @@ class _RegisterScreenState extends State<RegisterScreen> {
       
       setState(() => _isLoading = true);
 
-      // Validar DNI existente y Teléfono existente
+      // Validar Correo, DNI y Teléfono existentes
       final dniText = _dniController.text.trim();
       final phoneText = _phoneController.text.trim();
+      final emailText = _emailController.text.trim().toLowerCase();
 
       final dniTaken = await FirestoreService.instance.isDniTaken(dniText);
       final phoneTaken = await _auth.isPhoneRegistered(phoneText);
+      final emailTaken = await _auth.isEmailRegistered(emailText);
 
       if (!mounted) return;
       setState(() {
         _isLoading = false;
+        _emailDuplicateError =
+            emailTaken ? 'Este correo ya está registrado.' : null;
         _phoneDuplicateError =
             phoneTaken ? 'Este número ya está registrado.' : null;
         _dniDuplicateError =
             dniTaken ? 'Este DNI ya está registrado.' : null;
       });
+
+      if (emailTaken && phoneTaken && dniTaken) {
+        _showAlert(
+          'Datos ya registrados',
+          'El correo electrónico, número de teléfono y DNI ya se encuentran registrados.',
+        );
+        return;
+      }
+
+      if (emailTaken && phoneTaken) {
+        _showAlert(
+          'Datos ya registrados',
+          'Este correo electrónico y este número de teléfono ya están registrados.',
+        );
+        return;
+      }
+
+      if (emailTaken && dniTaken) {
+        _showAlert(
+          'Datos ya registrados',
+          'Este correo electrónico y este DNI ya están registrados.',
+        );
+        return;
+      }
       
       if (phoneTaken && dniTaken) {
         _showAlert(
           'Datos ya registrados',
           'Este número de teléfono y este DNI ya están registrados.',
         );
+        return;
+      }
+
+      if (emailTaken) {
+        _showSnackBar('Este correo ya está registrado.');
         return;
       }
 
@@ -490,6 +554,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     try {
       // Doble verificación antes de enviar cualquier SMS
+      final emailTaken = await _auth.isEmailRegistered(_emailController.text.trim().toLowerCase());
       final phoneTaken = await _auth.isPhoneRegistered(phone);
       final dniTaken = await FirestoreService.instance.isDniTaken(dni);
 
@@ -501,9 +566,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
       }
 
       if (!mounted) return;
-      if (phoneTaken || dniTaken || licenseTaken || plateTaken) {
+      if (emailTaken || phoneTaken || dniTaken || licenseTaken || plateTaken) {
         setState(() {
           _isLoading = false;
+          _emailDuplicateError =
+              emailTaken ? 'Este correo ya está registrado.' : null;
           _phoneDuplicateError =
               phoneTaken ? 'Este número ya está registrado.' : null;
           _dniDuplicateError =
@@ -514,7 +581,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
               plateTaken ? 'Esta placa de vehículo ya está registrada.' : null;
         });
 
-        if (phoneTaken && dniTaken) {
+        if (emailTaken) {
+          _showSnackBar('Este correo ya está registrado.');
+          return;
+        } else if (phoneTaken && dniTaken) {
           _showAlert(
             'Datos ya registrados',
             'Este número de teléfono y este DNI ya están registrados.',
@@ -654,7 +724,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             documentKey: key,
                             imageFile: entry.value!,
                           );
-                        } catch (e) {}
+                        } catch (_) {}
                       }
                     }
                   }
@@ -865,8 +935,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
           TextFormField(
             controller: _emailController,
             keyboardType: TextInputType.emailAddress,
+            onChanged: _onEmailChanged,
             validator: Validators.validateEmail,
-            decoration: const InputDecoration(labelText: 'Correo electrónico', prefixIcon: Icon(Icons.email_outlined), border: OutlineInputBorder()),
+            decoration: InputDecoration(
+              labelText: 'Correo electrónico',
+              prefixIcon: const Icon(Icons.email_outlined),
+              errorText: _emailDuplicateError,
+              suffixIcon: _checkingEmail
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : null,
+              border: const OutlineInputBorder(),
+            ),
           ),
           const SizedBox(height: 15),
           TextFormField(

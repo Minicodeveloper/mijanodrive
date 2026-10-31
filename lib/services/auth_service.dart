@@ -1,5 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+import '../firebase_options.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart' as fbs;
@@ -117,6 +121,39 @@ class AuthService {
   // ==========================================
   // 1.1 RECUPERACIÓN DE CONTRASEÑA POR EMAIL
   // ==========================================
+  // ==========================================
+  // 1.0 AUTO-LOGIN / RESTAURAR SESIÓN ACTIVA
+  // ==========================================
+  Future<User?> tryAutoLogin() async {
+    try {
+      final fbUser = _fbAuth.currentUser;
+      if (fbUser == null) {
+        currentUser = null;
+        return null;
+      }
+
+      final userDoc = await _firestore.collection('users').doc(fbUser.uid).get();
+      if (!userDoc.exists) {
+        await _fbAuth.signOut();
+        currentUser = null;
+        return null;
+      }
+
+      final data = userDoc.data() as Map<String, dynamic>;
+      if (data['isBlocked'] == true) {
+        await _fbAuth.signOut();
+        currentUser = null;
+        return null;
+      }
+
+      currentUser = User.fromMap(data);
+      unawaited(syncCarDriverToPublicIndex(currentUser!));
+      return currentUser;
+    } catch (e) {
+      return null;
+    }
+  }
+
   Future<(bool, String)> sendPasswordResetEmail(String email) async {
     try {
       final cleanEmail = email.trim();
@@ -362,6 +399,58 @@ class AuthService {
   // ==========================================
   // MÉTODOS DE VALIDACIÓN DE DUPLICADOS
   // ==========================================
+  Future<bool> isEmailRegistered(String email) async {
+    final cleanEmail = email.trim().toLowerCase();
+    if (cleanEmail.isEmpty) return false;
+
+    // 1. Comprobación directa y autoritativa contra Firebase Auth Identity Toolkit REST API
+    // (Inmune a la protección de enumeración de correo de Google que hace que fetchSignInMethodsForEmail devuelva vacío)
+    try {
+      final apiKey = DefaultFirebaseOptions.currentPlatform.apiKey;
+      final url = Uri.parse('https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=$apiKey');
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': cleanEmail,
+          'password': 'TempDummyValidationPassword#2026',
+          'returnSecureToken': true,
+        }),
+      );
+
+      if (response.statusCode == 400) {
+        final body = jsonDecode(response.body);
+        final message = body['error']?['message']?.toString() ?? '';
+        if (message.contains('EMAIL_EXISTS')) {
+          return true;
+        }
+      } else if (response.statusCode == 200) {
+        // El correo no existía y se creó temporalmente. Lo eliminamos inmediatamente sin dejar rastro.
+        final body = jsonDecode(response.body);
+        final idToken = body['idToken']?.toString();
+        if (idToken != null) {
+          final deleteUrl = Uri.parse('https://identitytoolkit.googleapis.com/v1/accounts:delete?key=$apiKey');
+          unawaited(http.post(
+            deleteUrl,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'idToken': idToken}),
+          ));
+        }
+        return false;
+      }
+    } catch (e) {
+      debugPrint('Error verificando correo en Identity Toolkit: ');
+    }
+
+    // 2. Fallback de índice en Firestore
+    try {
+      final doc = await _firestore.collection('email_index').doc(cleanEmail).get();
+      if (doc.exists) return true;
+    } catch (_) {}
+
+    return false;
+  }
+
   Future<bool> isPhoneRegistered(String phone) async {
     final cleanPhone = phone.trim();
     if (cleanPhone.isEmpty) return false;
@@ -441,6 +530,9 @@ class AuthService {
       final cleanPlate = vehiclePlate?.trim().toUpperCase();
       final cleanLicense = licenseNumber?.trim().toUpperCase();
 
+      if (await isEmailRegistered(email)) {
+        return (false, 'Este correo electrónico ya está registrado.');
+      }
       if (await isPhoneRegistered(phone)) {
         return (false, 'Este número ya está registrado.');
       }
@@ -528,6 +620,15 @@ class AuthService {
       final userRef = _firestore.collection('users').doc(uid);
 
       batch.set(userRef, userData);
+
+      // 0. Índice de Email
+      if (email.trim().isNotEmpty) {
+        final emailRef = _firestore.collection('email_index').doc(email.trim().toLowerCase());
+        batch.set(emailRef, {
+          'uid': uid,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
 
       // 1. Índice de DNI
       if (cleanDni.isNotEmpty) {

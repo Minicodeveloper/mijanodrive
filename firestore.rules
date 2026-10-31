@@ -292,6 +292,11 @@ service cloud.firestore {
       allow read, create, delete: if isStaff();
     }
 
+    match /email_index/{email} {
+      allow read: if true; // Permite verificar si el correo ya existe antes de autenticarse
+      allow write: if isStaff() || isAuth();
+    }
+
     match /dni_index/{dni} {
       allow read: if true; // Permite verificar si el DNI ya existe antes de autenticarse
       allow write: if isStaff() || isAuth();

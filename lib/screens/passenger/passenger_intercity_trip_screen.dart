@@ -188,7 +188,7 @@ class _PassengerIntercityTripScreenState
         setState(() => _arrivedAtAgency = true);
         final motoFare = (data['fareAmount'] as num?)?.toDouble() ?? 4.50;
         final carFare =
-            (widget.tripData['fareAmount'] as num?)?.toDouble() ?? 45.00;
+            (widget.tripData['fareAmount'] as num?)?.toDouble() ?? 30.00;
         _showArrivedAtAgencyModal(motoFare, carFare);
       }
     });
@@ -369,14 +369,19 @@ class _PassengerIntercityTripScreenState
       // Si el usuario está localmente en la ciudad (< 25 km), usamos su GPS real.
       // Si está probando desde otra ciudad (> 25 km), originamos a 1.5 km de la agencia.
       final bool isLocal = actualDistance < 25.0;
-      // Para recoger al pasajero se usa siempre su posición real actual
-      final GeoPoint originGeo = GeoPoint(pos.latitude, pos.longitude);
+      final GeoPoint originGeo = isLocal
+          ? GeoPoint(pos.latitude, pos.longitude)
+          : GeoPoint(_agencyLatLng.latitude + 0.008, _agencyLatLng.longitude + 0.008);
       final double effectiveDistanceKm = isLocal ? actualDistance : 1.8;
       final double motoFare = (effectiveDistanceKm * 1.5 + 3.0).clamp(4.0, 10.0);
       final agencyName =
           (widget.tripData['agencyName'] ?? 'Agencia de Autos').toString();
-      final originCity =
-          (widget.tripData['originAddress'] ?? 'Tarapoto').toString();
+      final originCity = (widget.tripData['originAddress'] ??
+              widget.tripData['originCity'] ??
+              widget.tripData['city'] ??
+              'Tarapoto')
+          .toString()
+          .trim();
 
       final Map<String, dynamic> motoTripData = <String, dynamic>{
         'passengerId': user.uid,
@@ -394,13 +399,14 @@ class _PassengerIntercityTripScreenState
         'serviceType': 'Viaje a Agencia',
         'vehicleType': 'MotoTaxi',
         'category': 'moto',
+        'isIntercityCar': false,
+        'city': originCity,
         'linkedCarTripId': widget.tripId,
         'status': 'pending',
         'paymentMethod': 'Efectivo',
         'createdAtMs': DateTime.now().millisecondsSinceEpoch,
         'createdAt': FieldValue.serverTimestamp(),
       };
-
       final docRef = await FirestoreService.instance.createTripWithDispatch(
         motoTripData,
         origin: originGeo,
@@ -724,7 +730,7 @@ class _PassengerIntercityTripScreenState
     final destCity =
         (widget.tripData['destinationAddress'] ?? 'Yurimaguas').toString();
     final carFare =
-        (widget.tripData['fareAmount'] as num?)?.toDouble() ?? 45.00;
+        (widget.tripData['fareAmount'] as num?)?.toDouble() ?? 30.00;
     final seatNumber = (widget.tripData['seatNumber'] as num?)?.toInt() ?? 2;
     final departureLabel =
         (widget.tripData['departureLabel'] ?? 'Hoy, 14:30').toString();

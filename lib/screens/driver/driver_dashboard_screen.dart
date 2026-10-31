@@ -116,44 +116,25 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
       if (user == null) return;
       
       final pos = _driverPosition ?? await LocationService.instance.current();
+      _fs.updateDriverLocation(_uid, pos.latitude, pos.longitude).catchError((_) {});
 
-      // Guardar todo en 'users' (colección principal del conductor)
-      await FirebaseFirestore.instance.collection('users').doc(_uid).set({
-        'isApproved': true,
-        'status': 'approved',
-        'role': 'driver',
-        'isAvailable': true,
-        'planPaymentStatus': 'active',
-        'planExpiresAt': Timestamp.fromDate(DateTime.now().add(const Duration(days: 30))),
-        'planName': 'Plan Pruebas Activo',
-        'currentLatitude': pos.latitude,
-        'currentLongitude': pos.longitude,
-        'latitude': pos.latitude,
-        'longitude': pos.longitude,
-        'locationUpdatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-
-      // Sincronizar en 'drivers' por compatibilidad
-      await FirebaseFirestore.instance.collection('drivers').doc(_uid).set({
-        'isAvailable': true,
-        'planPaymentStatus': 'active',
-        'planExpiresAt': Timestamp.fromDate(DateTime.now().add(const Duration(days: 30))),
-        'planName': 'Plan Pruebas Activo',
-        'currentLatitude': pos.latitude,
-        'currentLongitude': pos.longitude,
-        'vehicleType': user.vehicleType ?? 'MotoTaxi',
-        'locationUpdatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-
-      if (mounted) {
-        setState(() {
-          _available = true;
-          _hasActivePlan = true;
-        });
-        _updateTripAlertSubscription();
+      // Si el usuario tenia un plan ficticio de pruebas previo, limpiarlo para reflejar el estado real
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(_uid).get();
+      if (userDoc.exists) {
+        final data = userDoc.data();
+        final planName = data?['planName']?.toString() ?? '';
+        if (planName.contains('Plan Pruebas')) {
+          await FirebaseFirestore.instance.collection('users').doc(_uid).update({
+            'planPaymentStatus': FieldValue.delete(),
+            'planName': FieldValue.delete(),
+            'planExpiresAt': FieldValue.delete(),
+            'isAvailable': false,
+          });
+          _fs.setDriverAvailability(_uid, false).catchError((_) {});
+        }
       }
     } catch (e) {
-      debugPrint('Error en _ensureDriverApprovedAndReady: $e');
+      debugPrint('Error en _ensureDriverApprovedAndReady: ');
     }
   }
 
@@ -206,7 +187,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
       debugPrint('[DRIVER-DISPATCH] tripId: ${trip.id}, dispatchIndex: ${trip.dispatchIndex}, currentDispatchDriverId: ${trip.currentDispatchDriverId}, mi uid: $_uid -> inelegible: _driverPosition es null');
       return false;
     }
-    if (!_available || (!_hasActivePlan && !AppConfig.demoFallback)) {
+    if (!_available || !_hasActivePlan) {
       debugPrint('[DRIVER-DISPATCH] tripId: ${trip.id}, dispatchIndex: ${trip.dispatchIndex}, currentDispatchDriverId: ${trip.currentDispatchDriverId}, mi uid: $_uid -> inelegible: _available ($_available) o _hasActivePlan ($_hasActivePlan) es falso');
       return false;
     }
@@ -356,11 +337,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
                 ? expiresAt.toDate()
                 : null;
             final hasNotExpired = expiryDate?.isAfter(DateTime.now()) ?? false;
+            final planName = data?['planName']?.toString() ?? '';
+            final isMockPlan = planName.contains('Plan Pruebas');
             final hasActivePlan =
-                data?['planPaymentStatus'] == 'active' && hasNotExpired;
+                data?['planPaymentStatus'] == 'active' && hasNotExpired && !isMockPlan;
             final isPending = data?['planPaymentStatus'] == 'pending';
             final isRejected = data?['planPaymentStatus'] == 'rejected';
-            final dbIsAvailable = data?['isAvailable'] ?? (AppConfig.demoFallback ? true : false);
+            final dbIsAvailable = data?['isAvailable'] == true;
 
             _planExpiryTimer?.cancel();
             if (hasActivePlan && expiryDate != null) {
@@ -376,10 +359,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
 
             if (!mounted) return;
             setState(() {
-              _hasActivePlan = hasActivePlan || AppConfig.demoFallback;
+              _hasActivePlan = hasActivePlan;
               _planPaymentPending = isPending;
               _planPaymentRejected = isRejected;
-              _available = (hasActivePlan || AppConfig.demoFallback) && dbIsAvailable;
+              _available = hasActivePlan && dbIsAvailable;
             });
             _updateTripAlertSubscription();
           },
@@ -481,30 +464,19 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
 
   Future<void> _toggleAvailability(bool value) async {
     if (value && !_hasActivePlan) {
-      if (AppConfig.demoFallback) {
-        setState(() {
-          _hasActivePlan = true;
-          _available = true;
-        });
-        final testPlanData = {
-          'isAvailable': true,
-          'planPaymentStatus': 'active',
-          'planExpiresAt': Timestamp.fromDate(DateTime.now().add(const Duration(days: 30))),
-          'planName': 'Plan Pruebas',
-        };
-        await FirebaseFirestore.instance.collection('users').doc(_uid).set(testPlanData, SetOptions(merge: true));
-        await FirebaseFirestore.instance.collection('drivers').doc(_uid).set(testPlanData, SetOptions(merge: true));
-        _updateTripAlertSubscription();
-        return;
-      }
       if (_planPaymentPending) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Tu comprobante sigue pendiente de validación.'),
+            content: Text('Tu comprobante sigue pendiente de validación por el administrador.'),
           ),
         );
         return;
       }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Necesitas un plan activo validado para recibir viajes y estar disponible.'),
+        ),
+      );
       final submitted = await Navigator.of(context).push<bool>(
         MaterialPageRoute<bool>(
           builder: (_) => const DriverPlanPaymentScreen(),
@@ -610,7 +582,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
   // Lógica de elegibilidad y prioridad
   bool _isDriverEligibleForTrip(Trip trip) {
     if (_driverPosition == null) return false;
-    if (!_available || (!_hasActivePlan && !AppConfig.demoFallback)) return false;
+    if (!_available || !_hasActivePlan) return false;
 
     final bool isMyTurn = trip.currentDispatchDriverId == _uid;
     final bool isOpenRequest = trip.currentDispatchDriverId == null ||

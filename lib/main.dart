@@ -23,6 +23,9 @@ import 'screens/passenger/chat_screen.dart';
 import 'screens/shared/profile_screen.dart';
 import 'screens/auth/role-select.dart';
 import 'screens/driver/driver_main_layout.dart';
+import 'screens/driver/pending_account_screen.dart';
+import 'models/user_model.dart';
+import 'services/auth_service.dart';
 
 // 1. LLAVE GLOBAL DE NAVEGACIÓN PARA LAS NOTIFICACIONES
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -220,8 +223,38 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _go() async {
-    await Future.delayed(const Duration(milliseconds: 3000));
-    if (mounted) Navigator.of(context).pushReplacementNamed('/login');
+    final minSplashWait = Future.delayed(const Duration(milliseconds: 2200));
+    final autoLoginWait = AuthService.instance.tryAutoLogin();
+
+    final results = await Future.wait([minSplashWait, autoLoginWait]);
+    final user = results[1] as User?;
+
+    if (!mounted) return;
+
+    if (user == null) {
+      Navigator.of(context).pushReplacementNamed('/login');
+      return;
+    }
+
+    if (user.name == null || user.name!.trim().isEmpty) {
+      Navigator.of(context).pushReplacementNamed('/profile-setup');
+    } else if (user.role == UserRole.admin ||
+        user.role == UserRole.operator ||
+        user.role == UserRole.support ||
+        user.role == UserRole.control) {
+      Navigator.of(context).pushNamedAndRemoveUntil('/admin', (r) => false);
+    } else if (user.role == UserRole.driver) {
+      if (user.status == 'approved') {
+        Navigator.of(context).pushNamedAndRemoveUntil('/driver', (r) => false);
+      } else {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const PendingAccountScreen()),
+          (r) => false,
+        );
+      }
+    } else {
+      Navigator.of(context).pushNamedAndRemoveUntil('/home', (r) => false);
+    }
   }
 
   @override
