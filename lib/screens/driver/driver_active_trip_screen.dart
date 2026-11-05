@@ -553,7 +553,7 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
                           Row(
                             children: [
                               Expanded(
-                                child: OutlinedButton.icon(
+                                child: OutlinedButton(
                                   onPressed: () => Navigator.of(context).push(
                                     MaterialPageRoute<void>(
                                       builder: (_) => DriverTripChatScreen(
@@ -565,16 +565,14 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
                                       ),
                                     ),
                                   ),
-                                  icon: const Icon(Icons.chat_bubble_outline),
-                                  label: const Text('Chat'),
+                                  child: const Icon(Icons.chat_bubble_outline),
                                 ),
                               ),
                               const SizedBox(width: 8),
                               Expanded(
-                                child: OutlinedButton.icon(
+                                child: OutlinedButton(
                                   onPressed: _callPassenger,
-                                  icon: const Icon(Icons.call_outlined),
-                                  label: const Text('Llamar'),
+                                  child: const Icon(Icons.call_outlined),
                                 ),
                               ),
                               const SizedBox(width: 8),

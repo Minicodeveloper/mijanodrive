@@ -626,7 +626,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                       Row(
                         children: [
                           Expanded(
-                            child: OutlinedButton.icon(
+                            child: OutlinedButton(
                               onPressed: () => Navigator.of(context).push(
                                 MaterialPageRoute<void>(
                                   builder: (_) => DriverTripChatScreen(
@@ -640,56 +640,60 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                                             .currentUser
                                             ?.name ??
                                         'Pasajero',
-                                    conversationTitle: _driver != null
-                                        ? 'Conductor'
-                                        : 'Chat del viaje',
+                                    conversationTitle: (trip?.driverName != null &&
+                                            trip!.driverName!.isNotEmpty)
+                                        ? trip.driverName!
+                                        : (_driver != null && _driver!.name != 'Sin nombre')
+                                            ? _driver!.name
+                                            : 'Conductor',
                                   ),
                                 ),
                               ),
-                              icon: const Icon(Icons.chat),
-                              label: const Text('Chat'),
+                              child: const Icon(Icons.chat),
                             ),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
-  child: OutlinedButton.icon(
-    onPressed: () async {
-      // 1. Intentar buscar si ya lo tenemos en tripData
-      String phone = widget.tripData['driverPhone'] ?? widget.tripData['phone'] ?? '';
+                            child: OutlinedButton(
+                              onPressed: () async {
+                                // 1. Intentar buscar si ya lo tenemos en tripData, trip o _driver
+                                String phone = widget.tripData['driverPhone'] ??
+                                    widget.tripData['phone'] ??
+                                    _driver?.phone ??
+                                    '';
 
-      // 2. Si no está en tripData, buscarlo en Firestore en la colección 'users' usando el driverId
-      if (phone.isEmpty) {
-        final driverId = widget.tripData['driverId'];
-        if (driverId != null && driverId.toString().isNotEmpty) {
-          try {
-            final driverDoc = await FirebaseFirestore.instance
-                .collection('users')
-                .doc(driverId)
-                .get();
-            
-            if (driverDoc.exists) {
-              phone = driverDoc.data()?['phone'] ?? '';
-            }
-          } catch (e) {
-            // Error silently handled
-          }
-        }
-      }
+                                // 2. Si no está, buscarlo en Firestore en la colección 'users' usando el driverId
+                                if (phone.isEmpty) {
+                                  final driverId = widget.tripData['driverId'] ?? trip?.driverId;
+                                  if (driverId != null && driverId.toString().isNotEmpty) {
+                                    try {
+                                      final driverDoc = await FirebaseFirestore.instance
+                                          .collection('users')
+                                          .doc(driverId.toString())
+                                          .get();
+                                      
+                                      if (driverDoc.exists) {
+                                        phone = driverDoc.data()?['phone'] ?? '';
+                                      }
+                                    } catch (e) {
+                                      // Error silently handled
+                                    }
+                                  }
+                                }
 
-      if (phone.isEmpty) {
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('El teléfono del conductor no está disponible')),
-        );
-        return;
-      }
+                                if (phone.isEmpty) {
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('El teléfono del conductor no está disponible')),
+                                  );
+                                  return;
+                                }
 
-      _makePhoneCall(phone);
-    },
-    icon: const Icon(Icons.call),
-    label: const Text('Llamar'),
-  ),
-),
+                                _makePhoneCall(phone);
+                              },
+                              child: const Icon(Icons.call),
+                            ),
+                          ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: ElevatedButton.icon(
