@@ -509,12 +509,6 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                             icon: const Icon(Icons.navigation, color: Colors.blue),
                             tooltip: 'Navegar en Google Maps',
                           ),
-                          IconButton(
-                            onPressed: () {
-                              Navigator.of(context).pop();
-                            },
-                            icon: const Icon(Icons.close),
-                          ),
                         ],
                       ),
                       const SizedBox(height: 10),

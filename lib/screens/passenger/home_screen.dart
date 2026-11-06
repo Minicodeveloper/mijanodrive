@@ -1721,19 +1721,33 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  void _clearRoute() {
-    _searchTimer?.cancel();
+  void _clearOrigin() {
+    _originDebounce?.cancel();
+    _originSessionToken = null;
     setState(() {
-      _originLatLng = null;
-      _destinationLatLng = null;
-      _mapPickTarget = null;
       _originController.clear();
-      _destinationController.clear();
-      _markers.clear();
+      _originLatLng = null;
+      _originSuggestions = [];
+      _isSearchingOrigin = false;
+      _markers.removeWhere((m) => m.markerId.value == 'origin');
       _polylines.clear();
       _tripSelected = false;
       _isSearchingDriver = false;
-      _estimatedFare = 0.00;
+    });
+  }
+
+  void _clearDestination() {
+    _destinationDebounce?.cancel();
+    _destinationSessionToken = null;
+    setState(() {
+      _destinationController.clear();
+      _destinationLatLng = null;
+      _destinationSuggestions = [];
+      _isSearchingDestination = false;
+      _markers.removeWhere((m) => m.markerId.value == 'destination');
+      _polylines.clear();
+      _tripSelected = false;
+      _isSearchingDriver = false;
     });
   }
 
@@ -2485,6 +2499,35 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                 ),
                               ),
+                              if (_mapPickedAddress.isNotEmpty)
+                                InkWell(
+                                  onTap: () {
+                                    _reverseGeocodeDebounce?.cancel();
+                                    setState(() {
+                                      _mapPickedAddress = '';
+                                      if (isPickingOrigin) {
+                                        _originController.clear();
+                                        _originLatLng = null;
+                                        _markers.removeWhere((m) => m.markerId.value == 'origin');
+                                      } else {
+                                        _destinationController.clear();
+                                        _destinationLatLng = null;
+                                        _markers.removeWhere((m) => m.markerId.value == 'destination');
+                                      }
+                                      _polylines.clear();
+                                      _tripSelected = false;
+                                    });
+                                  },
+                                  borderRadius: BorderRadius.circular(20),
+                                  child: const Padding(
+                                    padding: EdgeInsets.all(4),
+                                    child: Icon(
+                                      Icons.clear,
+                                      size: 18,
+                                      color: Colors.black54,
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
                         ),
@@ -2888,7 +2931,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       color: Colors.black54,
                                       size: 20,
                                     ),
-                                    onPressed: _clearRoute,
+                                    onPressed: _clearOrigin,
                                   ),
                                 IconButton(
                                   tooltip: 'Seleccionar origen en el mapa',
@@ -3001,7 +3044,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       color: Colors.black54,
                                       size: 20,
                                     ),
-                                    onPressed: _clearRoute,
+                                    onPressed: _clearDestination,
                                   ),
                                 IconButton(
                                   tooltip: 'Seleccionar destino en el mapa',

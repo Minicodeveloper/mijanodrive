@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -45,6 +46,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
   StreamSubscription<Position>? _locationSubscription;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
   _driverPlanSubscription;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+  _driverCustomPlanSubscription;
+  Map<String, dynamic>? _lastUserData;
+  Map<String, dynamic>? _lastPlanData;
   Timer? _planExpiryTimer;
 
   static const double _maxTripDistanceKm = AppConfig.kMaxDispatchRadiusKm;
@@ -60,7 +65,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
 
   String get _city => _auth.currentUser?.city ?? 'Tarapoto';
 
-  String get _uid => _auth.currentUser?.uid ?? 'demo-driver';
+  String get _uid =>
+      fb.FirebaseAuth.instance.currentUser?.uid ??
+      _auth.currentUser?.uid ??
+      'demo-driver';
 
   DateTime? _lastPublishedTime;
 
@@ -70,6 +78,9 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
   late final Stream<DocumentSnapshot<Map<String, dynamic>>> _driverPlanDocStream;
   late final Stream<List<Map<String, dynamic>>> _plansStream;
   late final Stream<List<Trip>> _pendingTripsStream;
+  late final Stream<Trip?> _activeUrbanTripStream;
+  StreamSubscription<Trip?>? _activeUrbanTripSub;
+  bool _hasOpenedActiveTripScreen = false;
 
   StreamSubscription<List<Trip>>? _tripAlertSub;
   bool _isAlertDialogOpen = false;
@@ -102,6 +113,16 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
         .snapshots();
     _plansStream = _fs.streamPlans();
     _pendingTripsStream = _fs.pendingTrips(city: _city);
+    _activeUrbanTripStream = FirebaseFirestore.instance
+        .collection('trips')
+        .where('driverId', isEqualTo: _uid)
+        .where('status', whereIn: ['accepted', 'arrived', 'active', 'in_progress'])
+        .limit(1)
+        .snapshots()
+        .map((q) => q.docs.isNotEmpty ? Trip.fromFirestore(q.docs.first) : null);
+
+    _listenToActiveUrbanTrip();
+    _checkAndResumeActiveUrbanTrip();
 
     _watchDriverPlan();
     _startLocationTracking();
@@ -131,6 +152,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
             'isAvailable': false,
           });
           _fs.setDriverAvailability(_uid, false).catchError((_) {});
+        } else {
+          final expiresAt = (data?['planExpiresAt'] as Timestamp?)?.toDate();
+          final hasNotExpired = expiresAt != null && expiresAt.isAfter(DateTime.now());
+          final hasActivePlan = data?['planPaymentStatus'] == 'active' && hasNotExpired;
+          if (hasActivePlan && data?['isAvailable'] == null) {
+            _fs.setDriverAvailability(_uid, true).catchError((_) {});
+          }
         }
       }
     } catch (e) {
@@ -148,8 +176,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _tripAlertSub?.cancel();
+    _activeUrbanTripSub?.cancel();
     _locationSubscription?.cancel();
     _driverPlanSubscription?.cancel();
+    _driverCustomPlanSubscription?.cancel();
     _planExpiryTimer?.cancel();
     super.dispose();
   }
@@ -160,6 +190,57 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
       debugPrint('[DRIVER-DISPATCH] App resumed: limpiando _shownAlertTripIds y reiniciando suscripción');
       _shownAlertTripIds.clear();
       _updateTripAlertSubscription();
+      _checkAndResumeActiveUrbanTrip();
+    }
+  }
+
+  void _listenToActiveUrbanTrip() {
+    _activeUrbanTripSub?.cancel();
+    _activeUrbanTripSub = _activeUrbanTripStream.listen((activeTrip) {
+      if (!mounted) return;
+      if (activeTrip != null) {
+        if (!_hasOpenedActiveTripScreen) {
+          _hasOpenedActiveTripScreen = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => DriverActiveMapScreen(trip: activeTrip),
+              ),
+            );
+          });
+        }
+      } else {
+        _hasOpenedActiveTripScreen = false;
+      }
+    });
+  }
+
+  Future<void> _checkAndResumeActiveUrbanTrip() async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('trips')
+          .where('driverId', isEqualTo: _uid)
+          .where('status', whereIn: ['accepted', 'arrived', 'active', 'in_progress'])
+          .limit(1)
+          .get();
+
+      if (snap.docs.isNotEmpty && mounted) {
+        final activeTrip = Trip.fromFirestore(snap.docs.first);
+        if (!_hasOpenedActiveTripScreen) {
+          _hasOpenedActiveTripScreen = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => DriverActiveMapScreen(trip: activeTrip),
+              ),
+            );
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('[DRIVER-ACTIVE-TRIP] Error al verificar viaje activo: $e');
     }
   }
 
@@ -329,51 +410,81 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
 
 
   void _watchDriverPlan() {
+    _driverPlanSubscription?.cancel();
+    _driverCustomPlanSubscription?.cancel();
+
     _driverPlanSubscription = _driverDocStream.listen(
-          (snapshot) {
-            final data = snapshot.data();
-            final expiresAt = data?['planExpiresAt'];
-            final expiryDate = expiresAt is Timestamp
-                ? expiresAt.toDate()
-                : null;
-            final hasNotExpired = expiryDate?.isAfter(DateTime.now()) ?? false;
-            final planName = data?['planName']?.toString() ?? '';
-            final isMockPlan = planName.contains('Plan Pruebas');
-            final hasActivePlan =
-                data?['planPaymentStatus'] == 'active' && hasNotExpired && !isMockPlan;
-            final isPending = data?['planPaymentStatus'] == 'pending';
-            final isRejected = data?['planPaymentStatus'] == 'rejected';
-            final dbIsAvailable = data?['isAvailable'] == true;
+      (snapshot) {
+        _lastUserData = snapshot.data();
+        _evaluatePlanAndAvailability(_lastUserData, _lastPlanData);
+      },
+      onError: (Object error) {
+        if (!mounted) return;
+        if (error.toString().contains('permission-denied')) {
+          return;
+        }
+      },
+    );
 
-            _planExpiryTimer?.cancel();
-            if (hasActivePlan && expiryDate != null) {
-              _planExpiryTimer = Timer(expiryDate.difference(DateTime.now()), () {
-                if (!mounted) return;
-                setState(() {
-                  _hasActivePlan = false;
-                  _available = false;
-                });
-                _fs.setDriverAvailability(_uid, false).catchError((error) {});
-              });
-            }
+    _driverCustomPlanSubscription = _driverPlanDocStream.listen(
+      (snapshot) {
+        _lastPlanData = snapshot.data();
+        _evaluatePlanAndAvailability(_lastUserData, _lastPlanData);
+      },
+      onError: (Object error) {
+        if (!mounted) return;
+        if (error.toString().contains('permission-denied')) {
+          return;
+        }
+      },
+    );
+  }
 
-            if (!mounted) return;
-            setState(() {
-              _hasActivePlan = hasActivePlan;
-              _planPaymentPending = isPending;
-              _planPaymentRejected = isRejected;
-              _available = hasActivePlan && dbIsAvailable;
-            });
-            _updateTripAlertSubscription();
-          },
-          onError: (Object error) {
-            if (!mounted) return;
-            
-            if (error.toString().contains('permission-denied')) {
-              return;
-            }
-          },
-        );
+  void _evaluatePlanAndAvailability(
+    Map<String, dynamic>? userData,
+    Map<String, dynamic>? planData,
+  ) {
+    final rawExpiresAt = userData?['planExpiresAt'] ?? planData?['expiresAt'];
+    final expiryDate = rawExpiresAt is Timestamp ? rawExpiresAt.toDate() : null;
+    final hasNotExpired = expiryDate?.isAfter(DateTime.now()) ?? false;
+    final planName = (planData?['planName'] ?? userData?['planName'] ?? '').toString();
+    final isMockPlan = planName.contains('Plan Pruebas');
+
+    final hasActivePlan = !isMockPlan &&
+        hasNotExpired &&
+        (userData?['planPaymentStatus'] == 'active' || planData?['status'] == 'active');
+
+    final isPending = userData?['planPaymentStatus'] == 'pending' || planData?['status'] == 'pending';
+    final isRejected = userData?['planPaymentStatus'] == 'rejected' || planData?['status'] == 'rejected';
+
+    // El interruptor solo se apaga si el conductor lo apagó manualmente
+    final manualOffline = userData?['manualOffline'] == true;
+    final effectiveAvailable = hasActivePlan && !manualOffline;
+
+    _planExpiryTimer?.cancel();
+    if (hasActivePlan && expiryDate != null) {
+      _planExpiryTimer = Timer(expiryDate.difference(DateTime.now()), () {
+        if (!mounted) return;
+        setState(() {
+          _hasActivePlan = false;
+          _available = false;
+        });
+        _fs.setDriverAvailability(_uid, false).catchError((error) {});
+      });
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _hasActivePlan = hasActivePlan;
+      _planPaymentPending = isPending;
+      _planPaymentRejected = isRejected;
+      _available = effectiveAvailable;
+    });
+
+    if (hasActivePlan && !manualOffline && userData?['isAvailable'] != true) {
+      _fs.setDriverAvailability(_uid, true).catchError((_) {});
+    }
+    _updateTripAlertSubscription();
   }
 
   /// La ubicación del conductor.
@@ -504,7 +615,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _available = false;
+        _available = !value;
       });
       _updateTripAlertSubscription();
       ScaffoldMessenger.of(context).showSnackBar(
@@ -549,6 +660,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
 
       if (!mounted) return;
 
+      _hasOpenedActiveTripScreen = true;
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => DriverActiveMapScreen(trip: trip),
@@ -1402,19 +1514,31 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
             ),
           ),
 
-          // Viajes pendientes o Viaje Interprovincial en curso
+
+
+          // Viajes pendientes o Viaje Interprovincial en curso o Viaje Urbano en curso
           Expanded(
             flex: 2,
             child: isCarTripActive
                 ? _buildActiveCarTripPanel(car)
-                : (!_available
-                    ? const Center(
-                        child: Text(
-                          'Actívate para recibir viajes',
-                          style: TextStyle(color: Colors.black54),
-                        ),
-                      )
-                    : StreamBuilder<List<Trip>>(
+                : StreamBuilder<Trip?>(
+                    stream: _activeUrbanTripStream,
+                    builder: (context, activeSnap) {
+                      final activeTrip = activeSnap.data;
+                      if (activeTrip != null) {
+                        return _buildActiveUrbanTripPanel(activeTrip);
+                      }
+
+                      if (!_available) {
+                        return const Center(
+                          child: Text(
+                            'Actívate para recibir viajes',
+                            style: TextStyle(color: Colors.black54),
+                          ),
+                        );
+                      }
+
+                      return StreamBuilder<List<Trip>>(
                         stream: _pendingTripsStream,
                         builder: (context, snap) {
                           if (snap.connectionState == ConnectionState.waiting) {
@@ -1482,12 +1606,176 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
                             },
                           );
                         },
-                      )),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
     );
       },
+    );
+  }
+
+  Widget _buildActiveUrbanTripPanel(Trip trip) {
+    String statusTitle;
+    IconData statusIcon;
+    Color statusColor;
+
+    switch (trip.status) {
+      case TripStatus.accepted:
+        statusTitle = 'En camino al pasajero';
+        statusIcon = Icons.directions_car;
+        statusColor = Colors.orange.shade800;
+        break;
+      case TripStatus.arrived:
+        statusTitle = 'Llegaste al punto de recojo';
+        statusIcon = Icons.place;
+        statusColor = Colors.blue.shade800;
+        break;
+      case TripStatus.active:
+        statusTitle = 'Viaje en curso';
+        statusIcon = Icons.navigation;
+        statusColor = Colors.green.shade800;
+        break;
+      default:
+        statusTitle = 'Viaje en curso';
+        statusIcon = Icons.directions_car;
+        statusColor = Colors.black87;
+    }
+
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: MijanoTheme.sol,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(statusIcon, color: Colors.black, size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      statusTitle,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: statusColor,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Pasajero: ${trip.passengerName ?? "Cliente"}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Text(
+                  'S/. ${trip.fareAmount.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: MijanoTheme.cream,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.black12),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.trip_origin, size: 16, color: Colors.green),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        trip.originAddress ?? 'Origen',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12.5),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const Icon(Icons.location_on, size: 16, color: Colors.red),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        trip.destinationAddress ?? 'Destino',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const Spacer(),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: MijanoTheme.sol,
+              foregroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => DriverActiveMapScreen(trip: trip),
+                ),
+              );
+            },
+            icon: const Icon(Icons.map, size: 20),
+            label: const Text(
+              'Continuar viaje en curso',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

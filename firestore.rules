@@ -114,9 +114,8 @@ service cloud.firestore {
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAvailable'])
             || request.resource.data.isAvailable == false
             || (
-              resource.data.get('planPaymentStatus', '') == 'active'
-              && resource.data.get('planExpiresAt', request.time) is timestamp
-              && resource.data.planExpiresAt > request.time
+              (resource.data.get('planPaymentStatus', '') == 'active' && resource.data.get('planExpiresAt', request.time) is timestamp && resource.data.planExpiresAt > request.time)
+              || (get(/databases/$(database)/documents/users/$(driverId)).data.get('planPaymentStatus', '') == 'active' && get(/databases/$(database)/documents/users/$(driverId)).data.get('planExpiresAt', request.time) is timestamp && get(/databases/$(database)/documents/users/$(driverId)).data.planExpiresAt > request.time)
             ))
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['planPaymentStatus'])
             || request.resource.data.planPaymentStatus == 'pending')

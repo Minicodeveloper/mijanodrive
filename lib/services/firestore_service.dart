@@ -99,10 +99,14 @@ class FirestoreService {
   }
 
   Future<void> setDriverAvailability(String uid, bool available) async {
-    final batch = _db.batch();
-    batch.set(_db.collection('users').doc(uid), {'isAvailable': available}, SetOptions(merge: true));
-    batch.set(_db.collection('drivers').doc(uid), {'isAvailable': available}, SetOptions(merge: true));
-    await batch.commit();
+    final data = {
+      'isAvailable': available,
+      'manualOffline': !available,
+    };
+    await _db.collection('users').doc(uid).set(data, SetOptions(merge: true));
+    try {
+      await _db.collection('drivers').doc(uid).set(data, SetOptions(merge: true));
+    } catch (_) {}
   }
 
   Future<void> updateDriverLocation(String uid, double lat, double lng) async {
@@ -113,10 +117,10 @@ class FirestoreService {
       'longitude': lng,
       'locationUpdatedAt': FieldValue.serverTimestamp(),
     };
-    final batch = _db.batch();
-    batch.set(_db.collection('users').doc(uid), data, SetOptions(merge: true));
-    batch.set(_db.collection('drivers').doc(uid), data, SetOptions(merge: true));
-    await batch.commit();
+    await _db.collection('users').doc(uid).set(data, SetOptions(merge: true));
+    try {
+      await _db.collection('drivers').doc(uid).set(data, SetOptions(merge: true));
+    } catch (_) {}
   }
 
   // ---- Viajes ----
