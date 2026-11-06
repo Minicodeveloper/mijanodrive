@@ -181,7 +181,7 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                         textEditingController: _originController,
                         googleAPIKey: "AIzaSyD6cjdfoAhxKfZr--aCqvshyiS8jB7V_Sw",
                         debounceTime: 600,
-                        isLatLngRequired: true,
+                        isLatLngRequired: false,
                         countries: const ["pe"], // Restricción solo a Perú
                         inputDecoration: InputDecoration(
                           labelText: 'De:',
@@ -195,15 +195,20 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                           ),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                         ),
-                        itemClick: (Prediction prediction) {
+                        itemClick: (Prediction prediction) async {
                           _originController.text = prediction.description ?? "";
                           _originController.selection = TextSelection.fromPosition(
                             TextPosition(offset: _originController.text.length),
                           );
                           
-                          if (prediction.lat != null && prediction.lng != null) {
-                            _originLat = double.tryParse(prediction.lat!);
-                            _originLng = double.tryParse(prediction.lng!);
+                          if (prediction.description != null && prediction.description!.isNotEmpty) {
+                            try {
+                              final locs = await geo.locationFromAddress(prediction.description!);
+                              if (locs.isNotEmpty) {
+                                _originLat = locs.first.latitude;
+                                _originLng = locs.first.longitude;
+                              }
+                            } catch (_) {}
                           }
                         },
                         itemBuilder: (context, index, Prediction prediction) {
@@ -241,7 +246,7 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                         textEditingController: _destinationController,
                         googleAPIKey: "AIzaSyD6cjdfoAhxKfZr--aCqvshyiS8jB7V_Sw",
                         debounceTime: 600,
-                        isLatLngRequired: true,
+                        isLatLngRequired: false,
                         countries: const ["pe"], // Restricción solo a Perú
                         inputDecoration: InputDecoration(
                           hintText: 'A: ¿A dónde vas?',
@@ -259,12 +264,7 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
                             TextPosition(offset: _destinationController.text.length),
                           );
 
-                          // Capturar lat y lng si el componente las provee directamente
-                          if (prediction.lat != null && prediction.lng != null) {
-                            _destinationLat = double.tryParse(prediction.lat!);
-                            _destinationLng = double.tryParse(prediction.lng!);
-                          } else if (prediction.description != null) {
-                            // Respaldo por geocodificación rápida si no vienen explícitas
+                          if (prediction.description != null && prediction.description!.isNotEmpty) {
                             try {
                               final locs = await geo.locationFromAddress(prediction.description!);
                               if (locs.isNotEmpty) {

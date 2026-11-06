@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:uuid/uuid.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -57,6 +58,11 @@ class _HomeScreenState extends State<HomeScreen> {
   String _mapPickedAddress = '';
   bool _isReverseGeocoding = false;
   Timer? _reverseGeocodeDebounce;
+  Timer? _originDebounce;
+  Timer? _destinationDebounce;
+  String? _originSessionToken;
+  String? _destinationSessionToken;
+  final Uuid _uuid = const Uuid();
 
   bool _tripSelected = false;
   bool _isSearchingDriver = false;
@@ -153,6 +159,8 @@ class _HomeScreenState extends State<HomeScreen> {
     _searchTimer?.cancel();
     _dispatchTimer?.cancel();
     _reverseGeocodeDebounce?.cancel();
+    _originDebounce?.cancel();
+    _destinationDebounce?.cancel();
     _pricingSubscription?.cancel();
     _activeTripSubscription?.cancel();
     super.dispose();
@@ -537,8 +545,11 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _onOriginSearchChanged(String query) async {
-    if (query.isEmpty) {
+  void _onOriginSearchChanged(String query) {
+    _originDebounce?.cancel();
+    final cleanQuery = query.trim();
+    if (cleanQuery.isEmpty) {
+      _originSessionToken = null;
       setState(() {
         _originSuggestions = [];
         _isSearchingOrigin = false;
@@ -546,41 +557,51 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    setState(() {
-      _isSearchingOrigin = true;
-    });
-
-    try {
-      final url = Uri.parse(
-        'https://maps.googleapis.com/maps/api/place/autocomplete/json'
-        '?input=${Uri.encodeComponent(query)}'
-        '&key=$_apiKey'
-        '&language=es'
-        '&components=country:pe',
-      );
-
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final List predictions = data['predictions'] ?? [];
-
-        List<String> resultados = predictions
-            .map<String>((prediction) => prediction['description'].toString())
-            .toList();
-
-        setState(() {
-          _originSuggestions = resultados;
-        });
-      }
-    } catch (e) {
+    _originDebounce = Timer(const Duration(milliseconds: 500), () async {
+      _originSessionToken ??= _uuid.v4();
       setState(() {
-        _originSuggestions = [];
+        _isSearchingOrigin = true;
       });
-    }
+
+      try {
+        final url = Uri.parse(
+          'https://maps.googleapis.com/maps/api/place/autocomplete/json'
+          '?input=${Uri.encodeComponent(cleanQuery)}'
+          '&key=$_apiKey'
+          '&language=es'
+          '&components=country:pe'
+          '&sessiontoken=$_originSessionToken',
+        );
+
+        final response = await http.get(url);
+        if (!mounted) return;
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          final List predictions = data['predictions'] ?? [];
+
+          List<String> resultados = predictions
+              .map<String>((prediction) => prediction['description'].toString())
+              .toList();
+
+          setState(() {
+            _originSuggestions = resultados;
+          });
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _originSuggestions = [];
+          });
+        }
+      }
+    });
   }
 
-  void _onDestinationSearchChanged(String query) async {
-    if (query.isEmpty) {
+  void _onDestinationSearchChanged(String query) {
+    _destinationDebounce?.cancel();
+    final cleanQuery = query.trim();
+    if (cleanQuery.isEmpty) {
+      _destinationSessionToken = null;
       setState(() {
         _destinationSuggestions = [];
         _isSearchingDestination = false;
@@ -588,40 +609,49 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    setState(() {
-      _isSearchingDestination = true;
-    });
-
-    try {
-      final url = Uri.parse(
-        'https://maps.googleapis.com/maps/api/place/autocomplete/json'
-        '?input=${Uri.encodeComponent(query)}'
-        '&key=$_apiKey'
-        '&language=es'
-        '&components=country:pe',
-      );
-
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final List predictions = data['predictions'] ?? [];
-
-        List<String> resultados = predictions
-            .map<String>((prediction) => prediction['description'].toString())
-            .toList();
-
-        setState(() {
-          _destinationSuggestions = resultados;
-        });
-      }
-    } catch (e) {
+    _destinationDebounce = Timer(const Duration(milliseconds: 500), () async {
+      _destinationSessionToken ??= _uuid.v4();
       setState(() {
-        _destinationSuggestions = [];
+        _isSearchingDestination = true;
       });
-    }
+
+      try {
+        final url = Uri.parse(
+          'https://maps.googleapis.com/maps/api/place/autocomplete/json'
+          '?input=${Uri.encodeComponent(cleanQuery)}'
+          '&key=$_apiKey'
+          '&language=es'
+          '&components=country:pe'
+          '&sessiontoken=$_destinationSessionToken',
+        );
+
+        final response = await http.get(url);
+        if (!mounted) return;
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          final List predictions = data['predictions'] ?? [];
+
+          List<String> resultados = predictions
+              .map<String>((prediction) => prediction['description'].toString())
+              .toList();
+
+          setState(() {
+            _destinationSuggestions = resultados;
+          });
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _destinationSuggestions = [];
+          });
+        }
+      }
+    });
   }
 
   void _selectOrigin(String place) async {
+    _originDebounce?.cancel();
+    _originSessionToken = null;
     setState(() {
       _originController.text = place;
       _originLatLng = null;
@@ -820,6 +850,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _selectDestination(String place) async {
+    _destinationDebounce?.cancel();
+    _destinationSessionToken = null;
     setState(() {
       _destinationController.text = place;
       _destinationLatLng = null;
