@@ -93,6 +93,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Timer? _searchTimer;
   Timer? _dispatchTimer;
+  Timer? _scheduledTripsTimer;
   String? _lastDispatchKey;
   bool _dispatchExhaustedUI = false;
   int _dispatchQueueLength = 0;
@@ -147,10 +148,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
     // Verificamos y mostramos los pop-ups programados para nuevos usuarios al iniciar
     _checkAndShowPopupAds();
+
+    _scheduledTripsTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      final user = AuthService.instance.currentUser;
+      if (user != null) {
+        FirestoreService.instance.checkAndActivateScheduledTrips(passengerId: user.uid);
+      }
+    });
   }
 
   @override
   void dispose() {
+    _scheduledTripsTimer?.cancel();
     _mapController?.dispose();
     _originController.dispose();
     _destinationController.dispose();
@@ -352,6 +361,8 @@ class _HomeScreenState extends State<HomeScreen> {
     if (user == null) return;
 
     try {
+      await FirestoreService.instance.checkAndActivateScheduledTrips(passengerId: user.uid);
+
       final querySnapshot = await FirebaseFirestore.instance
           .collection('trips')
           .where('passengerId', isEqualTo: user.uid)
@@ -369,10 +380,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
       final activeDocs = querySnapshot.docs.where((d) {
         final map = d.data();
-        final isScheduled =
-            map['serviceType'] == 'Programar viaje' ||
-            map['scheduledAt'] != null;
-        if (isScheduled && map['status'] == 'pending') {
+        if (map['status'] == 'scheduled') {
           return false;
         }
         return true;
@@ -1479,7 +1487,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   'scheduledAt': Timestamp.fromDate(
                                     scheduledTripAt,
                                   ),
-                                'status': 'pending',
+                                'status': isScheduled ? 'scheduled' : 'pending',
                                 'driverId': null,
                                 'completedAt': null,
                                 'createdAtMs':

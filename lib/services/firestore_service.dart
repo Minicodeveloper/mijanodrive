@@ -13,6 +13,7 @@ import '../admin/utils/driver_docs.dart';
 import 'auth_service.dart';
 import 'document_service.dart';
 import 'location_service.dart';
+import 'notification_service.dart';
 import '../config/app_config.dart';
 import '../models/plan_tier.dart';
 
@@ -369,6 +370,73 @@ class FirestoreService {
       .doc(id)
       .snapshots()
       .map((doc) => doc.exists ? Trip.fromFirestore(doc) : null);
+
+  /// Activa un viaje reservado individualmente convirtiéndolo en pending con despacho activo.
+  Future<bool> activateScheduledTrip(String tripId) async {
+    final docRef = _db.collection('trips').doc(tripId);
+    return await _db.runTransaction((tx) async {
+      final doc = await tx.get(docRef);
+      if (!doc.exists) return false;
+      final data = doc.data() as Map<String, dynamic>;
+      if (data['status'] != 'scheduled') return false;
+
+      final origin = data['origin'] as GeoPoint?;
+      if (origin == null) return false;
+      final city = data['city']?.toString();
+
+      final dispatchData = await _buildDispatchData(origin, city: city);
+      tx.update(docRef, {
+        'status': 'pending',
+        'activatedAt': FieldValue.serverTimestamp(),
+        ...dispatchData,
+      });
+      return true;
+    });
+  }
+
+  /// Verifica y activa viajes reservados que estén a 20 minutos o menos de su fecha y hora programada.
+  Future<int> checkAndActivateScheduledTrips({String? passengerId}) async {
+    try {
+      Query<Map<String, dynamic>> query = _db
+          .collection('trips')
+          .where('status', isEqualTo: 'scheduled');
+
+      if (passengerId != null && passengerId.isNotEmpty) {
+        query = query.where('passengerId', isEqualTo: passengerId);
+      }
+
+      final snap = await query.get();
+      if (snap.docs.isEmpty) return 0;
+
+      final now = DateTime.now();
+      // Se activa si faltan 20 minutos o menos para la hora programada (o si ya pasó)
+      final threshold = now.add(const Duration(minutes: 20));
+      int activatedCount = 0;
+
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        final scheduledAt = data['scheduledAt'];
+        if (scheduledAt is Timestamp) {
+          final scheduledDate = scheduledAt.toDate();
+          if (scheduledDate.isBefore(threshold)) {
+            final activated = await activateScheduledTrip(doc.id);
+            if (activated) {
+              activatedCount++;
+              final destination = data['destinationAddress']?.toString() ?? 'tu destino';
+              NotificationService.showSearchingDriverToPassenger(
+                tripId: doc.id,
+                destinationAddress: destination,
+              ).catchError((_) {});
+            }
+          }
+        }
+      }
+      return activatedCount;
+    } catch (e) {
+      debugPrint('[RESERVATIONS] Error al verificar activación de reservas: $e');
+      return 0;
+    }
+  }
 
   /// Viajes pendientes en una ciudad (para el conductor).
   Stream<List<Trip>> pendingTrips({String? city}) {
@@ -781,11 +849,13 @@ class FirestoreService {
     required String senderName,
     required String text,
   }) async {
+    final now = FieldValue.serverTimestamp();
     await _db.collection('trips').doc(tripId).collection('messages').add({
       'senderId': senderId,
       'senderName': senderName,
       'text': text,
-      'createdAt': FieldValue.serverTimestamp(),
+      'createdAt': now,
+      'timestamp': now,
     });
   }
 

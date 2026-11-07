@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -11,6 +13,7 @@ import '../../services/auth_service.dart';
 import '../../services/directions_service.dart';
 import '../../services/firestore_service.dart';
 import '../../services/location_service.dart';
+import '../../services/notification_service.dart';
 import '../../theme.dart';
 import '../../config/app_config.dart';
 import '../../utils/marker_icons.dart';
@@ -45,6 +48,10 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
       AuthService.instance.currentUser?.name ?? 'Conductor';
 
   DateTime? _lastPublishedTime;
+  StreamSubscription? _chatMessagesSub;
+  bool _isChatOpen = false;
+  bool _isInitialChatSnapshot = true;
+  final Set<String> _notifiedMessageIds = {};
 
   @override
   void initState() {
@@ -52,6 +59,7 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
     _loadPassenger();
     _loadCustomMarker();
     _startLocationTracking();
+    _listenToChatMessages();
   }
 
   Future<void> _loadCustomMarker() async {
@@ -62,8 +70,55 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
 
   @override
   void dispose() {
+    _chatMessagesSub?.cancel();
     _locationSubscription?.cancel();
     super.dispose();
+  }
+
+  void _listenToChatMessages() {
+    if (widget.trip.id.isEmpty) return;
+    _chatMessagesSub?.cancel();
+    _chatMessagesSub = FirebaseFirestore.instance
+        .collection('trips')
+        .doc(widget.trip.id)
+        .collection('messages')
+        .orderBy('createdAt', descending: false)
+        .snapshots()
+        .listen((snapshot) {
+      if (_isInitialChatSnapshot) {
+        _isInitialChatSnapshot = false;
+        for (final doc in snapshot.docs) {
+          _notifiedMessageIds.add(doc.id);
+        }
+        return;
+      }
+
+      final myUid = _driverId.isNotEmpty ? _driverId : (fb.FirebaseAuth.instance.currentUser?.uid ?? '');
+
+      for (final change in snapshot.docChanges) {
+        if (change.type == DocumentChangeType.added) {
+          final docId = change.doc.id;
+          final data = change.doc.data();
+          if (data == null) continue;
+          final senderId = data['senderId']?.toString() ?? '';
+
+          if (_notifiedMessageIds.contains(docId)) continue;
+          _notifiedMessageIds.add(docId);
+
+          if (senderId.isNotEmpty && senderId != myUid && !_isChatOpen) {
+            final senderName = data['senderName']?.toString() ?? (_passenger?.name ?? 'Pasajero');
+            final text = data['text']?.toString() ?? 'Tienes un nuevo mensaje';
+
+            NotificationService.showChatMessageNotification(
+              tripId: widget.trip.id,
+              senderName: senderName,
+              messageText: text,
+              conversationTitle: senderName,
+            );
+          }
+        }
+      }
+    });
   }
 
   Future<void> _loadPassenger() async {
@@ -554,17 +609,21 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
                             children: [
                               Expanded(
                                 child: OutlinedButton(
-                                  onPressed: () => Navigator.of(context).push(
-                                    MaterialPageRoute<void>(
-                                      builder: (_) => DriverTripChatScreen(
-                                        tripId: trip.id,
-                                        senderId: _driverId,
-                                        senderName: _driverName,
-                                        conversationTitle:
-                                            _passenger?.name ?? 'Pasajero',
+                                  onPressed: () async {
+                                    _isChatOpen = true;
+                                    await Navigator.of(context).push(
+                                      MaterialPageRoute<void>(
+                                        builder: (_) => DriverTripChatScreen(
+                                          tripId: trip.id,
+                                          senderId: _driverId,
+                                          senderName: _driverName,
+                                          conversationTitle:
+                                              _passenger?.name ?? 'Pasajero',
+                                        ),
                                       ),
-                                    ),
-                                  ),
+                                    );
+                                    _isChatOpen = false;
+                                  },
                                   child: const Icon(Icons.chat_bubble_outline),
                                 ),
                               ),

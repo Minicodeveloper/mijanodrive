@@ -129,6 +129,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
     _listenToPushAlerts();
     _loadCarMarker();
     _ensureDriverApprovedAndReady();
+    _fs.checkAndActivateScheduledTrips();
   }
 
   Future<void> _ensureDriverApprovedAndReady() async {
@@ -191,6 +192,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
       _shownAlertTripIds.clear();
       _updateTripAlertSubscription();
       _checkAndResumeActiveUrbanTrip();
+      _fs.checkAndActivateScheduledTrips();
     }
   }
 
@@ -749,6 +751,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
     }
   }
 
+  // ignore: unused_element
   Future<void> _sos() async {
     try {
       final pos = await LocationService.instance.current();
@@ -1202,13 +1205,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
         }
 
         return Scaffold(
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: MijanoTheme.signal,
-        foregroundColor: Colors.white,
-        onPressed: _sos,
-        icon: const Icon(Icons.emergency),
-        label: const Text('S.O.S.'),
-      ),
+      // floatingActionButton: FloatingActionButton.extended(
+      //   backgroundColor: MijanoTheme.signal,
+      //   foregroundColor: Colors.white,
+      //   onPressed: _sos,
+      //   icon: const Icon(Icons.emergency),
+      //   label: const Text('S.O.S.'),
+      // ),
       body: Column(
         children: [
           // Notificaciones (banner)

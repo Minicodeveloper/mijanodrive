@@ -29,10 +29,19 @@ class PassengerReservedTripsScreen extends StatefulWidget {
 class _PassengerReservedTripsScreenState
     extends State<PassengerReservedTripsScreen> {
   String _selectedFilter = 'activas'; // 'activas' | 'historial'
+  Timer? _scheduledTripsTimer;
 
   @override
   void initState() {
     super.initState();
+    final passengerId = AuthService.instance.currentUser?.uid;
+    if (passengerId != null && passengerId.isNotEmpty) {
+      FirestoreService.instance.checkAndActivateScheduledTrips(passengerId: passengerId);
+      _scheduledTripsTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+        FirestoreService.instance.checkAndActivateScheduledTrips(passengerId: passengerId);
+      });
+    }
+
     if (widget.openCreateOnStart) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
@@ -40,6 +49,12 @@ class _PassengerReservedTripsScreenState
         }
       });
     }
+  }
+
+  @override
+  void dispose() {
+    _scheduledTripsTimer?.cancel();
+    super.dispose();
   }
 
   void _openNewReservationSheet() {
@@ -434,6 +449,7 @@ class _PassengerReservedTripsScreenState
                           final carriesCargo = data['carriesCargo'] == true;
                           final isHighlighted = doc.id == widget.initialTripId;
                           final canCancel =
+                              rawStatus.toLowerCase() == 'scheduled' ||
                               rawStatus.toLowerCase() == 'pending' ||
                               rawStatus.toLowerCase() == 'accepted';
 
@@ -672,15 +688,22 @@ class _PassengerReservedTripsScreenState
 
   static String _statusLabel(String? status) {
     switch (status?.toLowerCase()) {
+      case 'scheduled':
+        return 'Programado';
+      case 'pending':
+        return 'Buscando conductor...';
       case 'accepted':
         return 'Conductor asignado';
+      case 'arrived':
+        return 'Conductor en el punto';
+      case 'active':
+      case 'in_progress':
+        return 'En curso';
       case 'cancelled':
         return 'Cancelado';
       case 'completed':
       case 'finalized':
         return 'Completado';
-      case 'pending':
-        return 'Programado';
       default:
         return status ?? 'Programado';
     }
@@ -688,16 +711,22 @@ class _PassengerReservedTripsScreenState
 
   static Color _statusColor(String? status) {
     switch (status?.toLowerCase()) {
+      case 'scheduled':
+        return const Color(0xFFD49B00);
+      case 'pending':
+        return Colors.orange.shade800;
       case 'accepted':
+      case 'arrived':
+      case 'active':
+      case 'in_progress':
         return Colors.green.shade700;
       case 'cancelled':
         return Colors.redAccent;
       case 'completed':
       case 'finalized':
         return Colors.blueGrey;
-      case 'pending':
       default:
-        return Colors.amber.shade900;
+        return const Color(0xFFD49B00);
     }
   }
 }
@@ -1179,9 +1208,12 @@ class _CreateReservationBottomSheetState
         'durationText': _durationText,
         'paymentMethod': _selectedPaymentMethod,
         'serviceType': 'Programar viaje',
+        'vehicleType': 'MotoTaxi',
+        'category': 'moto',
+        'city': user.city ?? 'Tarapoto',
         'carriesCargo': _carriesCargo,
         'scheduledAt': Timestamp.fromDate(scheduled),
-        'status': 'pending',
+        'status': 'scheduled',
         'driverId': null,
         'completedAt': null,
         'createdAtMs': DateTime.now().millisecondsSinceEpoch,

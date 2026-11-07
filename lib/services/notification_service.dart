@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fb;
+import '../screens/driver/driver_trip_chat_screen.dart';
+import 'auth_service.dart';
 
 class NotificationService {
   // LLAVE GLOBAL DECLARADA AQUÍ PARA EVITAR ERRORES DE REFERENCIA
@@ -41,6 +44,21 @@ class NotificationService {
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(channel);
+
+    // Canal para MENSAJES DE CHAT en viaje activo
+    const AndroidNotificationChannel chatChannel = AndroidNotificationChannel(
+      'trip_chat_channel',
+      'Mensajes de Chat',
+      description: 'Notificaciones de mensajes de chat en viajes activos',
+      importance: Importance.max,
+      playSound: true,
+      enableVibration: true,
+    );
+
+    await _notificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(chatChannel);
 
     // Si la app estaba cerrada y se abrió al pulsar la notificación
     final NotificationAppLaunchDetails? launchDetails =
@@ -277,6 +295,60 @@ class NotificationService {
       );
     } else if (type == 'trip_searching') {
       navigatorKey.currentState?.pushNamed('/home');
+    } else if (type == 'trip_chat') {
+      final tripId = parts.length > 1 ? parts[1] : '';
+      final senderName = parts.length > 2 ? parts[2] : 'Chat';
+      final conversationTitle = parts.length > 3 ? parts[3] : senderName;
+
+      final current = AuthService.instance.currentUser;
+      final currentUserId = current?.uid ?? fb.FirebaseAuth.instance.currentUser?.uid ?? '';
+      final currentUserName = current?.name ?? 'Usuario';
+
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(
+          builder: (_) => DriverTripChatScreen(
+            tripId: tripId,
+            senderId: currentUserId,
+            senderName: currentUserName,
+            conversationTitle: conversationTitle,
+          ),
+        ),
+      );
     }
+  }
+
+  /// Notificación para Nuevo Mensaje de Chat en viaje activo
+  static Future<void> showChatMessageNotification({
+    required String tripId,
+    required String senderName,
+    required String messageText,
+    required String conversationTitle,
+  }) async {
+    final title = '💬 Mensaje de $senderName';
+    final body = messageText;
+
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      'trip_chat_channel',
+      'Mensajes de Chat',
+      channelDescription: 'Notificaciones de mensajes de chat en viajes activos',
+      importance: Importance.max,
+      priority: Priority.high,
+      playSound: true,
+      enableVibration: true,
+      color: Color(0xFFF9D408),
+      icon: '@mipmap/ic_launcher',
+      styleInformation: BigTextStyleInformation(''),
+    );
+
+    const NotificationDetails platformDetails =
+        NotificationDetails(android: androidDetails);
+
+    await _notificationsPlugin.show(
+      id: ('chat_$tripId'.hashCode),
+      title: title,
+      body: body,
+      notificationDetails: platformDetails,
+      payload: 'trip_chat:$tripId:$senderName:$conversationTitle',
+    );
   }
 }

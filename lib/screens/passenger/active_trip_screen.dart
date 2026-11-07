@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fb;
 import '../../services/firestore_service.dart';
 import '../../services/directions_service.dart';
 import '../../services/location_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/notification_service.dart';
 import '../../models/trip_model.dart';
 import '../../models/driver_model.dart';
 import '../../theme.dart';
@@ -43,10 +46,72 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
   double? _lastDriverLat;
   double? _lastDriverLng;
 
+  StreamSubscription? _chatMessagesSub;
+  bool _isChatOpen = false;
+  bool _isInitialChatSnapshot = true;
+  final Set<String> _notifiedMessageIds = {};
+
   @override
   void initState() {
     super.initState();
     _loadCustomMarker();
+    _listenToChatMessages();
+  }
+
+  @override
+  void dispose() {
+    _chatMessagesSub?.cancel();
+    _mapController?.dispose();
+    super.dispose();
+  }
+
+  void _listenToChatMessages() {
+    if (widget.tripId.isEmpty) return;
+    _chatMessagesSub?.cancel();
+    _chatMessagesSub = FirebaseFirestore.instance
+        .collection('trips')
+        .doc(widget.tripId)
+        .collection('messages')
+        .orderBy('createdAt', descending: false)
+        .snapshots()
+        .listen((snapshot) {
+      if (_isInitialChatSnapshot) {
+        _isInitialChatSnapshot = false;
+        for (final doc in snapshot.docs) {
+          _notifiedMessageIds.add(doc.id);
+        }
+        return;
+      }
+
+      final myUid = AuthService.instance.currentUser?.uid ??
+          fb.FirebaseAuth.instance.currentUser?.uid ??
+          '';
+
+      for (final change in snapshot.docChanges) {
+        if (change.type == DocumentChangeType.added) {
+          final docId = change.doc.id;
+          final data = change.doc.data();
+          if (data == null) continue;
+          final senderId = data['senderId']?.toString() ?? '';
+
+          if (_notifiedMessageIds.contains(docId)) continue;
+          _notifiedMessageIds.add(docId);
+
+          if (senderId.isNotEmpty && senderId != myUid && !_isChatOpen) {
+            final senderName = data['senderName']?.toString() ??
+                (_driver?.name != null && _driver!.name != 'Sin nombre' ? _driver!.name : 'Conductor');
+            final text = data['text']?.toString() ?? 'Tienes un nuevo mensaje';
+
+            NotificationService.showChatMessageNotification(
+              tripId: widget.tripId,
+              senderName: senderName,
+              messageText: text,
+              conversationTitle: senderName,
+            );
+          }
+        }
+      }
+    });
   }
 
   // Ancho (px lógicos) del mototaxi en el mapa del pasajero.
@@ -621,28 +686,32 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                         children: [
                           Expanded(
                             child: OutlinedButton(
-                              onPressed: () => Navigator.of(context).push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) => DriverTripChatScreen(
-                                    tripId: widget.tripId,
-                                    senderId:
-                                        AuthService.instance.currentUser?.uid ??
-                                        '',
-                                    senderName:
-                                        AuthService
-                                            .instance
-                                            .currentUser
-                                            ?.name ??
-                                        'Pasajero',
-                                    conversationTitle: (trip?.driverName != null &&
-                                            trip!.driverName!.isNotEmpty)
-                                        ? trip.driverName!
-                                        : (_driver != null && _driver!.name != 'Sin nombre')
-                                            ? _driver!.name
-                                            : 'Conductor',
+                              onPressed: () async {
+                                _isChatOpen = true;
+                                await Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => DriverTripChatScreen(
+                                      tripId: widget.tripId,
+                                      senderId:
+                                          AuthService.instance.currentUser?.uid ??
+                                          '',
+                                      senderName:
+                                          AuthService
+                                              .instance
+                                              .currentUser
+                                              ?.name ??
+                                          'Pasajero',
+                                      conversationTitle: (trip?.driverName != null &&
+                                              trip!.driverName!.isNotEmpty)
+                                          ? trip.driverName!
+                                          : (_driver != null && _driver!.name != 'Sin nombre')
+                                              ? _driver!.name
+                                              : 'Conductor',
+                                    ),
                                   ),
-                                ),
-                              ),
+                                );
+                                _isChatOpen = false;
+                              },
                               child: const Icon(Icons.chat),
                             ),
                           ),
