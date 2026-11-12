@@ -59,7 +59,7 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       if (_failedAttempts >= 3) {
-        _showRecoveryDialog(email);
+        _showPhoneRecoveryDialog(email);
       } else {
         final remaining = 3 - _failedAttempts;
         _snack(
@@ -69,167 +69,395 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void _showRecoveryDialog(String email) {
-    final resetEmailController = TextEditingController(text: email);
-    bool isSending = false;
+  void _showPhoneRecoveryDialog(String initialInput) {
+    final digits = initialInput.replaceAll(RegExp(r'\D'), '');
+    String phoneText = '';
+    if (digits.length == 9) {
+      phoneText = digits;
+    } else if (digits.startsWith('51') && digits.length >= 11) {
+      phoneText = digits.substring(2, 11);
+    }
+
+    final phoneController = TextEditingController(text: phoneText);
+    final smsCodeController = TextEditingController();
+    final newPasswordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+
+    int currentStep = 1; // 1 = solicitar SMS, 2 = validar código y cambiar clave
+    bool isProcessing = false;
+    bool obscureNewPassword = true;
+    bool obscureConfirmPassword = true;
+    String? errorMessage;
+    String sentPhone = '';
 
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
-          title: Row(
-            children: const [
-              Icon(Icons.lock_reset, color: Color(0xFFF9D408), size: 28),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Recuperar Cuenta',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            actionsPadding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF9C4),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    currentStep == 1 ? Icons.sms_outlined : Icons.lock_reset_rounded,
+                    color: const Color(0xFF8A5300),
+                    size: 26,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFF9C4),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFF9D408)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    currentStep == 1 ? 'Recuperar Contraseña' : 'Nueva Contraseña',
+                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                  ),
                 ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.warning_amber_rounded, color: Color(0xFF8A5300), size: 22),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Has superado los 3 intentos fallidos de inicio de sesión.',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF8A5300),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (currentStep == 1) ...[
+                    const Text(
+                      'Ingresa tu número de teléfono celular registrado para enviarte un código de verificación por SMS:',
+                      style: TextStyle(fontSize: 13.5, color: Colors.black87),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: phoneController,
+                      keyboardType: TextInputType.phone,
+                      maxLength: 9,
+                      decoration: InputDecoration(
+                        labelText: 'Número de celular',
+                        hintText: '987654321',
+                        prefixIcon: const Icon(Icons.phone_android_rounded),
+                        prefixText: '+51 ',
+                        counterText: '',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ] else ...[
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.green.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.check_circle_outline, color: Colors.green.shade700, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'SMS enviado al +51 $sentPhone',
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.green.shade800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Ingresa el código SMS de 6 dígitos:',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: smsCodeController,
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.center,
+                      maxLength: 6,
+                      style: const TextStyle(
+                        fontSize: 22,
+                        letterSpacing: 6,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: '------',
+                        counterText: '',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Define tu nueva contraseña:',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: newPasswordController,
+                      obscureText: obscureNewPassword,
+                      decoration: InputDecoration(
+                        labelText: 'Nueva contraseña',
+                        hintText: 'Mínimo 6 caracteres',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            obscureNewPassword ? Icons.visibility_off : Icons.visibility,
+                            color: Colors.grey,
+                          ),
+                          onPressed: () {
+                            setModalState(() {
+                              obscureNewPassword = !obscureNewPassword;
+                            });
+                          },
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: confirmPasswordController,
+                      obscureText: obscureConfirmPassword,
+                      decoration: InputDecoration(
+                        labelText: 'Confirmar contraseña',
+                        hintText: 'Repite la nueva contraseña',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            obscureConfirmPassword ? Icons.visibility_off : Icons.visibility,
+                            color: Colors.grey,
+                          ),
+                          onPressed: () {
+                            setModalState(() {
+                              obscureConfirmPassword = !obscureConfirmPassword;
+                            });
+                          },
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: isProcessing
+                            ? null
+                            : () async {
+                                setModalState(() {
+                                  isProcessing = true;
+                                  errorMessage = null;
+                                });
+                                final (sent, msg) = await _auth.sendPasswordResetOtp(sentPhone);
+                                setModalState(() {
+                                  isProcessing = false;
+                                  if (sent) {
+                                    errorMessage = null;
+                                  } else {
+                                    errorMessage = msg;
+                                  }
+                                });
+                                if (sent && mounted) {
+                                  _snack('Nuevo código enviado por SMS');
+                                }
+                              },
+                        child: const Text(
+                          '¿No te llegó el SMS? Reenviar código',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF8A5300)),
                         ),
                       ),
                     ),
                   ],
-                ),
-              ),
-              const SizedBox(height: 14),
-              const Text(
-                'Confirma tu correo para enviarte un enlace de recuperación de contraseña:',
-                style: TextStyle(fontSize: 13.5, color: Colors.black87),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: resetEmailController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: InputDecoration(
-                  labelText: 'Correo electrónico',
-                  hintText: 'ejemplo@gmail.com',
-                  prefixIcon: const Icon(Icons.email_outlined),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: isSending ? null : () => Navigator.pop(ctx),
-              child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFF9D408),
-                foregroundColor: Colors.black,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              onPressed: isSending
-                  ? null
-                  : () async {
-                      final targetEmail = resetEmailController.text.trim();
-                      if (targetEmail.isEmpty) {
-                        _snack('Ingresa tu correo');
-                        return;
-                      }
-                      setModalState(() => isSending = true);
-                      final (sent, message) =
-                          await _auth.sendPasswordResetEmail(targetEmail);
-                      if (!ctx.mounted) return;
-                      Navigator.pop(ctx);
-                      _failedAttempts = 0;
-                      _showRecoverySuccessDialog(targetEmail, sent, message);
-                    },
-              child: isSending
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation(Colors.black),
+                  if (errorMessage != null) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red.shade200),
                       ),
-                    )
-                  : const Text(
-                      'Enviar enlace',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                      child: Row(
+                        children: [
+                          Icon(Icons.error_outline, color: Colors.red.shade700, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              errorMessage!,
+                              style: TextStyle(fontSize: 12, color: Colors.red.shade800),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
+                  ],
+                ],
+              ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
+            actions: [
+              TextButton(
+                onPressed: isProcessing ? null : () => Navigator.pop(dialogCtx),
+                child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+              ),
+              if (currentStep == 1)
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFF9D408),
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  onPressed: isProcessing
+                      ? null
+                      : () async {
+                          final phone = phoneController.text.trim().replaceAll(RegExp(r'\D'), '');
+                          if (phone.length != 9) {
+                            setModalState(() {
+                              errorMessage = 'Ingresa un número de celular de 9 dígitos';
+                            });
+                            return;
+                          }
 
-  void _showRecoverySuccessDialog(String email, bool success, String message) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-        ),
-        title: Row(
-          children: [
-            Icon(
-              success ? Icons.mark_email_read_outlined : Icons.error_outline,
-              color: success ? const Color(0xFF2E7D32) : Colors.red,
-              size: 28,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                success ? 'Enlace Enviado' : 'No se pudo enviar',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        ),
-        content: Text(
-          message,
-          style: const TextStyle(fontSize: 14),
-        ),
-        actions: [
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFF9D408),
-              foregroundColor: Colors.black,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Entendido', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
+                          setModalState(() {
+                            isProcessing = true;
+                            errorMessage = null;
+                          });
+
+                          final (sent, message) = await _auth.sendPasswordResetOtp(phone);
+
+                          if (!ctx.mounted) return;
+                          setModalState(() {
+                            isProcessing = false;
+                            if (sent) {
+                              sentPhone = phone;
+                              currentStep = 2;
+                              errorMessage = null;
+                            } else {
+                              errorMessage = message;
+                            }
+                          });
+                        },
+                  child: isProcessing
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation(Colors.black),
+                          ),
+                        )
+                      : const Text(
+                          'Enviar código SMS',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                )
+              else
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFF9D408),
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  onPressed: isProcessing
+                      ? null
+                      : () async {
+                          final code = smsCodeController.text.trim();
+                          final newPass = newPasswordController.text;
+                          final confirmPass = confirmPasswordController.text;
+
+                          if (code.length != 6) {
+                            setModalState(() {
+                              errorMessage = 'Ingresa el código de 6 dígitos';
+                            });
+                            return;
+                          }
+                          if (newPass.length < 6) {
+                            setModalState(() {
+                              errorMessage = 'La contraseña debe tener mínimo 6 caracteres';
+                            });
+                            return;
+                          }
+                          if (newPass != confirmPass) {
+                            setModalState(() {
+                              errorMessage = 'Las contraseñas no coinciden';
+                            });
+                            return;
+                          }
+
+                          setModalState(() {
+                            isProcessing = true;
+                            errorMessage = null;
+                          });
+
+                          final (ok, msg) = await _auth.resetPasswordWithOtp(
+                            phone: sentPhone,
+                            smsCode: code,
+                            newPassword: newPass,
+                          );
+
+                          if (!ctx.mounted) return;
+                          setModalState(() => isProcessing = false);
+
+                          if (ok) {
+                            Navigator.pop(dialogCtx);
+                            _failedAttempts = 0;
+                            _emailController.text = sentPhone;
+                            _passwordController.text = newPass;
+
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    '¡Contraseña cambiada con éxito! Ya puedes iniciar sesión.',
+                                  ),
+                                  backgroundColor: Colors.green,
+                                  duration: Duration(seconds: 4),
+                                ),
+                              );
+                            }
+                          } else {
+                            setModalState(() {
+                              errorMessage = msg;
+                            });
+                          }
+                        },
+                  child: isProcessing
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation(Colors.black),
+                          ),
+                        )
+                      : const Text(
+                          'Cambiar Contraseña',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -338,11 +566,21 @@ class _LoginScreenState extends State<LoginScreen> {
                       TextFormField(
                         controller: _emailController,
                         keyboardType: TextInputType.emailAddress,
-                        validator: Validators.validateEmail,
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) {
+                            return 'Ingresa tu correo o número de teléfono';
+                          }
+                          final trimmed = value.trim();
+                          final isPhone = RegExp(r'^\d{9}$').hasMatch(trimmed);
+                          if (!isPhone) {
+                            return Validators.validateEmail(trimmed);
+                          }
+                          return null;
+                        },
                         decoration: InputDecoration(
-                          hintText: 'correo@ejemplo.com',
-                          labelText: 'Correo electrónico',
-                          prefixIcon: const Icon(Icons.email_outlined),
+                          hintText: 'correo@ejemplo.com o 987654321',
+                          labelText: 'Correo o Teléfono',
+                          prefixIcon: const Icon(Icons.person_outline),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),
                           ),
@@ -381,7 +619,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         alignment: Alignment.centerRight,
                         child: TextButton(
                           onPressed: () {
-                            _showRecoveryDialog(_emailController.text.trim());
+                            _showPhoneRecoveryDialog(_emailController.text.trim());
                           },
                           child: const Text(
                             '¿Olvidaste tu contraseña?',

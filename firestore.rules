@@ -91,6 +91,11 @@ service cloud.firestore {
       );
 
       allow delete: if isSuperAdmin();
+
+      // Lugares frecuentes del usuario (casa, trabajo, etc.)
+      match /frequent_places/{placeId} {
+        allow read, write: if isAuth() && (request.auth.uid == userId || isSuperAdmin());
+      }
     }
 
     // 2. CONDUCTORES (DRIVERS)

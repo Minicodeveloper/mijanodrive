@@ -131,6 +131,43 @@ class _SecurityModuleState extends State<SecurityModule> {
     return fb.FirebaseAuth.instanceFor(app: app);
   }
 
+  Future<void> _cleanOrphanIndexes() async {
+    final ok = await adminConfirm(
+      context,
+      title: 'Limpiar Índices Huérfanos',
+      body: 'Se escanearán las colecciones de índices (DNI, Celular, Correo, Placas, Licencias) y se eliminarán todos los registros pertenecientes a usuarios que ya no existen en la base de datos.',
+      action: 'Limpiar',
+      danger: true,
+    );
+    if (!ok || !mounted) return;
+
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(child: CircularProgressIndicator()),
+      );
+
+      final total = await FirestoreService.instance.cleanOrphanIndexes();
+
+      if (!mounted) return;
+      Navigator.pop(context);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Limpieza completada con éxito. Registros huérfanos eliminados: $total.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al limpiar índices: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
   Future<void> _indexDni() async {
     final ok = await adminConfirm(
       context,
@@ -167,7 +204,21 @@ class _SecurityModuleState extends State<SecurityModule> {
             });
             added++;
           } else if (indexDoc.data()?['uid'] != uid) {
-            conflicts.add('$dni -> $name ($email, $uid)');
+            final oldUid = indexDoc.data()?['uid'];
+            bool oldExists = false;
+            if (oldUid != null && oldUid is String && oldUid.isNotEmpty) {
+              final oldDoc = await FirebaseFirestore.instance.collection('users').doc(oldUid).get();
+              oldExists = oldDoc.exists;
+            }
+            if (!oldExists) {
+              await FirebaseFirestore.instance.collection('dni_index').doc(dni).set({
+                'uid': uid,
+                'createdAt': FieldValue.serverTimestamp(),
+              });
+              added++;
+            } else {
+              conflicts.add('$dni -> $name ($email, $uid)');
+            }
           }
         }
       }
@@ -269,11 +320,25 @@ class _SecurityModuleState extends State<SecurityModule> {
             const SizedBox(height: 16),
             Align(
               alignment: Alignment.centerRight,
-              child: ElevatedButton.icon(
-                onPressed: _indexDni,
-                icon: const Icon(Icons.fingerprint),
-                label: const Text('Indexar DNI existentes'),
-                style: ElevatedButton.styleFrom(backgroundColor: MijanoTheme.sol, foregroundColor: MijanoTheme.ink),
+              child: Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _cleanOrphanIndexes,
+                    icon: const Icon(Icons.cleaning_services, color: Colors.red),
+                    label: const Text('Limpiar índices huérfanos', style: TextStyle(color: Colors.red)),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.red),
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: _indexDni,
+                    icon: const Icon(Icons.fingerprint),
+                    label: const Text('Indexar DNI existentes'),
+                    style: ElevatedButton.styleFrom(backgroundColor: MijanoTheme.sol, foregroundColor: MijanoTheme.ink),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 16),

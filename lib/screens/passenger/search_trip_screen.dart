@@ -401,10 +401,15 @@ class _SearchTripScreenState extends State<SearchTripScreen> {
         ),
       ),
           FrequentPlacesSheet(
-            onPlaceSelected: (place) {
+            onPlaceSelected: (place, coords) {
               _destinationController.text = place;
-              _destinationLat = null;
-              _destinationLng = null;
+              if (coords != null) {
+                _destinationLat = coords.latitude;
+                _destinationLng = coords.longitude;
+              } else {
+                _destinationLat = null;
+                _destinationLng = null;
+              }
             },
           ),
         ],

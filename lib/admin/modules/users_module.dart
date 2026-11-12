@@ -63,7 +63,8 @@ class _UsersModuleState extends State<UsersModule> {
                   .where((u) =>
                       (u['name']?.toString().toLowerCase() ?? '').contains(q) ||
                       (u['email']?.toString().toLowerCase() ?? '').contains(q) ||
-                      (u['phone']?.toString() ?? '').contains(_query))
+                      (u['phone']?.toString() ?? '').contains(_query) ||
+                      (u['dni']?.toString() ?? '').contains(_query))
                   .toList();
             }
 
@@ -86,7 +87,7 @@ class _UsersModuleState extends State<UsersModule> {
                   selected: _currentTab,
                   onSelected: (i) => setState(() => _currentTab = i),
                   searchCtrl: _searchCtrl,
-                  searchHint: 'Buscar por nombre, correo o teléfono...',
+                  searchHint: 'Buscar por nombre, correo, teléfono o DNI...',
                   onSearch: (v) => setState(() => _query = v),
                 ),
                 const SizedBox(height: 16),
@@ -157,6 +158,17 @@ class _UsersModuleState extends State<UsersModule> {
       case 'unblock':
         await run(() => fs.setAccountBlocked(uid, false), '$name desbloqueado');
         break;
+      case 'delete':
+        final ok = await adminConfirm(
+          context,
+          title: 'Eliminar pasajero',
+          body: '¿Estás seguro de eliminar a $name definitivamente? Se borrará su cuenta, DNI, teléfono, fotos y todos sus registros de la base de datos para que no queden datos bloqueados.',
+          action: 'Eliminar definitivamente',
+          danger: true,
+        );
+        if (!ok) return;
+        await run(() => fs.deleteUserCompletely(uid), '$name eliminado completamente del sistema');
+        break;
     }
   }
 
@@ -171,6 +183,17 @@ class _UsersModuleState extends State<UsersModule> {
           value: blocked ? 'unblock' : 'block',
           child: Text(blocked ? 'Desbloquear' : 'Bloquear'),
         ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: 'delete',
+          child: Row(
+            children: [
+              Icon(Icons.delete_outline, size: 18, color: Colors.red),
+              SizedBox(width: 8),
+              Text('Eliminar pasajero', style: TextStyle(color: Colors.red)),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -183,8 +206,9 @@ class _UsersModuleState extends State<UsersModule> {
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 8),
           child: Row(children: [
-            Expanded(flex: 4, child: Text('Cliente', style: head)),
+            Expanded(flex: 3, child: Text('Cliente', style: head)),
             Expanded(flex: 2, child: Text('Teléfono', style: head)),
+            Expanded(flex: 2, child: Text('DNI', style: head)),
             Expanded(flex: 2, child: Text('Ciudad', style: head)),
             Expanded(flex: 2, child: Text('Estado', style: head)),
             Expanded(flex: 2, child: Text('Registro', style: head)),
@@ -198,8 +222,9 @@ class _UsersModuleState extends State<UsersModule> {
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Row(children: [
-                Expanded(flex: 4, child: _identity(u)),
+                Expanded(flex: 3, child: _identity(u)),
                 Expanded(flex: 2, child: Text(_phone(u), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                Expanded(flex: 2, child: _dniBadge(u)),
                 Expanded(flex: 2, child: Text(_city(u), maxLines: 1, overflow: TextOverflow.ellipsis)),
                 Expanded(flex: 2, child: Align(alignment: Alignment.centerLeft, child: _buildStatusBadge(_status(u)))),
                 Expanded(flex: 2, child: Text(formatAdminDate(u['createdAt']))),
@@ -233,7 +258,7 @@ class _UsersModuleState extends State<UsersModule> {
                   Padding(
                     padding: const EdgeInsets.only(left: 40),
                     child: Text(
-                      '${_phone(list[i])} · ${_city(list[i])} · ${formatAdminDate(list[i]['createdAt'])}',
+                      '${_phone(list[i])} · DNI: ${list[i]['dni'] ?? 'Sin DNI'} · ${_city(list[i])}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 12, color: Colors.black87),
@@ -244,6 +269,30 @@ class _UsersModuleState extends State<UsersModule> {
             ),
           ),
           if (i < list.length - 1) const Divider(height: 1),
+        ],
+      ],
+    );
+  }
+
+  Widget _dniBadge(Map<String, dynamic> u) {
+    final dni = (u['dni'] ?? '').toString();
+    final hasDocs = (u['dniFrontUrl'] != null && u['dniFrontUrl'].toString().isNotEmpty) ||
+        (u['documents']?['dniFront'] != null);
+
+    if (dni.isEmpty) {
+      return const AdminBadge('Sin DNI', Colors.grey);
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          dni,
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+        ),
+        if (hasDocs) ...[
+          const SizedBox(width: 4),
+          const Icon(Icons.verified_outlined, size: 14, color: Colors.blue),
         ],
       ],
     );

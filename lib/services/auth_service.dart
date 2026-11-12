@@ -24,8 +24,8 @@ class AuthService {
   User? currentUser;
 
   String _normalize(String phone) {
-    final clean = phone.trim();
-    if (clean.startsWith('+')) return clean;
+    final clean = phone.trim().replaceAll(RegExp(r'\D'), '');
+    if (clean.startsWith('51') && clean.length > 9) return '+$clean';
     return '+51$clean';
   }
 
@@ -49,23 +49,117 @@ class AuthService {
   }
 
   // ==========================================
-  // 1. INICIAR SESIÓN (Correo y Contraseña)
+  // BUSCADOR INTELIGENTE DE USUARIO POR TELÉFONO
+  // ==========================================
+  Future<DocumentSnapshot<Map<String, dynamic>>?> findUserDocByPhone(String phone) async {
+    final cleanPhone = phone.trim().replaceAll(RegExp(r'\D'), '');
+    if (cleanPhone.isEmpty) return null;
+
+    final variants = <String>{
+      cleanPhone,
+      if (!cleanPhone.startsWith('+')) '+51$cleanPhone',
+      if (cleanPhone.startsWith('51') && cleanPhone.length > 9) cleanPhone.substring(2),
+    };
+
+    // 1. Probar phone_index
+    for (final variant in variants) {
+      try {
+        final indexDoc = await _firestore.collection('phone_index').doc(variant).get();
+        if (indexDoc.exists) {
+          final uid = indexDoc.data()?['uid'];
+          if (uid is String && uid.isNotEmpty) {
+            final userDoc = await _firestore.collection('users').doc(uid).get();
+            if (userDoc.exists) return userDoc;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 2. Probar colección users
+    for (final variant in variants) {
+      try {
+        final query = await _firestore
+            .collection('users')
+            .where('phone', isEqualTo: variant)
+            .limit(1)
+            .get();
+        if (query.docs.isNotEmpty) {
+          return query.docs.first;
+        }
+      } catch (_) {}
+    }
+
+    return null;
+  }
+
+  // ==========================================
+  // 1. INICIAR SESIÓN (Correo o Teléfono y Contraseña)
   // ==========================================
   Future<(bool, String, UserRole?, String?)> login(
-    String email,
+    String emailOrPhone,
     String password,
   ) async {
     try {
-      fb.UserCredential credential = await _fbAuth.signInWithEmailAndPassword(
-        email: email.trim(),
-        password: password,
-      );
+      String resolvedEmail = emailOrPhone.trim();
+      String? cleanPhone;
+
+      if (!resolvedEmail.contains('@')) {
+        cleanPhone = resolvedEmail.replaceAll(RegExp(r'\D'), '');
+        if (cleanPhone.isNotEmpty) {
+          final userDoc = await findUserDocByPhone(cleanPhone);
+          if (userDoc != null && userDoc.data() != null) {
+            final docData = userDoc.data()!;
+            final authEmail = (docData['authEmail'] ?? docData['email']) as String?;
+            if (authEmail != null && authEmail.isNotEmpty) {
+              resolvedEmail = authEmail;
+            } else {
+              resolvedEmail = '$cleanPhone@pasajero.mijanodrive.com';
+            }
+          } else {
+            resolvedEmail = '$cleanPhone@pasajero.mijanodrive.com';
+          }
+        }
+      }
+
+      fb.UserCredential? credential;
+      try {
+        credential = await _fbAuth.signInWithEmailAndPassword(
+          email: resolvedEmail,
+          password: password,
+        );
+      } catch (loginErr) {
+        if (cleanPhone != null && cleanPhone.isNotEmpty) {
+          final fallbacks = [
+            '$cleanPhone@auth.mijanodrive.com',
+            '$cleanPhone@pasajero.mijanodrive.com',
+          ];
+          for (final altEmail in fallbacks) {
+            if (altEmail != resolvedEmail) {
+              try {
+                credential = await _fbAuth.signInWithEmailAndPassword(
+                  email: altEmail,
+                  password: password,
+                );
+                break;
+              } catch (_) {}
+            }
+          }
+        }
+        if (credential == null) rethrow;
+      }
 
       final uid = credential.user!.uid;
       DocumentSnapshot userDoc = await _firestore
           .collection('users')
           .doc(uid)
           .get();
+
+      if (!userDoc.exists && cleanPhone != null && cleanPhone.isNotEmpty) {
+        final altDoc = await findUserDocByPhone(cleanPhone);
+        if (altDoc != null && altDoc.exists) {
+          userDoc = altDoc;
+        }
+      }
 
       if (userDoc.exists) {
         final data = userDoc.data() as Map<String, dynamic>;
@@ -187,6 +281,133 @@ class AuthService {
       return (false, message);
     } catch (e) {
       return (false, 'Error inesperado: $e');
+    }
+  }
+
+  // ==========================================
+  // 1.1.1 RECUPERACIÓN DE CONTRASEÑA POR SMS (TELÉFONO)
+  // ==========================================
+  Future<(bool, String)> sendPasswordResetOtp(String phone) async {
+    final cleanPhone = phone.trim().replaceAll(RegExp(r'\D'), '');
+    if (cleanPhone.isEmpty || (cleanPhone.length != 9 && !cleanPhone.startsWith('51'))) {
+      return (false, 'Ingresa un número de celular válido de 9 dígitos.');
+    }
+
+    final userDoc = await findUserDocByPhone(cleanPhone);
+    if (userDoc == null) {
+      return (false, 'Este número no se encuentra registrado en Mijano Drive.');
+    }
+
+    return await sendOtp(cleanPhone);
+  }
+
+  Future<(bool, String)> resetPasswordWithOtp({
+    required String phone,
+    required String smsCode,
+    required String newPassword,
+  }) async {
+    try {
+      if (_verificationId == null) {
+        return (
+          false,
+          'No hay una solicitud de código activa. Solicita un nuevo SMS.',
+        );
+      }
+
+      final cleanCode = smsCode.trim();
+      if (cleanCode.length != 6) {
+        return (false, 'Ingresa el código de 6 dígitos enviado por SMS.');
+      }
+
+      if (newPassword.length < 6) {
+        return (false, 'La nueva contraseña debe tener al menos 6 caracteres.');
+      }
+
+      final cleanPhone = phone.trim().replaceAll(RegExp(r'\D'), '');
+      final userDoc = await findUserDocByPhone(cleanPhone);
+      if (userDoc == null || userDoc.data() == null) {
+        return (
+          false,
+          'No se encontró una cuenta asociada a este número en el sistema.',
+        );
+      }
+
+      final originalUid = userDoc.id;
+      final originalData = Map<String, dynamic>.from(userDoc.data()!);
+
+      // 1. Verificar credencial de teléfono en Firebase Auth
+      final phoneCred = fb.PhoneAuthProvider.credential(
+        verificationId: _verificationId!,
+        smsCode: cleanCode,
+      );
+
+      final userCredential = await _fbAuth.signInWithCredential(phoneCred);
+      final authUser = userCredential.user!;
+      final newUid = authUser.uid;
+
+      // 2. Establecer la nueva contraseña para la cuenta
+      await authUser.updatePassword(newPassword);
+
+      // 3. Configurar authEmail para permitir login unificado con contraseña
+      final authEmail = '$cleanPhone@auth.mijanodrive.com';
+      try {
+        await authUser.verifyBeforeUpdateEmail(authEmail);
+      } catch (_) {}
+
+      // 4. Sincronizar Firestore si el UID cambió
+      if (newUid != originalUid) {
+        originalData['uid'] = newUid;
+        originalData['authEmail'] = authEmail;
+        originalData['authUid'] = newUid;
+
+        await _firestore.collection('users').doc(newUid).set(originalData, SetOptions(merge: true));
+
+        // Actualizar phone_index para apuntar al nuevo UID
+        await _firestore.collection('phone_index').doc(cleanPhone).set({
+          'uid': newUid,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+        await _firestore.collection('phone_index').doc('+51$cleanPhone').set({
+          'uid': newUid,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+
+        final dni = originalData['dni']?.toString();
+        if (dni != null && dni.isNotEmpty) {
+          await _firestore.collection('dni_index').doc(dni).set({
+            'uid': newUid,
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        }
+
+        await _firestore.collection('users').doc(originalUid).update({
+          'migratedTo': newUid,
+          'authUid': newUid,
+          'authEmail': authEmail,
+        }).catchError((_) {});
+      } else {
+        await _firestore.collection('users').doc(originalUid).update({
+          'authEmail': authEmail,
+        }).catchError((_) {});
+      }
+
+      // 5. Cargar usuario actual en sesión
+      final updatedDoc = await _firestore.collection('users').doc(newUid).get();
+      if (updatedDoc.exists) {
+        currentUser = User.fromMap(updatedDoc.data()!);
+        unawaited(syncCarDriverToPublicIndex(currentUser!));
+      }
+
+      return (true, '¡Contraseña restablecida exitosamente!');
+    } on fb.FirebaseAuthException catch (e) {
+      if (e.code == 'invalid-verification-code') {
+        return (false, 'El código SMS ingresado es incorrecto.');
+      } else if (e.code == 'session-expired') {
+        return (false, 'El código SMS ha expirado. Solicita un nuevo código.');
+      }
+      return (false, 'Error de verificación: ${e.message}');
+    } catch (e) {
+      return (false, 'Error al cambiar contraseña: $e');
     }
   }
 
@@ -343,6 +564,7 @@ class AuthService {
         vehicleType: vehicleType,
         agencyName: agencyName,
         licenseNumber: licenseNumber,
+        smsCode: smsCode,
       );
     } on fb.FirebaseAuthException catch (e) {
       return (false, 'Código inválido o expirado: ${e.message}');
@@ -524,19 +746,26 @@ class AuthService {
     String? vehicleType,
     String? agencyName,
     String? licenseNumber,
+    String? smsCode,
   }) async {
     try {
       final cleanDni = dni.trim();
       final cleanPlate = vehiclePlate?.trim().toUpperCase();
       final cleanLicense = licenseNumber?.trim().toUpperCase();
 
-      if (await isEmailRegistered(email)) {
+      final cleanEmail = email.trim();
+      final cleanPhone = phone.trim().replaceAll(RegExp(r'\D'), '');
+      final effectiveEmail = cleanEmail.isEmpty
+          ? '$cleanPhone@pasajero.mijanodrive.com'
+          : cleanEmail;
+
+      if (cleanEmail.isNotEmpty && await isEmailRegistered(cleanEmail)) {
         return (false, 'Este correo electrónico ya está registrado.');
       }
       if (await isPhoneRegistered(phone)) {
         return (false, 'Este número ya está registrado.');
       }
-      if (await isDniRegistered(cleanDni)) {
+      if (cleanDni.isNotEmpty && await isDniRegistered(cleanDni)) {
         return (false, 'Este DNI ya está registrado.');
       }
       if (role == UserRole.driver) {
@@ -554,12 +783,33 @@ class AuthService {
 
       fb.UserCredential userCredential = await _fbAuth
           .createUserWithEmailAndPassword(
-            email: email.trim(),
+            email: effectiveEmail,
             password: password,
           );
 
       final uid = userCredential.user!.uid;
       final number = _normalize(phone);
+
+      // Vincular credencial de teléfono si se proporcionó código SMS
+      if (_verificationId != null && smsCode != null && smsCode.trim().isNotEmpty) {
+        try {
+          final phoneCred = fb.PhoneAuthProvider.credential(
+            verificationId: _verificationId!,
+            smsCode: smsCode.trim(),
+          );
+          await userCredential.user?.linkWithCredential(phoneCred);
+        } catch (linkError) {
+          debugPrint('Aviso linkWithCredential al registrar: $linkError');
+          if (linkError is fb.FirebaseAuthException &&
+              (linkError.code == 'invalid-verification-code' ||
+               linkError.code == 'session-expired')) {
+            try {
+              await userCredential.user?.delete();
+            } catch (_) {}
+            return (false, 'El código SMS ingresado es incorrecto.');
+          }
+        }
+      }
 
       String? photoUrl;
       if (profileImage != null) {
@@ -571,9 +821,9 @@ class AuthService {
       currentUser = User(
         uid: uid,
         name: name,
-        email: email.trim(),
+        email: cleanEmail.isNotEmpty ? cleanEmail : effectiveEmail,
         phone: number,
-        dni: cleanDni,
+        dni: cleanDni.isNotEmpty ? cleanDni : null,
         city: city,
         role: role,
         birthDate: birthDate,
@@ -592,6 +842,7 @@ class AuthService {
       );
 
       final userData = currentUser!.toMap();
+      userData['authEmail'] = effectiveEmail;
 
       if (role == UserRole.driver) {
         userData['documents'] = [
@@ -622,8 +873,8 @@ class AuthService {
       batch.set(userRef, userData);
 
       // 0. Índice de Email
-      if (email.trim().isNotEmpty) {
-        final emailRef = _firestore.collection('email_index').doc(email.trim().toLowerCase());
+      if (cleanEmail.isNotEmpty) {
+        final emailRef = _firestore.collection('email_index').doc(cleanEmail.toLowerCase());
         batch.set(emailRef, {
           'uid': uid,
           'createdAt': FieldValue.serverTimestamp(),
@@ -639,10 +890,15 @@ class AuthService {
         });
       }
 
-      // 2. Índice de Teléfono (¡Faltaba este!)
-      if (phone.isNotEmpty) {
-        final phoneRef = _firestore.collection('phone_index').doc(phone.trim());
-        batch.set(phoneRef, {
+      // 2. Índice de Teléfono (ambas variantes: local e internacional)
+      if (cleanPhone.isNotEmpty) {
+        final phoneRef1 = _firestore.collection('phone_index').doc(cleanPhone);
+        batch.set(phoneRef1, {
+          'uid': uid,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        final phoneRef2 = _firestore.collection('phone_index').doc('+51$cleanPhone');
+        batch.set(phoneRef2, {
           'uid': uid,
           'createdAt': FieldValue.serverTimestamp(),
         });
@@ -671,17 +927,20 @@ class AuthService {
         unawaited(syncCarDriverToPublicIndex(currentUser!));
       }
 
-      // Enviar correo de verificación automáticamente al registrar la cuenta
-      try {
-        await userCredential.user?.sendEmailVerification();
-      } catch (_) {}
+      // Enviar correo de verificación automáticamente solo si tiene correo real
+      if (cleanEmail.isNotEmpty) {
+        try {
+          await userCredential.user?.sendEmailVerification();
+        } catch (_) {}
+      }
 
       await _getOrCreateWallet(uid);
 
-      return (
-        true,
-        '¡Cuenta registrada con éxito! Te hemos enviado un correo de validación.',
-      );
+      final successMsg = (role == UserRole.driver && cleanEmail.isNotEmpty)
+          ? '¡Cuenta registrada con éxito! Te hemos enviado un correo de validación.'
+          : '¡Cuenta registrada con éxito!';
+
+      return (true, successMsg);
     } on fb.FirebaseAuthException catch (e) {
       String message = 'Error en el registro';
       if (e.code == 'weak-password') {

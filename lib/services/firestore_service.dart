@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart' hide User;
+import 'package:firebase_storage/firebase_storage.dart';
 import '../models/user_model.dart';
 import '../models/trip_model.dart';
 import '../models/driver_model.dart';
@@ -63,20 +65,185 @@ class FirestoreService {
     }
   }
 
-  // ---- DNI Unicidad ---- cambio reciente---
+  // ---- DNI Unicidad con Auto-Saneamiento ----
   Future<bool> isDniTaken(String dni) async {
     final cleanDni = dni.trim();
     if (cleanDni.isEmpty) return false;
 
     try {
-      // Consulta directa y segura al Ã­ndice pÃºblico de DNI (permitido por las reglas de Firestore)
       final indexDoc = await _db.collection('dni_index').doc(cleanDni).get();
-      if (indexDoc.exists) return true;
+      if (indexDoc.exists) {
+        final uid = indexDoc.data()?['uid'];
+        if (uid != null && uid is String && uid.isNotEmpty) {
+          final currentUid = FirebaseAuth.instance.currentUser?.uid;
+          if (currentUid != null && currentUid == uid) {
+            return false;
+          }
+          // Verificar si el usuario aún existe en Firestore
+          try {
+            final userDoc = await _db.collection('users').doc(uid).get();
+            if (!userDoc.exists) {
+              // El usuario fue eliminado. Purgar índice huérfano automáticamente.
+              unawaited(_db.collection('dni_index').doc(cleanDni).delete().catchError((_) {}));
+              return false;
+            }
+          } catch (_) {
+            // Si la consulta a users falla por falta de sesión o permisos, asumir tomado
+          }
+        }
+        return true;
+      }
     } catch (e) {
-      // Si ocurre un error de red o permisos, por seguridad retornamos false o manejamos el log
+      debugPrint('Error en isDniTaken: $e');
     }
 
     return false;
+  }
+
+  /// Elimina a un usuario completamente en cascada:
+  /// Colecciones users, drivers, wallets, todos sus índices (DNI, celular, correo, placa, licencia)
+  /// y sus archivos en Firebase Storage.
+  Future<void> deleteUserCompletely(String uid) async {
+    try {
+      // 1. Obtener datos del usuario antes de borrarlo
+      final userDoc = await _db.collection('users').doc(uid).get();
+      final userData = userDoc.data() ?? {};
+
+      final dni = (userData['dni'] ?? '').toString().trim();
+      final phone = (userData['phone'] ?? '').toString().trim();
+      final email = (userData['email'] ?? '').toString().trim().toLowerCase();
+      final plate = (userData['vehiclePlate'] ?? '').toString().trim().toUpperCase();
+      final license = (userData['licenseNumber'] ?? '').toString().trim().toUpperCase();
+
+      final batch = _db.batch();
+
+      // 2. Borrar documento principal
+      batch.delete(_db.collection('users').doc(uid));
+
+      // 3. Borrar colecciones vinculadas al usuario
+      batch.delete(_db.collection('drivers').doc(uid));
+      batch.delete(_db.collection('wallets').doc(uid));
+      batch.delete(_db.collection('driver_plans').doc(uid));
+      batch.delete(_db.collection('driver_locations').doc(uid));
+      batch.delete(_db.collection('intercity_vehicles').doc(uid));
+
+      // 4. Borrar índices directos por clave
+      if (dni.isNotEmpty) {
+        batch.delete(_db.collection('dni_index').doc(dni));
+      }
+      if (email.isNotEmpty) {
+        batch.delete(_db.collection('email_index').doc(email));
+      }
+      if (phone.isNotEmpty) {
+        batch.delete(_db.collection('phone_index').doc(phone));
+        if (!phone.startsWith('+')) {
+          batch.delete(_db.collection('phone_index').doc('+51$phone'));
+        } else if (phone.startsWith('+51')) {
+          batch.delete(_db.collection('phone_index').doc(phone.substring(3)));
+        }
+      }
+      if (plate.isNotEmpty) {
+        batch.delete(_db.collection('plate_index').doc(plate));
+      }
+      batch.delete(_db.collection('plate_index').doc('CAR_VEHICLE_$uid'));
+      if (license.isNotEmpty) {
+        batch.delete(_db.collection('license_index').doc(license));
+      }
+
+      // 5. Búsqueda exhaustiva por campo 'uid' en todos los índices
+      final indexCollections = [
+        'dni_index',
+        'phone_index',
+        'email_index',
+        'plate_index',
+        'license_index',
+      ];
+      for (final col in indexCollections) {
+        try {
+          final query = await _db.collection(col).where('uid', isEqualTo: uid).get();
+          for (final doc in query.docs) {
+            batch.delete(doc.reference);
+          }
+        } catch (_) {}
+      }
+
+      await batch.commit();
+
+      // 6. Eliminar archivos de almacenamiento en segundo plano
+      unawaited(_deleteUserStorageFiles(uid));
+    } catch (e) {
+      debugPrint('Error en deleteUserCompletely: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _deleteUserStorageFiles(String uid) async {
+    final storage = FirebaseStorage.instance;
+    final filesToDelete = <String>[
+      'drivers/$uid/$uid.jpg',
+      'drivers/$uid/docFront.jpg',
+      'drivers/$uid/docBack.jpg',
+      'drivers/$uid/vehiclePhoto.jpg',
+      'drivers/$uid/soatPhoto.jpg',
+      'drivers/$uid/propertyCardPhoto.jpg',
+      'drivers/$uid/licensedDocument.jpg',
+      'passengers/$uid/dni_front.jpg',
+      'passengers/$uid/dni_back.jpg',
+      'profile_images/$uid.jpg',
+    ];
+
+    for (final path in filesToDelete) {
+      try {
+        await storage.ref().child(path).delete();
+      } catch (_) {}
+    }
+  }
+
+  /// Limpia registros huérfanos en todas las colecciones de índice
+  /// cuyo usuario correspondiente ya no existe en 'users'.
+  Future<int> cleanOrphanIndexes() async {
+    int totalCleaned = 0;
+    final collections = [
+      'dni_index',
+      'phone_index',
+      'email_index',
+      'plate_index',
+      'license_index',
+    ];
+
+    for (final col in collections) {
+      try {
+        final snap = await _db.collection(col).get();
+        final batch = _db.batch();
+        int batchCount = 0;
+
+        for (final doc in snap.docs) {
+          final uid = doc.data()['uid'];
+          if (uid == null || (uid is String && uid.isEmpty)) {
+            batch.delete(doc.reference);
+            batchCount++;
+            totalCleaned++;
+          } else if (uid is String) {
+            final userDoc = await _db.collection('users').doc(uid).get();
+            if (!userDoc.exists) {
+              batch.delete(doc.reference);
+              batchCount++;
+              totalCleaned++;
+            }
+          }
+          if (batchCount >= 400) {
+            await batch.commit();
+            batchCount = 0;
+          }
+        }
+        if (batchCount > 0) {
+          await batch.commit();
+        }
+      } catch (e) {
+        debugPrint('Error limpiando índices en $col: $e');
+      }
+    }
+    return totalCleaned;
   }
 
   // ---- Conductores ----

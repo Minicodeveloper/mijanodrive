@@ -857,12 +857,12 @@ class _HomeScreenState extends State<HomeScreen> {
     return points;
   }
 
-  void _selectDestination(String place) async {
+  void _selectDestination(String place, {LatLng? coords}) async {
     _destinationDebounce?.cancel();
     _destinationSessionToken = null;
     setState(() {
       _destinationController.text = place;
-      _destinationLatLng = null;
+      _destinationLatLng = coords;
       _isSearchingDestination = false;
       _destinationSuggestions = [];
       _destinationFocus.unfocus();
@@ -3213,8 +3213,8 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         FrequentPlacesSheet(
-          onPlaceSelected: (place) {
-            _selectDestination(place);
+          onPlaceSelected: (place, coords) {
+            _selectDestination(place, coords: coords);
           },
         ),
       ],

@@ -9,6 +9,7 @@ import 'package:mijano_drive_app/services/auth_service.dart';
 import 'package:mijano_drive_app/services/document_service.dart';
 import 'package:mijano_drive_app/services/firestore_service.dart';
 import 'package:mijano_drive_app/screens/driver/pending_account_screen.dart';
+import 'package:mijano_drive_app/screens/passenger/passenger_dni_verification_screen.dart';
 import 'package:mijano_drive_app/utils/validators.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -30,6 +31,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _phoneController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  bool _isPasswordObscure = true;
   final _dniController = TextEditingController();
   String _selectedCity = AppConfig.cities.first;
   final _birthDateController = TextEditingController();
@@ -418,16 +420,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (_currentStep == 0) {
       if (!_validateStep1()) return;
       
+      final bool isDriver = _selectedRole == 'driver';
       setState(() => _isLoading = true);
 
-      // Validar Correo, DNI y Teléfono existentes
-      final dniText = _dniController.text.trim();
       final phoneText = _phoneController.text.trim();
-      final emailText = _emailController.text.trim().toLowerCase();
-
-      final dniTaken = await FirestoreService.instance.isDniTaken(dniText);
       final phoneTaken = await _auth.isPhoneRegistered(phoneText);
-      final emailTaken = await _auth.isEmailRegistered(emailText);
+
+      bool dniTaken = false;
+      bool emailTaken = false;
+      if (isDriver) {
+        final dniText = _dniController.text.trim();
+        final emailText = _emailController.text.trim().toLowerCase();
+        dniTaken = await FirestoreService.instance.isDniTaken(dniText);
+        emailTaken = await _auth.isEmailRegistered(emailText);
+      }
 
       if (!mounted) return;
       setState(() {
@@ -440,51 +446,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
             dniTaken ? 'Este DNI ya está registrado.' : null;
       });
 
-      if (emailTaken && phoneTaken && dniTaken) {
-        _showAlert(
-          'Datos ya registrados',
-          'El correo electrónico, número de teléfono y DNI ya se encuentran registrados.',
-        );
-        return;
-      }
-
-      if (emailTaken && phoneTaken) {
-        _showAlert(
-          'Datos ya registrados',
-          'Este correo electrónico y este número de teléfono ya están registrados.',
-        );
-        return;
-      }
-
-      if (emailTaken && dniTaken) {
-        _showAlert(
-          'Datos ya registrados',
-          'Este correo electrónico y este DNI ya están registrados.',
-        );
-        return;
-      }
-      
-      if (phoneTaken && dniTaken) {
-        _showAlert(
-          'Datos ya registrados',
-          'Este número de teléfono y este DNI ya están registrados.',
-        );
-        return;
-      }
-
-      if (emailTaken) {
-        _showSnackBar('Este correo ya está registrado.');
-        return;
-      }
-
       if (phoneTaken) {
         _showAlert('Número ya registrado', 'Este número ya está registrado.');
         return;
       }
 
-      if (dniTaken) {
-        _showAlert('DNI ya registrado', 'Este DNI ya está registrado.');
-        return;
+      if (isDriver) {
+        if (emailTaken && dniTaken) {
+          _showAlert(
+            'Datos ya registrados',
+            'Este correo electrónico y este DNI ya están registrados.',
+          );
+          return;
+        }
+
+        if (emailTaken) {
+          _showSnackBar('Este correo ya está registrado.');
+          return;
+        }
+
+        if (dniTaken) {
+          _showAlert('DNI ya registrado', 'Este DNI ya está registrado.');
+          return;
+        }
       }
 
       if (_selectedRole == 'passenger') {
@@ -550,23 +534,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Future<void> _register() async {
     setState(() => _isLoading = true);
     final phone = _phoneController.text.trim();
-    final dni = _dniController.text.trim();
+    final bool isDriver = _selectedRole == 'driver';
+    final dni = isDriver ? _dniController.text.trim() : '';
+    final email = isDriver ? _emailController.text.trim().toLowerCase() : '';
 
     try {
       // Doble verificación antes de enviar cualquier SMS
-      final emailTaken = await _auth.isEmailRegistered(_emailController.text.trim().toLowerCase());
       final phoneTaken = await _auth.isPhoneRegistered(phone);
-      final dniTaken = await FirestoreService.instance.isDniTaken(dni);
-
+      bool emailTaken = false;
+      bool dniTaken = false;
       bool licenseTaken = false;
       bool plateTaken = false;
-      if (_selectedRole == 'driver') {
+
+      if (isDriver) {
+        emailTaken = await _auth.isEmailRegistered(email);
+        dniTaken = await FirestoreService.instance.isDniTaken(dni);
         licenseTaken = await _auth.isLicenseRegistered(_licenseController.text.trim());
         plateTaken = await _auth.isPlateRegistered(_plateController.text.trim());
       }
 
       if (!mounted) return;
-      if (emailTaken || phoneTaken || dniTaken || licenseTaken || plateTaken) {
+      if (phoneTaken || emailTaken || dniTaken || licenseTaken || plateTaken) {
         setState(() {
           _isLoading = false;
           _emailDuplicateError =
@@ -581,33 +569,33 @@ class _RegisterScreenState extends State<RegisterScreen> {
               plateTaken ? 'Esta placa de vehículo ya está registrada.' : null;
         });
 
-        if (emailTaken) {
+        if (phoneTaken) {
+          _showAlert('Número ya registrado', 'Este número ya está registrado.');
+          return;
+        } else if (emailTaken) {
           _showSnackBar('Este correo ya está registrado.');
           return;
-        } else if (phoneTaken && dniTaken) {
-          _showAlert(
-            'Datos ya registrados',
-            'Este número de teléfono y este DNI ya están registrados.',
-          );
-        } else if (phoneTaken) {
-          _showAlert('Número ya registrado', 'Este número ya está registrado.');
         } else if (dniTaken) {
           _showAlert('DNI ya registrado', 'Este DNI ya está registrado.');
+          return;
         } else if (licenseTaken && plateTaken) {
           _showAlert(
             'Datos ya registrados',
             'Este número de licencia y esta placa de vehículo ya están registrados.',
           );
+          return;
         } else if (licenseTaken) {
           _showAlert(
             'Licencia ya registrada',
             'Este número de licencia ya está registrado.',
           );
+          return;
         } else if (plateTaken) {
           _showAlert(
             'Placa ya registrada',
             'Esta placa de vehículo ya está registrada.',
           );
+          return;
         }
         return;
       }
@@ -683,19 +671,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
               Navigator.pop(dialogContext);
               setState(() => _isLoading = true);
 
-              final roleEnum = _selectedRole == 'driver' ? UserRole.driver : UserRole.passenger;
+              final bool isDriver = _selectedRole == 'driver';
+              final roleEnum = isDriver ? UserRole.driver : UserRole.passenger;
 
               final (success, message) = await _auth.verifyOtpAndRegister(
                 smsCode: smsCode,
                 name: _nameController.text.trim(),
-                email: _emailController.text.trim(),
+                email: isDriver ? _emailController.text.trim() : '',
                 password: _passwordController.text,
                 phone: _phoneController.text.trim(),
-                dni: _dniController.text.trim(),
+                dni: isDriver ? _dniController.text.trim() : '',
                 city: _selectedCity,
                 role: roleEnum,
-                birthDate: _selectedBirthDate,
-                age: int.tryParse(_ageController.text.trim()),
+                birthDate: isDriver ? _selectedBirthDate : null,
+                age: isDriver ? int.tryParse(_ageController.text.trim()) : null,
                 profileImage: _imageFile,
                 vehiclePlate: _plateController.text.trim(),
                 vehicleBrand: _brandController.text.trim(),
@@ -739,7 +728,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     (route) => false,
                   );
                 } else {
-                  Navigator.of(parentContext).pushNamedAndRemoveUntil('/home', (r) => false);
+                  Navigator.of(parentContext).pushAndRemoveUntil(
+                    MaterialPageRoute(
+                      builder: (context) => PassengerDniVerificationScreen(
+                        user: _auth.currentUser,
+                      ),
+                    ),
+                    (r) => false,
+                  );
                 }
               } else {
                 setState(() => _isLoading = false);
@@ -846,6 +842,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   // ================= PASO 1 =================
   Widget _buildStep1Personal() {
+    final bool isDriver = _selectedRole == 'driver';
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20.0),
       child: Form(
@@ -931,60 +929,77 @@ class _RegisterScreenState extends State<RegisterScreen> {
               border: const OutlineInputBorder(),
             ),
           ),
-          const SizedBox(height: 15),
-          TextFormField(
-            controller: _emailController,
-            keyboardType: TextInputType.emailAddress,
-            onChanged: _onEmailChanged,
-            validator: Validators.validateEmail,
-            decoration: InputDecoration(
-              labelText: 'Correo electrónico',
-              prefixIcon: const Icon(Icons.email_outlined),
-              errorText: _emailDuplicateError,
-              suffixIcon: _checkingEmail
-                  ? const Padding(
-                      padding: EdgeInsets.all(12),
-                      child: SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    )
-                  : null,
-              border: const OutlineInputBorder(),
+          if (isDriver) ...[
+            const SizedBox(height: 15),
+            TextFormField(
+              controller: _emailController,
+              keyboardType: TextInputType.emailAddress,
+              onChanged: _onEmailChanged,
+              validator: Validators.validateEmail,
+              decoration: InputDecoration(
+                labelText: 'Correo electrónico',
+                prefixIcon: const Icon(Icons.email_outlined),
+                errorText: _emailDuplicateError,
+                suffixIcon: _checkingEmail
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : null,
+                border: const OutlineInputBorder(),
+              ),
             ),
-          ),
+          ],
           const SizedBox(height: 15),
           TextFormField(
             controller: _passwordController,
-            obscureText: true,
+            obscureText: _isPasswordObscure,
             validator: Validators.validatePassword,
-            decoration: const InputDecoration(labelText: 'Contraseña', prefixIcon: Icon(Icons.lock_outline), border: OutlineInputBorder()),
-          ),
-          const SizedBox(height: 15),
-          TextFormField(
-            controller: _dniController,
-            keyboardType: TextInputType.number,
-            onChanged: _onDniChanged,
-            validator: (v) => v == null || v.length != 8 ? 'Ingresa exactamente 8 dígitos' : null,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(8)],
             decoration: InputDecoration(
-              labelText: 'DNI',
-              prefixIcon: const Icon(Icons.badge_outlined),
-              errorText: _dniDuplicateError,
-              suffixIcon: _checkingDni
-                  ? const Padding(
-                      padding: EdgeInsets.all(12),
-                      child: SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    )
-                  : null,
+              labelText: 'Contraseña',
+              prefixIcon: const Icon(Icons.lock_outline),
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _isPasswordObscure ? Icons.visibility_off : Icons.visibility,
+                  color: Colors.grey,
+                ),
+                onPressed: () {
+                  setState(() => _isPasswordObscure = !_isPasswordObscure);
+                },
+              ),
               border: const OutlineInputBorder(),
             ),
           ),
+          if (isDriver) ...[
+            const SizedBox(height: 15),
+            TextFormField(
+              controller: _dniController,
+              keyboardType: TextInputType.number,
+              onChanged: _onDniChanged,
+              validator: (v) => v == null || v.length != 8 ? 'Ingresa exactamente 8 dígitos' : null,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(8)],
+              decoration: InputDecoration(
+                labelText: 'DNI',
+                prefixIcon: const Icon(Icons.badge_outlined),
+                errorText: _dniDuplicateError,
+                suffixIcon: _checkingDni
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : null,
+                border: const OutlineInputBorder(),
+              ),
+            ),
+          ],
           const SizedBox(height: 15),
           DropdownButtonFormField<String>(
             initialValue: _selectedCity,
@@ -997,44 +1012,46 @@ class _RegisterScreenState extends State<RegisterScreen> {
               if (city != null) setState(() => _selectedCity = city);
             },
           ),
-          const SizedBox(height: 15),
-          TextFormField(
-            controller: _birthDateController,
-            readOnly: true,
-            onTap: () => _selectBirthDate(context),
-            validator: (v) => v == null || v.trim().isEmpty ? 'Selecciona tu fecha de nacimiento' : null,
-            decoration: const InputDecoration(
-              labelText: 'Fecha de nacimiento',
-              hintText: 'DD/MM/AAAA',
-              prefixIcon: Icon(Icons.calendar_month_outlined),
-              suffixIcon: Icon(Icons.calendar_today, size: 18),
-              border: OutlineInputBorder(),
+          if (isDriver) ...[
+            const SizedBox(height: 15),
+            TextFormField(
+              controller: _birthDateController,
+              readOnly: true,
+              onTap: () => _selectBirthDate(context),
+              validator: (v) => v == null || v.trim().isEmpty ? 'Selecciona tu fecha de nacimiento' : null,
+              decoration: const InputDecoration(
+                labelText: 'Fecha de nacimiento',
+                hintText: 'DD/MM/AAAA',
+                prefixIcon: Icon(Icons.calendar_month_outlined),
+                suffixIcon: Icon(Icons.calendar_today, size: 18),
+                border: OutlineInputBorder(),
+              ),
             ),
-          ),
-          const SizedBox(height: 15),
-          TextFormField(
-            controller: _ageController,
-            readOnly: true,
-            keyboardType: TextInputType.number,
-            validator: (v) {
-              if (v == null || v.trim().isEmpty) return 'La edad es obligatoria';
-              final ageNum = int.tryParse(v.trim());
-              if (ageNum == null) return 'Edad no válida';
-              if (widget.initialRole == 'driver' && ageNum < 18) {
-                return 'Debes tener al menos 18 años para ser conductor';
-              }
-              if (ageNum < 14) {
-                return 'Debes tener al menos 14 años';
-              }
-              return null;
-            },
-            decoration: const InputDecoration(
-              labelText: 'Edad',
-              prefixIcon: Icon(Icons.cake_outlined),
-              suffixText: 'años',
-              border: OutlineInputBorder(),
+            const SizedBox(height: 15),
+            TextFormField(
+              controller: _ageController,
+              readOnly: true,
+              keyboardType: TextInputType.number,
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return 'La edad es obligatoria';
+                final ageNum = int.tryParse(v.trim());
+                if (ageNum == null) return 'Edad no válida';
+                if (widget.initialRole == 'driver' && ageNum < 18) {
+                  return 'Debes tener al menos 18 años para ser conductor';
+                }
+                if (ageNum < 14) {
+                  return 'Debes tener al menos 14 años';
+                }
+                return null;
+              },
+              decoration: const InputDecoration(
+                labelText: 'Edad',
+                prefixIcon: Icon(Icons.cake_outlined),
+                suffixText: 'años',
+                border: OutlineInputBorder(),
+              ),
             ),
-          ),
+          ],
           const SizedBox(height: 30),
           ElevatedButton(
             onPressed: _isLoading ? null : _onNextPressed,

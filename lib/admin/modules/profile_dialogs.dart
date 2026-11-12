@@ -473,7 +473,11 @@ class PassengerProfileDialog extends StatelessWidget {
                 _section('Contacto'),
                 _kv('Correo', v('email')),
                 _kv('Teléfono', v('phone')),
-                _kv('DNI', v('dni')),
+                _section('Documento de Identidad (DNI)'),
+                _kv('Número DNI', v('dni')),
+                _kv('Estado DNI', v('dniStatus').isNotEmpty ? v('dniStatus') : (v('dni').isNotEmpty ? 'Registrado' : 'No registrado')),
+                _dniDocRow(context, 'DNI Frontal (Anverso)', (u['dniFrontUrl'] ?? u['documents']?['dniFront'])?.toString()),
+                _dniDocRow(context, 'DNI Posterior (Reverso)', (u['dniBackUrl'] ?? u['documents']?['dniBack'])?.toString()),
                 _section('Cuenta'),
                 _kv('Ciudad', v('city')),
                 _kv('Registro', formatAdminDate(u['createdAt'])),
@@ -486,8 +490,25 @@ class PassengerProfileDialog extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
+              TextButton.icon(
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                icon: const Icon(Icons.delete_outline, size: 18),
+                label: const Text('Eliminar pasajero'),
+                onPressed: () async {
+                  final ok = await adminConfirm(
+                    context,
+                    title: 'Eliminar pasajero',
+                    body: '¿Estás seguro de eliminar a $name definitivamente? Se borrará su cuenta, DNI, teléfono, fotos y todos sus registros de la base de datos.',
+                    action: 'Eliminar definitivamente',
+                    danger: true,
+                  );
+                  if (!ok || !context.mounted) return;
+                  Navigator.pop(context);
+                  await _run(context, () => fs.deleteUserCompletely(uid), 'Pasajero eliminado completamente');
+                },
+              ),
               OutlinedButton(
                 onPressed: () async {
                   if (!blocked) {
@@ -508,6 +529,52 @@ class PassengerProfileDialog extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _dniDocRow(BuildContext context, String title, String? url) {
+    final hasUrl = url != null && url.isNotEmpty;
+    return Container(
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9F9F9),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            hasUrl ? Icons.photo_library : Icons.broken_image_outlined,
+            color: hasUrl ? const Color(0xFFF9D408) : Colors.grey,
+            size: 24,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            ),
+          ),
+          if (hasUrl)
+            TextButton.icon(
+              icon: const Icon(Icons.visibility, size: 16),
+              label: const Text('Ver foto', style: TextStyle(fontSize: 12)),
+              onPressed: () {
+                DocumentViewerDialog.show(
+                  context,
+                  url: url,
+                  title: title,
+                );
+              },
+            )
+          else
+            const Text(
+              'No adjuntada',
+              style: TextStyle(color: Colors.grey, fontSize: 12),
+            ),
+        ],
+      ),
     );
   }
 }

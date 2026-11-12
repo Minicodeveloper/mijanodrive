@@ -41,6 +41,26 @@ class DocumentService {
     }
   }
 
+  Future<String> uploadPassengerDniPhoto({
+    required String uid,
+    required String side, // 'front' o 'back'
+    required File imageFile,
+  }) async {
+    try {
+      final storageRef = FirebaseStorage.instance
+          .ref()
+          .child('passengers')
+          .child(uid)
+          .child('dni_$side.jpg');
+
+      final UploadTask uploadTask = storageRef.putFile(imageFile);
+      final TaskSnapshot snapshot = await uploadTask;
+      return await snapshot.ref.getDownloadURL();
+    } catch (e) {
+      rethrow;
+    }
+  }
+
   Future<String> uploadAdImage(String adId, List<int> imageBytes) async {
     try {
       final storageRef = FirebaseStorage.instance.ref().child('ads/$adId.jpg');
