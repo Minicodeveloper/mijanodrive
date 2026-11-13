@@ -1228,6 +1228,7 @@ class FirestoreService {
     String? phone,
     String? name,
     String? plate,
+    String? emergencyPhone,
     String reportedBy = 'driver', 
   }) =>
       _db.collection('alerts').add({
@@ -1239,6 +1240,7 @@ class FirestoreService {
         'phone': phone,
         'name': name,
         'plate': plate,
+        'emergencyPhone': emergencyPhone,
         'reportedBy': reportedBy,
         'status': 'open',
         'createdAt': FieldValue.serverTimestamp(),

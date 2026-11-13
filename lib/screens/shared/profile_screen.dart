@@ -13,6 +13,91 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  Future<void> _showEditEmergencyPhoneDialog(BuildContext context, User user) async {
+    final controller = TextEditingController(text: user.emergencyPhone ?? '');
+    final formKey = GlobalKey<FormState>();
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: const [
+            Icon(Icons.contact_phone, color: Colors.redAccent),
+            SizedBox(width: 8),
+            Text('Número de Emergencia', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Ingresa el número de celular de un familiar o contacto de confianza. Si presionas S.O.S., la central de control lo llamará inmediatamente.',
+                style: TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: controller,
+                keyboardType: TextInputType.phone,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: 'Número de celular',
+                  hintText: 'Ej: 987654321',
+                  prefixIcon: const Icon(Icons.phone),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                validator: (val) {
+                  if (val == null || val.trim().isEmpty) {
+                    return 'Ingresa un número de teléfono';
+                  }
+                  if (val.trim().length < 6) {
+                    return 'Ingresa un número válido';
+                  }
+                  return null;
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (!formKey.currentState!.validate()) return;
+              final phone = controller.text.trim();
+              Navigator.pop(ctx);
+
+              final updated = user.copyWith(emergencyPhone: phone);
+              await FirestoreService.instance.saveUser(updated);
+              AuthService.instance.currentUser = updated;
+
+              if (mounted) {
+                setState(() {});
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('¡Número de emergencia guardado correctamente!'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFF9D408),
+              foregroundColor: Colors.black,
+            ),
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final authService = AuthService.instance;
@@ -134,6 +219,66 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         title: const Text('Ciudad'),
                         subtitle: Text(user.city ?? 'Tarapoto'),
                       ),
+                      if (user.role == UserRole.passenger) ...[
+                        const Divider(),
+                        ListTile(
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.red.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(Icons.contact_phone, color: Colors.redAccent, size: 20),
+                          ),
+                          title: Row(
+                            children: [
+                              const Text('Número de emergencia', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.red,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  'S.O.S.',
+                                  style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ],
+                          ),
+                          subtitle: Text(
+                            (user.emergencyPhone != null && user.emergencyPhone!.trim().isNotEmpty)
+                                ? user.emergencyPhone!
+                                : 'No configurado · Toca para colocar número',
+                            style: TextStyle(
+                              color: (user.emergencyPhone != null && user.emergencyPhone!.trim().isNotEmpty)
+                                  ? Colors.black87
+                                  : Colors.orange[800],
+                              fontWeight: (user.emergencyPhone != null && user.emergencyPhone!.trim().isNotEmpty)
+                                  ? FontWeight.w600
+                                  : FontWeight.normal,
+                              fontSize: 13,
+                            ),
+                          ),
+                          trailing: ElevatedButton(
+                            onPressed: () => _showEditEmergencyPhoneDialog(context, user),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFF9D408),
+                              foregroundColor: Colors.black87,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            child: Text(
+                              (user.emergencyPhone != null && user.emergencyPhone!.trim().isNotEmpty)
+                                  ? 'Cambiar'
+                                  : 'Colocar',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),

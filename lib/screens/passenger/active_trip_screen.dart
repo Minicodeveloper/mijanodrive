@@ -170,6 +170,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
         name: user?.name,
         phone: user?.phone,
         plate: _driver?.plate,
+        emergencyPhone: user?.emergencyPhone,
         reportedBy: 'passenger',
       );
       if (mounted) {

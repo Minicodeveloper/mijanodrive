@@ -1,13 +1,40 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:hive_flutter/hive_flutter.dart';
+import '../firebase_options.dart';
 import '../models/user_model.dart';
 import '../screens/driver/driver_trip_chat_screen.dart';
 import 'auth_service.dart';
 import 'sound_service.dart';
+
+/// Manejador de notificaciones FCM cuando la aplicación está en segundo plano o completamente cerrada
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } catch (_) {}
+
+  debugPrint('[FCM Background] Notificación recibida con la app en segundo plano o cerrada: ${message.messageId}');
+
+  // Si no trae bloque de notificación del sistema pero sí payload de datos, lo mostramos manualmente
+  if (message.notification == null && message.data.isNotEmpty) {
+    final title = message.data['title']?.toString() ?? 'Mijano Drive';
+    final body = message.data['body']?.toString() ?? message.data['message']?.toString() ?? '';
+    if (title.isNotEmpty || body.isNotEmpty) {
+      await NotificationService.showGeneralCampaignNotification(
+        title: title,
+        body: body,
+      );
+    }
+  }
+}
 
 class NotificationService {
   // LLAVE GLOBAL DECLARADA AQUÍ PARA EVITAR ERRORES DE REFERENCIA
@@ -16,7 +43,7 @@ class NotificationService {
   static final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
 
-  /// Inicializa el servicio de notificaciones y los canales de alta prioridad
+  /// Inicializa el servicio de notificaciones locales y FCM
   static Future<void> init() async {
     const AndroidInitializationSettings initializationSettingsAndroid =
         AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -27,17 +54,16 @@ class NotificationService {
     await _notificationsPlugin.initialize(
       initializationSettings,
       onDidReceiveNotificationResponse: (NotificationResponse response) {
-        // Manejar el clic en la notificación
         if (response.payload != null) {
           _handleNotificationClick(response.payload!);
         }
       },
     );
 
-    // Canal de ALTA IMPORTANCIA para que flote sobre la pantalla (Heads-up / Banner)
+    // Canal de ALTA IMPORTANCIA para solicitudes de viaje (Heads-up / Banner)
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
-      'trip_alerts_channel', // ID del canal
-      'Alertas de Viaje', // Nombre visible para el usuario
+      'trip_alerts_channel',
+      'Alertas de Viaje',
       description: 'Notificaciones flotantes de solicitudes y estados de viaje',
       importance: Importance.max,
       playSound: true,
@@ -49,6 +75,22 @@ class NotificationService {
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(channel);
+
+    // Canal V2 para Campañas Masivas y Alertas (Garantiza Banner flotante de alta prioridad)
+    const AndroidNotificationChannel channelV2 = AndroidNotificationChannel(
+      'trip_alerts_channel_v2',
+      'Alertas y Campañas Masivas',
+      description: 'Notificaciones flotantes de anuncios, campañas y alertas de viaje',
+      importance: Importance.max,
+      playSound: true,
+      sound: RawResourceAndroidNotificationSound('melodia_notificacion'),
+      enableVibration: true,
+    );
+
+    await _notificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(channelV2);
 
     // Canal para MENSAJES DE CHAT en viaje activo
     const AndroidNotificationChannel chatChannel = AndroidNotificationChannel(
@@ -66,7 +108,63 @@ class NotificationService {
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(chatChannel);
 
-    // Si la app estaba cerrada y se abrió al pulsar la notificación
+    // Configuración de Firebase Cloud Messaging (FCM)
+    try {
+      final messaging = FirebaseMessaging.instance;
+
+      // Presentación en primer plano
+      await messaging.setForegroundNotificationPresentationOptions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+
+      // Manejar mensajes recibidos en primer plano
+      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+        debugPrint('[FCM Foreground] Mensaje recibido en primer plano: ${message.messageId}');
+        final title = message.notification?.title ?? message.data['title']?.toString() ?? 'Mijano Drive';
+        final body = message.notification?.body ?? message.data['body']?.toString() ?? message.data['message']?.toString() ?? '';
+        if (title.isNotEmpty || body.isNotEmpty) {
+          showGeneralCampaignNotification(title: title, body: body);
+        }
+      });
+
+      // Manejar clic cuando la notificación abre la app desde segundo plano
+      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+        debugPrint('[FCM OpenedApp] Notificación abierta por el usuario');
+        final payload = message.data['payload']?.toString() ?? 'general_campaign';
+        _handleNotificationClick(payload);
+      });
+
+      // Si la app estaba terminada y se abrió al pulsar una notificación FCM
+      final RemoteMessage? initialMessage = await messaging.getInitialMessage();
+      if (initialMessage != null) {
+        final payload = initialMessage.data['payload']?.toString() ?? 'general_campaign';
+        Future.delayed(const Duration(milliseconds: 700), () {
+          _handleNotificationClick(payload);
+        });
+      }
+
+      // Escuchar cambios de token FCM
+      messaging.onTokenRefresh.listen((newToken) {
+        debugPrint('[FCM] Token refreshed: $newToken');
+        final currentUser = AuthService.instance.currentUser;
+        if (currentUser != null) {
+          FirebaseFirestore.instance.collection('users').doc(currentUser.uid).update({
+            'fcmToken': newToken,
+            'fcmTokens': FieldValue.arrayUnion([newToken]),
+            'lastFcmUpdate': FieldValue.serverTimestamp(),
+          }).catchError((_) {});
+        }
+      });
+
+      // Sincronizar token inicial y tópicos
+      unawaited(syncUserFcm());
+    } catch (e) {
+      debugPrint('[FCM Init] Error configurando Firebase Messaging: $e');
+    }
+
+    // Si la app estaba cerrada y se abrió al pulsar una notificación local
     final NotificationAppLaunchDetails? launchDetails =
         await _notificationsPlugin.getNotificationAppLaunchDetails();
     if (launchDetails != null && launchDetails.didNotificationLaunchApp) {
@@ -86,6 +184,84 @@ class NotificationService {
             AndroidFlutterLocalNotificationsPlugin>();
     if (androidPlugin != null) {
       await androidPlugin.requestNotificationsPermission();
+    }
+
+    try {
+      await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        announcement: false,
+        badge: true,
+        carPlay: false,
+        criticalAlert: true,
+        provisional: false,
+        sound: true,
+      );
+    } catch (e) {
+      debugPrint('[FCM] Error solicitando permisos: $e');
+    }
+  }
+
+  /// Sincroniza el FCM Token del dispositivo en Firestore y suscribe al usuario a los tópicos según su rol
+  static Future<void> syncUserFcm([User? user]) async {
+    try {
+      final messaging = FirebaseMessaging.instance;
+      final token = await messaging.getToken();
+      final currentUser = user ?? AuthService.instance.currentUser;
+
+      if (token != null && token.isNotEmpty) {
+        debugPrint('[FCM] Token del dispositivo obtenido: $token');
+        if (currentUser != null) {
+          await FirebaseFirestore.instance.collection('users').doc(currentUser.uid).update({
+            'fcmToken': token,
+            'fcmTokens': FieldValue.arrayUnion([token]),
+            'lastFcmUpdate': FieldValue.serverTimestamp(),
+          }).catchError((_) {});
+        }
+      }
+
+      // 1. Tópico general para todos los dispositivos
+      await messaging.subscribeToTopic('all');
+
+      // 2. Tópicos según el rol y tipo de vehículo
+      if (currentUser != null) {
+        final isStaffOrAdmin = currentUser.role == UserRole.admin ||
+            currentUser.role == UserRole.operator ||
+            currentUser.role == UserRole.support ||
+            currentUser.role == UserRole.control;
+
+        if (isStaffOrAdmin) {
+          // El administrador se suscribe a todos los tópicos para poder recibir cualquier notificación de prueba
+          await messaging.subscribeToTopic('passengers');
+          await messaging.subscribeToTopic('drivers_all');
+          await messaging.subscribeToTopic('drivers_mototaxi');
+          await messaging.subscribeToTopic('drivers_auto');
+          debugPrint('[FCM] Administrador suscrito a todos los tópicos');
+        } else if (currentUser.role == UserRole.passenger) {
+          await messaging.subscribeToTopic('passengers');
+          await messaging.unsubscribeFromTopic('drivers_all');
+          await messaging.unsubscribeFromTopic('drivers_mototaxi');
+          await messaging.unsubscribeFromTopic('drivers_auto');
+          debugPrint('[FCM] Suscrito a tópico: passengers');
+        } else if (currentUser.role == UserRole.driver) {
+          await messaging.subscribeToTopic('drivers_all');
+          await messaging.unsubscribeFromTopic('passengers');
+
+          final vehicle = (currentUser.vehicleType ?? '').toLowerCase();
+          if (vehicle.contains('moto')) {
+            await messaging.subscribeToTopic('drivers_mototaxi');
+            await messaging.unsubscribeFromTopic('drivers_auto');
+            debugPrint('[FCM] Suscrito a tópico: drivers_mototaxi');
+          } else if (vehicle.contains('auto') || vehicle.contains('carro')) {
+            await messaging.subscribeToTopic('drivers_auto');
+            await messaging.unsubscribeFromTopic('drivers_mototaxi');
+            debugPrint('[FCM] Suscrito a tópico: drivers_auto');
+          } else {
+            debugPrint('[FCM] Suscrito a tópico: drivers_all');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[FCM] Error en syncUserFcm: $e');
     }
   }
 
@@ -210,16 +386,18 @@ class NotificationService {
     required String title,
     required String body,
   }) async {
+    final id = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-      'trip_alerts_channel', // Usa el canal con Importance.max
-      'Alertas de Viaje',
-      channelDescription: 'Notificaciones flotantes del sistema',
+      'trip_alerts_channel_v2', // Usa el canal v2 con Importance.max
+      'Alertas y Campañas Masivas',
+      channelDescription: 'Notificaciones flotantes del sistema y anuncios',
       importance: Importance.max,
       priority: Priority.high,
+      playSound: true,
+      enableVibration: true,
       color: Color(0xFFF9D408),
       icon: '@mipmap/ic_launcher',
       sound: RawResourceAndroidNotificationSound('melodia_notificacion'),
-      fullScreenIntent: true, // Forzar banner emergente flotante arriba
       styleInformation: BigTextStyleInformation(''),
     );
 
@@ -227,7 +405,7 @@ class NotificationService {
         NotificationDetails(android: androidDetails);
 
     await _notificationsPlugin.show(
-      DateTime.now().millisecond,
+      id,
       title,
       body,
       platformDetails,
@@ -269,6 +447,7 @@ class NotificationService {
           .limit(10)
           .snapshots()
           .listen((snapshot) async {
+        debugPrint('[PushListener] Recibido snapshot con ${snapshot.docChanges.length} cambios, total ${snapshot.docs.length} docs');
         for (final doc in snapshot.docs) {
           final campaignId = doc.id;
           if (_seenCampaignIds.contains(campaignId)) continue;
@@ -276,18 +455,18 @@ class NotificationService {
           final data = doc.data();
           final status = (data['status'] ?? '').toString().toLowerCase();
 
-          // Ignorar campañas creadas hace más de 2 horas para evitar spam histórico al iniciar
+          // Ignorar campañas creadas hace más de 24 horas para evitar spam antiguo
           final createdAt = (data['createdAt'] as Timestamp?)?.toDate();
           if (createdAt != null) {
             final age = DateTime.now().difference(createdAt);
-            if (age.inHours > 2) {
+            if (age.inHours > 24) {
               _seenCampaignIds.add(campaignId);
               continue;
             }
           }
 
-          // Solo procesar si está activa o enviándose
-          if (status != 'sending' && status != 'sent' && status != 'active') {
+          // Solo procesar si está activa, enviándose, enviada o sin status explícito
+          if (status.isNotEmpty && status != 'sending' && status != 'sent' && status != 'active') {
             continue;
           }
 
@@ -298,15 +477,23 @@ class NotificationService {
           final currentUser = AuthService.instance.currentUser;
           final userRole = currentUser?.role;
 
+          final isAdminOrStaff = userRole == UserRole.admin ||
+              userRole == UserRole.operator ||
+              userRole == UserRole.support ||
+              userRole == UserRole.control;
+
           bool matches = false;
 
-          if (audience == 'ALL') {
+          if (isAdminOrStaff) {
+            // El administrador o personal de control siempre recibe las notificaciones para supervisión/pruebas
             matches = true;
-          } else if (audience == 'PASSENGER' || audience == 'PASAJERO') {
-            if (userRole == UserRole.passenger || currentUser == null) {
+          } else if (audience == 'ALL' || audience == 'TODOS') {
+            matches = true;
+          } else if (audience == 'PASSENGER' || audience == 'PASAJERO' || audience == 'PASAJEROS') {
+            if (userRole == null || userRole == UserRole.passenger) {
               matches = true;
             }
-          } else if (audience == 'DRIVER' || audience == 'CONDUCTOR') {
+          } else if (audience == 'DRIVER' || audience == 'CONDUCTOR' || audience == 'CONDUCTORES') {
             if (userRole == UserRole.driver) {
               // Validar tipo de vehículo si es conductor (Auto vs Mototaxi)
               if (targetVehicle == 'ALL') {
@@ -334,14 +521,15 @@ class NotificationService {
             final title = data['title']?.toString() ?? 'Mijano Drive';
             final body = data['message']?.toString() ?? data['body']?.toString() ?? '';
 
+            debugPrint('[PushListener] Disparando notificación masiva: $title - $body');
             await showGeneralCampaignNotification(title: title, body: body);
           }
         }
       }, onError: (e) {
-        debugPrint('Aviso: Escucha de push_campaigns: $e');
+        debugPrint('[PushListener] Error en escucha de push_campaigns: $e');
       });
     } catch (e) {
-      debugPrint('Error iniciando escucha de push campaigns: $e');
+      debugPrint('[PushListener] Error iniciando escucha de push campaigns: $e');
     }
   }
 

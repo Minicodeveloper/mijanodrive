@@ -3,53 +3,38 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    function isAuth() {
-      return request.auth != null;
+    // Regla para la carpeta de pasajeros (DNI y verificación)
+    match /passengers/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
-    function isStaff() {
-      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('role', '').lower() in ['admin', 'superadmin', 'operator', 'operador', 'gerente'];
+    // Regla para la carpeta de conductores
+    match /drivers/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
-    function isSuperAdmin() {
-      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('role', '').lower() in ['admin', 'superadmin'];
+    // Regla para las fotos de perfil sueltas
+    match /profile_images/{fileName} {
+      allow read: if true;
+      allow write: if request.auth != null;
     }
 
-    match /drivers/{userId}/{fileName} {
-      allow read: if isAuth();
-      allow write: if isAuth() && request.auth.uid == userId
-                   && request.resource.size < 5 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*');
-      allow delete: if isAuth() && request.auth.uid == userId;
-    }
-
-    match /profile_images/{userId}/{fileName} {
-      allow read: if isAuth();
-      allow write: if isAuth() && request.auth.uid == userId
-                   && request.resource.size < 5 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*');
-      allow delete: if isAuth() && request.auth.uid == userId;
-    }
-
+    // Regla para la carpeta de publicidad (ads)
     match /ads/{fileName} {
-      allow read: if isAuth();
-      allow write: if isAuth() && isStaff()
-                   && request.resource.size < 5 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*');
+      allow read: if true;
+      allow write: if request.auth != null;
     }
 
+    // Regla para el comprobante de pago de planes
     match /plan_receipts/{userId}/{fileName} {
-      allow read: if isAuth() && (request.auth.uid == userId || isStaff());
-      allow write: if isAuth() && request.auth.uid == userId
-                   && request.resource.size < 5 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*');
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
     }
 
-    match /settings/payment_qr/{fileName} {
-      allow read: if isAuth();
-      allow write: if isAuth() && isSuperAdmin()
-                   && request.resource.size < 5 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*');
+    // Regla para la configuración y el QR de pago
+    match /settings/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
     }
   }
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -5,6 +6,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:intl/intl.dart';
 import '../../services/sound_service.dart';
+import '../../services/fcm_sender_service.dart';
+import '../../services/notification_service.dart';
 
 class AdminNotificationsScreen extends StatefulWidget {
   const AdminNotificationsScreen({super.key});
@@ -24,6 +27,13 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen> {
     );
   }
 
+  void _showFcmConfigModal(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => const FcmConfigDialog(),
+    );
+  }
+
   Future<void> _updateCampaignStatus(String docId, String status) async {
     await FirebaseFirestore.instance.collection('push_campaigns').doc(docId).update({'status': status});
   }
@@ -38,6 +48,8 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen> {
       'filterDetails': data['filterDetails'] ?? {},
       'createdAt': FieldValue.serverTimestamp(),
       'status': 'sent',
+      'sentCount': 1,
+      'failedCount': 0,
       'scheduledAt': null,
       'repeat': 'none',
       'repeatDays': null,
@@ -45,6 +57,21 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen> {
     
     try {
       await FirebaseFirestore.instance.collection('push_campaigns').add(newData);
+      
+      // Mostrar y reproducir de inmediato en el dispositivo
+      await NotificationService.showGeneralCampaignNotification(
+        title: data['title'] ?? 'Mijano Drive',
+        body: data['message'] ?? '',
+      );
+
+      // Enviar push a FCM para llegar a dispositivos con la app cerrada o en segundo plano
+      unawaited(FcmSenderService.instance.sendCampaignPush(
+        title: data['title'] ?? '',
+        message: data['message'] ?? '',
+        audience: data['audience'] ?? 'PASSENGER',
+        targetVehicleType: data['targetVehicleType'] ?? 'ALL',
+      ));
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -503,6 +530,20 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen> {
                             ),
                           ],
                         );
+                        final btnFcm = OutlinedButton.icon(
+                          onPressed: () => _showFcmConfigModal(context),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFFF9D408),
+                            side: const BorderSide(color: Color(0xFFF9D408)),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          icon: const Icon(Icons.settings_remote, size: 18),
+                          label: const Text('Configurar FCM (App Cerrada)'),
+                        );
+
                         final btn = ElevatedButton.icon(
                           onPressed: () => _showNewCampaignModal(context),
                           style: ElevatedButton.styleFrom(
@@ -523,7 +564,11 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen> {
                             children: [
                               textBlock,
                               const SizedBox(height: 16),
-                              btn,
+                              Wrap(
+                                spacing: 10,
+                                runSpacing: 10,
+                                children: [btnFcm, btn],
+                              ),
                             ],
                           );
                         } else {
@@ -532,7 +577,10 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen> {
                             children: [
                               Expanded(child: textBlock),
                               const SizedBox(width: 16),
-                              btn,
+                              Wrap(
+                                spacing: 10,
+                                children: [btnFcm, btn],
+                              ),
                             ],
                           );
                         }
@@ -923,19 +971,38 @@ class _NewCampaignDialogState extends State<NewCampaignDialog> {
       final status = _scheduleType == 'now' ? 'sent' : 'scheduled';
       final scheduledAt = scheduledUtc != null ? Timestamp.fromDate(scheduledUtc) : null;
 
+      final targetVeh = audience == 'DRIVER' ? _targetVehicleType : 'ALL';
+
       await FirebaseFirestore.instance.collection('push_campaigns').add({
         'title': title,
         'message': body,
         'audience': audience,
-        'targetVehicleType': audience == 'DRIVER' ? _targetVehicleType : 'ALL',
+        'targetVehicleType': targetVeh,
         'filterType': _filterType,
         'filterDetails': _getFilterDetailsMap(),
         'createdAt': FieldValue.serverTimestamp(),
         'status': status,
+        'sentCount': _scheduleType == 'now' ? 1 : 0,
+        'failedCount': 0,
         'scheduledAt': scheduledAt,
         'repeat': _scheduleType == 'now' ? 'none' : _repeatType,
         'repeatDays': (_scheduleType == 'scheduled' && _repeatType == 'weekly') ? _repeatDays : null,
       });
+
+      // Disparar de inmediato en el dispositivo emisor y enviar push en segundo plano / app cerrada
+      if (_scheduleType == 'now') {
+        await NotificationService.showGeneralCampaignNotification(
+          title: title,
+          body: body,
+        );
+
+        unawaited(FcmSenderService.instance.sendCampaignPush(
+          title: title,
+          message: body,
+          audience: audience,
+          targetVehicleType: targetVeh,
+        ));
+      }
 
       if (mounted) {
         Navigator.pop(context);
@@ -1404,6 +1471,283 @@ class _NewCampaignDialogState extends State<NewCampaignDialog> {
             ),
           ],
         )
+      ],
+    );
+  }
+}
+
+class FcmConfigDialog extends StatefulWidget {
+  const FcmConfigDialog({super.key});
+
+  @override
+  State<FcmConfigDialog> createState() => _FcmConfigDialogState();
+}
+
+class _FcmConfigDialogState extends State<FcmConfigDialog> {
+  final _jsonController = TextEditingController();
+  final _serverKeyController = TextEditingController();
+  bool _isLoading = true;
+  bool _isSaving = false;
+  bool _isTesting = false;
+  bool _isConfigured = false;
+  String _configuredEmail = '';
+  String _configuredProject = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCurrentConfig();
+  }
+
+  Future<void> _loadCurrentConfig() async {
+    final creds = await FcmSenderService.instance.getCredentials();
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        if (creds != null) {
+          _configuredEmail = creds['clientEmail']?.toString() ?? '';
+          _configuredProject = creds['projectId']?.toString() ?? '';
+          final sk = creds['serverKey']?.toString() ?? '';
+          _serverKeyController.text = sk;
+          _isConfigured = (_configuredEmail.isNotEmpty && (creds['privateKey'] ?? '').toString().isNotEmpty) || sk.isNotEmpty;
+        }
+      });
+    }
+  }
+
+  Future<void> _saveJson() async {
+    final raw = _jsonController.text.trim();
+    if (raw.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pega el contenido del archivo JSON de Firebase')),
+      );
+      return;
+    }
+
+    setState(() => _isSaving = true);
+    final (ok, msg) = await FcmSenderService.instance.saveCredentialsFromJson(raw);
+    setState(() => _isSaving = false);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(msg),
+          backgroundColor: ok ? Colors.green : Colors.red,
+        ),
+      );
+      if (ok) {
+        _jsonController.clear();
+        _loadCurrentConfig();
+      }
+    }
+  }
+
+  Future<void> _saveServerKey() async {
+    final sk = _serverKeyController.text.trim();
+    if (sk.isEmpty) return;
+
+    setState(() => _isSaving = true);
+    final ok = await FcmSenderService.instance.saveCredentials(
+      projectId: _configuredProject.isNotEmpty ? _configuredProject : 'mijanodrive-peru',
+      clientEmail: _configuredEmail,
+      privateKey: '',
+      serverKey: sk,
+    );
+    setState(() => _isSaving = false);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ok ? 'Clave de servidor guardada.' : 'Error al guardar.'),
+          backgroundColor: ok ? Colors.green : Colors.red,
+        ),
+      );
+      if (ok) _loadCurrentConfig();
+    }
+  }
+
+  Future<void> _testPush() async {
+    setState(() => _isTesting = true);
+    final (ok, msg) = await FcmSenderService.instance.sendCampaignPush(
+      title: '🔔 Notificación de Prueba Mijano Drive',
+      message: '¡Prueba de notificación push exitosa con la app en segundo plano!',
+      audience: 'ALL',
+      targetVehicleType: 'ALL',
+    );
+    setState(() => _isTesting = false);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(msg),
+          backgroundColor: ok ? Colors.green : Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: const Color(0xFF1E1E1E),
+      title: Row(
+        children: [
+          const Icon(Icons.cloud_sync, color: Color(0xFFF9D408), size: 24),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              'Configuración FCM (Push en Segundo Plano)',
+              style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 520,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Estado actual
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _isConfigured ? Colors.green.withOpacity(0.15) : Colors.orange.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: _isConfigured ? Colors.green : Colors.orange,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      _isConfigured ? Icons.check_circle : Icons.warning_amber_rounded,
+                      color: _isConfigured ? Colors.green : Colors.orange,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _isConfigured ? 'FCM Activo y Configurado' : 'FCM No Configurado',
+                            style: TextStyle(
+                              color: _isConfigured ? Colors.green : Colors.orange,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                          if (_isConfigured && _configuredEmail.isNotEmpty)
+                            Text(
+                              'Cuenta: $_configuredEmail',
+                              style: const TextStyle(color: Colors.white70, fontSize: 11),
+                            ),
+                          if (!_isConfigured)
+                            const Text(
+                              'Pega tu clave de Service Account de Firebase para que las notificaciones lleguen con la app cerrada.',
+                              style: TextStyle(color: Colors.white70, fontSize: 11),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              const Text(
+                '¿Cómo obtener la clave Service Account JSON de Firebase?',
+                style: TextStyle(color: Color(0xFFF9D408), fontWeight: FontWeight.bold, fontSize: 12),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                '1. Abre la Consola de Firebase > Configuración del proyecto ⚙️.\n'
+                '2. Ve a la pestaña "Cuentas de servicio" (Service accounts).\n'
+                '3. Haz clic en "Generar nueva clave privada" y descarga el archivo .json.\n'
+                '4. Abre el archivo descargado, copia todo su texto y pégalo abajo.',
+                style: TextStyle(color: Colors.grey, fontSize: 11, height: 1.4),
+              ),
+              const SizedBox(height: 14),
+
+              TextField(
+                controller: _jsonController,
+                maxLines: 5,
+                style: const TextStyle(color: Colors.white, fontSize: 12, fontFamily: 'monospace'),
+                decoration: InputDecoration(
+                  hintText: 'Pega aquí el contenido de tu archivo service-account.json...',
+                  hintStyle: const TextStyle(color: Colors.white24, fontSize: 11),
+                  filled: true,
+                  fillColor: const Color(0xFF2A2A2A),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: Colors.grey[700]!),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: _isSaving ? null : _saveJson,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFF9D408),
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    ),
+                    icon: _isSaving
+                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                        : const Icon(Icons.save, size: 16),
+                    label: const Text('Guardar Credenciales JSON', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                  ),
+                ],
+              ),
+              const Divider(color: Colors.grey, height: 28),
+
+              // Probar Envío
+              if (_isConfigured)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF262626),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Envía una notificación de prueba ahora mismo a todos los dispositivos:',
+                          style: TextStyle(color: Colors.white70, fontSize: 12),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      ElevatedButton.icon(
+                        onPressed: _isTesting ? null : _testPush,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blueAccent,
+                          foregroundColor: Colors.white,
+                        ),
+                        icon: _isTesting
+                            ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Icon(Icons.send, size: 16),
+                        label: const Text('Probar Envío', style: TextStyle(fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cerrar', style: TextStyle(color: Colors.grey)),
+        ),
       ],
     );
   }

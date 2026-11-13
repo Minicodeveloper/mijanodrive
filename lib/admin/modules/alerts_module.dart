@@ -254,7 +254,9 @@ class _AlertsModuleState extends State<AlertsModule> {
         longitude: -76.1142,
         city: 'Yurimaguas',
         phone: '999888777', // Simulación de info de identidad
-        name: 'Juan Perez (Simulación)',
+        name: 'Juan Perez (Simulación Pasajero)',
+        emergencyPhone: '987654321',
+        reportedBy: 'passenger',
         plate: '1234-AB',
       );
     } catch (e) {
@@ -286,6 +288,7 @@ class _AlertsModuleState extends State<AlertsModule> {
     final name = a['name'] as String?;
     final phone = a['phone'] as String?;
     final plate = a['plate'] as String?;
+    final emergencyPhone = (a['emergencyPhone'] ?? a['emergencyContact']) as String?;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -324,10 +327,24 @@ class _AlertsModuleState extends State<AlertsModule> {
                     // Fila de datos críticos (según cláusula de T&C)
                     Wrap(
                       spacing: 12,
-                      runSpacing: 4,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         if (name != null) Text('👤 $name', style: const TextStyle(fontWeight: FontWeight.w600)),
                         if (phone != null) Text('📞 $phone', style: const TextStyle(fontWeight: FontWeight.w600)),
+                        if (emergencyPhone != null && emergencyPhone.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.red.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: Colors.redAccent.withOpacity(0.4)),
+                            ),
+                            child: Text(
+                              '🚨 Contacto Familiar: $emergencyPhone',
+                              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent, fontSize: 12),
+                            ),
+                          ),
                         if (plate != null)
                           Text.rich(
                             TextSpan(children: [
@@ -384,7 +401,8 @@ class _AlertsModuleState extends State<AlertsModule> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                if (!isResolved)
+                if (!isResolved) ...[
+                  // 1. Botón Policía 105
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.blue[800],
@@ -394,12 +412,35 @@ class _AlertsModuleState extends State<AlertsModule> {
                     icon: const Icon(Icons.local_police, size: 18),
                     label: const Text('Llamar 105 (Policía)'),
                   ),
-                if (!isResolved && phone != null)
+                  // 2. Botón SAMU 106 (para Pasajero y Conductor)
                   OutlinedButton.icon(
-                    onPressed: () => _callPhone(phone),
-                    icon: const Icon(Icons.phone, size: 18),
-                    label: Text('Llamar ${_who(a).toLowerCase()}'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red[700],
+                      side: BorderSide(color: Colors.red[700]!),
+                    ),
+                    onPressed: () => _callPhone('106'),
+                    icon: const Icon(Icons.medical_services_outlined, size: 18),
+                    label: const Text('Llamar 106 (SAMU)'),
                   ),
+                  // 3. Botón Contacto de Emergencia Familiar
+                  if (emergencyPhone != null && emergencyPhone.isNotEmpty)
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.amber[800],
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () => _callPhone(emergencyPhone),
+                      icon: const Icon(Icons.emergency_share, size: 18),
+                      label: Text('Llamar Familiar ($emergencyPhone)'),
+                    ),
+                  // 4. Botón llamar al usuario
+                  if (phone != null)
+                    OutlinedButton.icon(
+                      onPressed: () => _callPhone(phone),
+                      icon: const Icon(Icons.phone, size: 18),
+                      label: Text('Llamar ${_who(a).toLowerCase()}'),
+                    ),
+                ],
                 OutlinedButton.icon(
                   onPressed: hasGps ? () => _openMap(a) : null,
                   icon: const Icon(Icons.map_outlined, size: 18),
@@ -520,28 +561,31 @@ class _AlertsModuleState extends State<AlertsModule> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Pestañas / Selector de vistas
+                // Pestañas / Selector de vistas (con scroll horizontal para evitar overflow)
                 Padding(
                   padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    children: [
-                      ChoiceChip(
-                        label: const Text('Alertas Activas', style: TextStyle(fontWeight: FontWeight.bold)),
-                        selected: _currentTab == 0,
-                        selectedColor: MijanoTheme.signal.withOpacity(0.2),
-                        onSelected: (val) {
-                          if (val) setState(() => _currentTab = 0);
-                        },
-                      ),
-                      const SizedBox(width: 12),
-                      ChoiceChip(
-                        label: const Text('Historial (Atendidas)', style: TextStyle(fontWeight: FontWeight.bold)),
-                        selected: _currentTab == 1,
-                        onSelected: (val) {
-                          if (val) setState(() => _currentTab = 1);
-                        },
-                      ),
-                    ],
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        ChoiceChip(
+                          label: const Text('Alertas Activas', style: TextStyle(fontWeight: FontWeight.bold)),
+                          selected: _currentTab == 0,
+                          selectedColor: MijanoTheme.signal.withOpacity(0.2),
+                          onSelected: (val) {
+                            if (val) setState(() => _currentTab = 0);
+                          },
+                        ),
+                        const SizedBox(width: 12),
+                        ChoiceChip(
+                          label: const Text('Historial (Atendidas)', style: TextStyle(fontWeight: FontWeight.bold)),
+                          selected: _currentTab == 1,
+                          onSelected: (val) {
+                            if (val) setState(() => _currentTab = 1);
+                          },
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 const Divider(height: 1),

@@ -11,6 +11,7 @@ import 'package:local_auth/local_auth.dart';
 import 'package:mijano_drive_app/models/user_model.dart';
 import '../models/tariff_model.dart';
 import 'firestore_service.dart';
+import 'notification_service.dart';
 
 class AuthService {
   static final AuthService instance = AuthService._internal();
@@ -21,6 +22,7 @@ class AuthService {
   final LocalAuthentication _localAuth = LocalAuthentication();
 
   String? _verificationId;
+  int? _resendToken;
   User? currentUser;
 
   String _normalize(String phone) {
@@ -51,15 +53,57 @@ class AuthService {
   // ==========================================
   // BUSCADOR INTELIGENTE DE USUARIO POR TELÉFONO
   // ==========================================
-  Future<DocumentSnapshot<Map<String, dynamic>>?> findUserDocByPhone(String phone) async {
-    final cleanPhone = phone.trim().replaceAll(RegExp(r'\D'), '');
-    if (cleanPhone.isEmpty) return null;
+  Set<String> _buildPhoneVariants(String rawPhone) {
+    final digits = rawPhone.trim().replaceAll(RegExp(r'\D'), '');
+    String nineDigits = '';
+    if (digits.length == 9) {
+      nineDigits = digits;
+    } else if (digits.startsWith('51') && digits.length >= 11) {
+      nineDigits = digits.substring(2, 11);
+    } else if (digits.length > 9) {
+      nineDigits = digits.substring(digits.length - 9);
+    } else {
+      nineDigits = digits;
+    }
 
-    final variants = <String>{
-      cleanPhone,
-      if (!cleanPhone.startsWith('+')) '+51$cleanPhone',
-      if (cleanPhone.startsWith('51') && cleanPhone.length > 9) cleanPhone.substring(2),
+    return {
+      rawPhone.trim(),
+      digits,
+      if (nineDigits.isNotEmpty) ...[
+        nineDigits,
+        '+51$nineDigits',
+        '+51 $nineDigits',
+        '51$nineDigits',
+      ],
     };
+  }
+
+  Future<void> _autoIndexPhone(String uid, String nineDigits) async {
+    if (nineDigits.length != 9) return;
+    try {
+      final batch = _firestore.batch();
+      batch.set(
+        _firestore.collection('phone_index').doc(nineDigits),
+        {'uid': uid, 'syncedAt': FieldValue.serverTimestamp()},
+        SetOptions(merge: true),
+      );
+      batch.set(
+        _firestore.collection('phone_index').doc('+51$nineDigits'),
+        {'uid': uid, 'syncedAt': FieldValue.serverTimestamp()},
+        SetOptions(merge: true),
+      );
+      await batch.commit();
+    } catch (_) {}
+  }
+
+  Future<DocumentSnapshot<Map<String, dynamic>>?> findUserDocByPhone(String phone) async {
+    final variants = _buildPhoneVariants(phone);
+    if (variants.isEmpty) return null;
+
+    final digits = phone.trim().replaceAll(RegExp(r'\D'), '');
+    final nineDigits = digits.length == 9
+        ? digits
+        : (digits.startsWith('51') && digits.length >= 11 ? digits.substring(2, 11) : '');
 
     // 1. Probar phone_index
     for (final variant in variants) {
@@ -72,7 +116,9 @@ class AuthService {
             if (userDoc.exists) return userDoc;
           }
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Aviso al buscar en phone_index: $e');
+      }
     }
 
     // 2. Probar colección users
@@ -84,9 +130,15 @@ class AuthService {
             .limit(1)
             .get();
         if (query.docs.isNotEmpty) {
-          return query.docs.first;
+          final doc = query.docs.first;
+          if (nineDigits.isNotEmpty) {
+            unawaited(_autoIndexPhone(doc.id, nineDigits));
+          }
+          return doc;
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Aviso al buscar en users por phone: $e');
+      }
     }
 
     return null;
@@ -176,6 +228,7 @@ class AuthService {
 
         currentUser = User.fromMap(data);
         unawaited(syncCarDriverToPublicIndex(currentUser!));
+        unawaited(NotificationService.syncUserFcm(currentUser!));
 
         String? status =
             data['status'] ??
@@ -242,6 +295,7 @@ class AuthService {
 
       currentUser = User.fromMap(data);
       unawaited(syncCarDriverToPublicIndex(currentUser!));
+      unawaited(NotificationService.syncUserFcm(currentUser!));
       return currentUser;
     } catch (e) {
       return null;
@@ -346,13 +400,25 @@ class AuthService {
       final newUid = authUser.uid;
 
       // 2. Establecer la nueva contraseña para la cuenta
-      await authUser.updatePassword(newPassword);
+      try {
+        await authUser.updatePassword(newPassword);
+      } catch (_) {}
 
-      // 3. Configurar authEmail para permitir login unificado con contraseña
+      // 3. Vincular email y contraseña para permitir login tradicional unificado (teléfono + contraseña)
       final authEmail = '$cleanPhone@auth.mijanodrive.com';
       try {
-        await authUser.verifyBeforeUpdateEmail(authEmail);
-      } catch (_) {}
+        await authUser.linkWithCredential(
+          fb.EmailAuthProvider.credential(
+            email: authEmail,
+            password: newPassword,
+          ),
+        );
+      } catch (linkErr) {
+        debugPrint('Aviso al vincular email/password: $linkErr');
+        try {
+          await authUser.updatePassword(newPassword);
+        } catch (_) {}
+      }
 
       // 4. Sincronizar Firestore si el UID cambió
       if (newUid != originalUid) {
@@ -360,42 +426,56 @@ class AuthService {
         originalData['authEmail'] = authEmail;
         originalData['authUid'] = newUid;
 
-        await _firestore.collection('users').doc(newUid).set(originalData, SetOptions(merge: true));
+        try {
+          await _firestore.collection('users').doc(newUid).set(originalData, SetOptions(merge: true));
+        } catch (e) {
+          debugPrint('Aviso al guardar users/$newUid: $e');
+        }
 
         // Actualizar phone_index para apuntar al nuevo UID
-        await _firestore.collection('phone_index').doc(cleanPhone).set({
-          'uid': newUid,
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-        await _firestore.collection('phone_index').doc('+51$cleanPhone').set({
-          'uid': newUid,
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-
-        final dni = originalData['dni']?.toString();
-        if (dni != null && dni.isNotEmpty) {
-          await _firestore.collection('dni_index').doc(dni).set({
+        try {
+          await _firestore.collection('phone_index').doc(cleanPhone).set({
             'uid': newUid,
             'updatedAt': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));
+          await _firestore.collection('phone_index').doc('+51$cleanPhone').set({
+            'uid': newUid,
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        } catch (_) {}
+
+        final dni = originalData['dni']?.toString();
+        if (dni != null && dni.isNotEmpty) {
+          try {
+            await _firestore.collection('dni_index').doc(dni).set({
+              'uid': newUid,
+              'updatedAt': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true));
+          } catch (_) {}
         }
 
-        await _firestore.collection('users').doc(originalUid).update({
-          'migratedTo': newUid,
-          'authUid': newUid,
-          'authEmail': authEmail,
-        }).catchError((_) {});
+        try {
+          await _firestore.collection('users').doc(originalUid).update({
+            'migratedTo': newUid,
+            'authUid': newUid,
+            'authEmail': authEmail,
+          });
+        } catch (_) {}
       } else {
-        await _firestore.collection('users').doc(originalUid).update({
-          'authEmail': authEmail,
-        }).catchError((_) {});
+        try {
+          await _firestore.collection('users').doc(originalUid).update({
+            'authEmail': authEmail,
+          });
+        } catch (_) {}
       }
 
       // 5. Cargar usuario actual en sesión
       final updatedDoc = await _firestore.collection('users').doc(newUid).get();
-      if (updatedDoc.exists) {
+      if (updatedDoc.exists && updatedDoc.data() != null) {
         currentUser = User.fromMap(updatedDoc.data()!);
         unawaited(syncCarDriverToPublicIndex(currentUser!));
+      } else {
+        currentUser = User.fromMap(originalData);
       }
 
       return (true, '¡Contraseña restablecida exitosamente!');
@@ -450,18 +530,38 @@ class AuthService {
 
     await _fbAuth.verifyPhoneNumber(
       phoneNumber: number,
+      forceResendingToken: _resendToken,
       verificationCompleted: (fb.PhoneAuthCredential credential) async {},
       verificationFailed: (fb.FirebaseAuthException e) {
         if (!completer.isCompleted) {
-          String errorMsg = 'Error al enviar SMS';
-          if (e.code == 'invalid-phone-number') {
-            errorMsg = 'El número de teléfono ingresado no es válido.';
+          String friendlyMsg;
+          final msgLower = (e.message ?? '').toLowerCase();
+          final codeLower = e.code.toLowerCase();
+
+          if (codeLower.contains('too-many-requests') ||
+              msgLower.contains('unusual activity') ||
+              msgLower.contains('blocked all requests')) {
+            friendlyMsg =
+                'Por seguridad, se han realizado varios intentos seguidos. Por favor espera unos minutos antes de solicitar un nuevo código SMS.';
+          } else if (codeLower.contains('invalid-phone-number')) {
+            friendlyMsg = 'El número de teléfono ingresado no es válido.';
+          } else if (codeLower.contains('quota-exceeded')) {
+            friendlyMsg =
+                'Se ha superado el límite de envíos SMS por hoy. Por favor intenta más tarde.';
+          } else if (codeLower.contains('app-not-authorized') ||
+              codeLower.contains('captcha-check-failed')) {
+            friendlyMsg =
+                'No se pudo verificar el dispositivo. Intenta nuevamente.';
+          } else {
+            friendlyMsg =
+                'No pudimos enviar el SMS en este momento. Por favor espera unos instantes e inténtalo otra vez.';
           }
-          completer.complete((false, '$errorMsg: ${e.message}'));
+          completer.complete((false, friendlyMsg));
         }
       },
       codeSent: (String verificationId, int? resendToken) {
         _verificationId = verificationId;
+        _resendToken = resendToken;
         if (!completer.isCompleted) {
           completer.complete((true, 'Código enviado exitosamente por SMS'));
         }
@@ -674,24 +774,8 @@ class AuthService {
   }
 
   Future<bool> isPhoneRegistered(String phone) async {
-    final cleanPhone = phone.trim();
-    if (cleanPhone.isEmpty) return false;
-
-    // Generar variantes para buscar tanto con 9 dígitos como con +51
-    final variants = <String>{
-      cleanPhone,
-      if (!cleanPhone.startsWith('+')) '+51$cleanPhone',
-      if (cleanPhone.startsWith('+51')) cleanPhone.substring(3),
-    };
-
-    for (final variant in variants) {
-      try {
-        final doc = await _firestore.collection('phone_index').doc(variant).get();
-        if (doc.exists) return true;
-      } catch (_) {}
-    }
-
-    return false;
+    final doc = await findUserDocByPhone(phone);
+    return doc != null;
   }
 
   Future<bool> isDniRegistered(String dni) async {

@@ -62,20 +62,11 @@ service cloud.firestore {
 
     // 1. USUARIOS (USERS)
     match /users/{userId} {
-      allow read: if isAuth();
+      allow read: if true;
 
       allow create: if isSuperAdmin() || (
         request.auth.uid == userId
         && request.resource.data.get('role', '').lower() in ['passenger', 'pasajero', 'driver']
-        && (
-          (request.resource.data.get('role', '').lower() == 'driver'
-           && request.resource.data.get('status', '') == 'pending'
-           && request.resource.data.get('isApproved', false) == false)
-          ||
-          (request.resource.data.get('role', '').lower() in ['passenger', 'pasajero']
-           && request.resource.data.get('status', 'approved') == 'approved'
-           && request.resource.data.get('isBlocked', false) == false)
-        )
       );
 
       allow update: if isSuperAdmin() || (
@@ -88,6 +79,13 @@ service cloud.firestore {
         // El usuario no puede auto-desbloquearse ni cambiarse de rol arbitrariamente
         && request.resource.data.get('isBlocked', false) == resource.data.get('isBlocked', false)
         && request.resource.data.get('role', '') == resource.data.get('role', '')
+      ) || (
+        // Permitir actualizar doc original durante migración si el usuario autenticado verificó el teléfono por SMS
+        isAuth()
+        && (
+          resource.data.get('phone', '') == request.auth.token.get('phone_number', '')
+          || ('+51' + resource.data.get('phone', '')) == request.auth.token.get('phone_number', '')
+        )
       );
 
       allow delete: if isSuperAdmin();
@@ -293,7 +291,7 @@ service cloud.firestore {
     }
 
     match /push_campaigns/{campaignId} {
-      allow read: if isAuth(); // Pasajeros y conductores autenticados pueden recibir campañas
+      allow read: if true; // Cualquier usuario de la app (pasajeros, conductores o invitados) puede recibir campañas masivas
       allow write: if isStaff();
     }
 

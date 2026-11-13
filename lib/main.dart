@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -36,6 +37,8 @@ Future<void> main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+    // Registrar manejador de mensajes en segundo plano/app cerrada de FCM
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
     // Comentado para evitar bloqueo de Firestore/Storage en compilaciones debug
     // await FirebaseAppCheck.instance.activate(
     //   androidProvider: AndroidProvider.playIntegrity,

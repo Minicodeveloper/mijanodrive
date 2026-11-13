@@ -698,6 +698,7 @@ class _PassengerIntercityTripScreenState
         name: user?.name,
         phone: user?.phone,
         plate: widget.tripData['driverVehiclePlate'],
+        emergencyPhone: user?.emergencyPhone,
         reportedBy: 'passenger',
       );
 

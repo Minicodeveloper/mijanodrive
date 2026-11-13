@@ -20,6 +20,7 @@ class _PassengerEditProfileScreenState extends State<PassengerEditProfileScreen>
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _emergencyPhoneController = TextEditingController();
   String _selectedCity = AppConfig.cities.first;
 
   File? _selectedImage;
@@ -31,6 +32,7 @@ class _PassengerEditProfileScreenState extends State<PassengerEditProfileScreen>
     final user = AuthService.instance.currentUser;
     _nameController.text = user?.name ?? '';
     _phoneController.text = user?.phone ?? '';
+    _emergencyPhoneController.text = user?.emergencyPhone ?? '';
     final savedCity = user?.city;
     _selectedCity = AppConfig.cities.firstWhere(
       (city) => city.toLowerCase() == savedCity?.toLowerCase(),
@@ -42,6 +44,7 @@ class _PassengerEditProfileScreenState extends State<PassengerEditProfileScreen>
   void dispose() {
     _nameController.dispose();
     _phoneController.dispose();
+    _emergencyPhoneController.dispose();
     super.dispose();
   }
 
@@ -83,6 +86,7 @@ class _PassengerEditProfileScreenState extends State<PassengerEditProfileScreen>
       final updatedUser = currentUser.copyWith(
         name: _nameController.text.trim(),
         phone: _phoneController.text.trim(),
+        emergencyPhone: _emergencyPhoneController.text.trim(),
         city: _selectedCity,
         photoUrl: photoUrl ?? currentUser.photoUrl,
       );
@@ -269,6 +273,60 @@ class _PassengerEditProfileScreenState extends State<PassengerEditProfileScreen>
                         }
                         return null;
                       },
+                    ),
+                    const SizedBox(height: 18),
+
+                    // Campo Teléfono de Emergencia Familiar
+                    Row(
+                      children: [
+                        _buildLabel('Número de teléfono de emergencia familiar'),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text(
+                            'S.O.S.',
+                            style: TextStyle(
+                              color: Colors.red,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Este número recibirá la alerta y se mostrará al centro de control si activas el botón S.O.S.',
+                      style: TextStyle(fontSize: 11, color: Colors.black54),
+                    ),
+                    const SizedBox(height: 6),
+                    TextFormField(
+                      controller: _emergencyPhoneController,
+                      keyboardType: TextInputType.phone,
+                      style: const TextStyle(fontWeight: FontWeight.w600, color: MijanoTheme.ink),
+                      decoration: InputDecoration(
+                        hintText: 'Ej: +51 987 654 321 (Familiar)',
+                        prefixIcon: const Icon(Icons.contact_phone_outlined, color: Colors.redAccent),
+                        fillColor: MijanoTheme.cream,
+                        filled: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: MijanoTheme.ink, width: 2),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(color: Colors.red.withValues(alpha: 0.4), width: 1.5),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: Colors.redAccent, width: 2.5),
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 18),
 

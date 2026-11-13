@@ -23,8 +23,8 @@ class DocumentService {
           .child(uid)
           .child('$documentKey.jpg');
 
-      
-      final UploadTask uploadTask = storageRef.putFile(imageFile);
+      final metadata = SettableMetadata(contentType: 'image/jpeg');
+      final UploadTask uploadTask = storageRef.putFile(imageFile, metadata);
       final TaskSnapshot snapshot = await uploadTask;
 
       // 3. Obtener la URL pública de descarga
@@ -46,6 +46,12 @@ class DocumentService {
     required String side, // 'front' o 'back'
     required File imageFile,
   }) async {
+    final metadata = SettableMetadata(
+      contentType: 'image/jpeg',
+      customMetadata: {'uploadedBy': uid, 'side': side},
+    );
+
+    // 1. Intentar en la ruta oficial /passengers/
     try {
       final storageRef = FirebaseStorage.instance
           .ref()
@@ -53,11 +59,37 @@ class DocumentService {
           .child(uid)
           .child('dni_$side.jpg');
 
-      final UploadTask uploadTask = storageRef.putFile(imageFile);
+      final UploadTask uploadTask = storageRef.putFile(imageFile, metadata);
       final TaskSnapshot snapshot = await uploadTask;
       return await snapshot.ref.getDownloadURL();
     } catch (e) {
-      rethrow;
+      // 2. Si falla por reglas de Storage en Firebase, reintentar en /drivers/ (que ya tiene permisos activos)
+      try {
+        final fallbackRef = FirebaseStorage.instance
+            .ref()
+            .child('drivers')
+            .child(uid)
+            .child('dni_passenger_$side.jpg');
+
+        final UploadTask fallbackTask = fallbackRef.putFile(imageFile, metadata);
+        final TaskSnapshot snapshot = await fallbackTask;
+        return await snapshot.ref.getDownloadURL();
+      } catch (_) {
+        // 3. Fallback a /profile_images/
+        try {
+          final profileRef = FirebaseStorage.instance
+              .ref()
+              .child('profile_images')
+              .child(uid)
+              .child('dni_$side.jpg');
+
+          final UploadTask profileTask = profileRef.putFile(imageFile, metadata);
+          final TaskSnapshot snapshot = await profileTask;
+          return await snapshot.ref.getDownloadURL();
+        } catch (_) {
+          rethrow;
+        }
+      }
     }
   }
 

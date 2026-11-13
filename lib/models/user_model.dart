@@ -28,6 +28,7 @@ class User {
   final String? agencyName;
   final String? licenseNumber;
   final Map<String, dynamic> documents;
+  final String? emergencyPhone;
 
   User({
     required this.uid,
@@ -52,6 +53,7 @@ class User {
     this.agencyName,
     this.licenseNumber,
     this.documents = const {},
+    this.emergencyPhone,
   });
 
   Map<String, dynamic> toMap() {
@@ -78,6 +80,7 @@ class User {
       'agencyName': agencyName,
       'licenseNumber': licenseNumber,
       'documents': documents,
+      'emergencyPhone': emergencyPhone,
     };
   }
 
@@ -125,6 +128,7 @@ class User {
       agencyName: map['agencyName'],
       licenseNumber: map['licenseNumber'],
       documents: Map<String, dynamic>.from(map['documents'] ?? {}),
+      emergencyPhone: map['emergencyPhone'] ?? map['emergencyContact'],
     );
   }
 
@@ -155,6 +159,7 @@ class User {
     String? agencyName,
     String? licenseNumber,
     Map<String, dynamic>? documents,
+    String? emergencyPhone,
   }) {
     return User(
       uid: uid ?? this.uid,
@@ -179,6 +184,7 @@ class User {
       agencyName: agencyName ?? this.agencyName,
       licenseNumber: licenseNumber ?? this.licenseNumber,
       documents: documents ?? this.documents,
+      emergencyPhone: emergencyPhone ?? this.emergencyPhone,
     );
   }
 }

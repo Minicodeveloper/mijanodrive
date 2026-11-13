@@ -9,6 +9,8 @@
     <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     
 
@@ -16,6 +18,14 @@
         android:label="Mijano Drive"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+
+        <!-- Configuración Firebase Cloud Messaging (FCM) -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="trip_alerts_channel_v2" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@mipmap/ic_launcher" />
 
         <!-- Google Maps API key -->
         <meta-data

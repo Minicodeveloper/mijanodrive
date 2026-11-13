@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:mijano_drive_app/services/auth_service.dart';
 import 'package:mijano_drive_app/services/firestore_service.dart';
@@ -89,6 +90,26 @@ class _LoginScreenState extends State<LoginScreen> {
     bool obscureConfirmPassword = true;
     String? errorMessage;
     String sentPhone = '';
+    int resendCooldown = 0;
+    Timer? resendTimer;
+
+    void startCooldown(StateSetter setModalState) {
+      resendCooldown = 30;
+      resendTimer?.cancel();
+      resendTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+        if (!context.mounted) {
+          t.cancel();
+          return;
+        }
+        if (resendCooldown > 0) {
+          setModalState(() {
+            resendCooldown--;
+          });
+        } else {
+          t.cancel();
+        }
+      });
+    }
 
     showDialog<void>(
       context: context,
@@ -258,7 +279,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     Align(
                       alignment: Alignment.centerRight,
                       child: TextButton(
-                        onPressed: isProcessing
+                        onPressed: (isProcessing || resendCooldown > 0)
                             ? null
                             : () async {
                                 setModalState(() {
@@ -270,6 +291,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   isProcessing = false;
                                   if (sent) {
                                     errorMessage = null;
+                                    startCooldown(setModalState);
                                   } else {
                                     errorMessage = msg;
                                   }
@@ -278,9 +300,15 @@ class _LoginScreenState extends State<LoginScreen> {
                                   _snack('Nuevo código enviado por SMS');
                                 }
                               },
-                        child: const Text(
-                          '¿No te llegó el SMS? Reenviar código',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF8A5300)),
+                        child: Text(
+                          resendCooldown > 0
+                              ? 'Reenviar código en ${resendCooldown}s'
+                              : '¿No te llegó el SMS? Reenviar código',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: resendCooldown > 0 ? Colors.grey : const Color(0xFF8A5300),
+                          ),
                         ),
                       ),
                     ),
@@ -313,7 +341,12 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             actions: [
               TextButton(
-                onPressed: isProcessing ? null : () => Navigator.pop(dialogCtx),
+                onPressed: isProcessing
+                    ? null
+                    : () {
+                        resendTimer?.cancel();
+                        Navigator.pop(dialogCtx);
+                      },
                 child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
               ),
               if (currentStep == 1)
@@ -350,6 +383,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               sentPhone = phone;
                               currentStep = 2;
                               errorMessage = null;
+                              startCooldown(setModalState);
                             } else {
                               errorMessage = message;
                             }
@@ -419,6 +453,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           setModalState(() => isProcessing = false);
 
                           if (ok) {
+                            resendTimer?.cancel();
                             Navigator.pop(dialogCtx);
                             _failedAttempts = 0;
                             _emailController.text = sentPhone;
