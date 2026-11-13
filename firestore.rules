@@ -293,7 +293,13 @@ service cloud.firestore {
     }
 
     match /push_campaigns/{campaignId} {
-      allow read, create, delete: if isStaff();
+      allow read: if isAuth(); // Pasajeros y conductores autenticados pueden recibir campañas
+      allow write: if isStaff();
+    }
+
+    match /app_settings/{settingId} {
+      allow read: if true; // Cualquier usuario de la app puede cargar la configuración de sonidos
+      allow write: if isStaff();
     }
 
     match /email_index/{email} {

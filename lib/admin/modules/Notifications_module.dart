@@ -1,6 +1,10 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:intl/intl.dart';
+import '../../services/sound_service.dart';
 
 class AdminNotificationsScreen extends StatefulWidget {
   const AdminNotificationsScreen({super.key});
@@ -10,6 +14,9 @@ class AdminNotificationsScreen extends StatefulWidget {
 }
 
 class _AdminNotificationsScreenState extends State<AdminNotificationsScreen> {
+  String? _currentlyPlayingSound;
+  String? _uploadingSoundKey;
+
   void _showNewCampaignModal(BuildContext context) {
     showDialog(
       context: context,
@@ -26,10 +33,11 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen> {
       'title': data['title'] ?? '',
       'message': data['message'] ?? '',
       'audience': data['audience'] ?? 'PASSENGER',
+      'targetVehicleType': data['targetVehicleType'] ?? 'ALL',
       'filterType': data['filterType'] ?? 'none',
       'filterDetails': data['filterDetails'] ?? {},
       'createdAt': FieldValue.serverTimestamp(),
-      'status': 'sending',
+      'status': 'sent',
       'scheduledAt': null,
       'repeat': 'none',
       'repeatDays': null,
@@ -40,7 +48,7 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('¡Campaña reenviada con éxito (Enviando...)!'),
+            content: Text('¡Campaña reenviada con éxito (Enviada a los dispositivos)!'),
             backgroundColor: Colors.green,
           ),
         );
@@ -55,6 +63,359 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen> {
         );
       }
     }
+  }
+
+  Future<void> _pickAndUploadSound(String soundKey) async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['mp3', 'wav', 'm4a', 'aac', 'ogg'],
+        withData: true,
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      final file = result.files.first;
+      Uint8List? bytes = file.bytes;
+
+      if (bytes == null && !kIsWeb && file.path != null) {
+        final ioFile = File(file.path!);
+        bytes = await ioFile.readAsBytes();
+      }
+
+      if (bytes == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No se pudieron leer los datos del archivo seleccionado.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      setState(() => _uploadingSoundKey = soundKey);
+
+      await SoundService.instance.uploadSoundFile(
+        type: soundKey,
+        fileBytes: bytes,
+        fileName: file.name,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('¡Melodía "${file.name}" actualizada con éxito!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al subir la melodía: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _uploadingSoundKey = null);
+      }
+    }
+  }
+
+  Widget _buildSingleSoundCard({
+    required String title,
+    required String subtitle,
+    required String soundKey,
+    required String soundName,
+    required String? soundUrl,
+    required bool isEnabled,
+    required IconData icon,
+    required Color iconColor,
+  }) {
+    final isCustom = soundUrl != null && soundUrl.isNotEmpty;
+    final isPlaying = _currentlyPlayingSound == soundKey;
+    final isUploading = _uploadingSoundKey == soundKey;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF262626),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isPlaying ? iconColor.withOpacity(0.8) : Colors.grey[800]!,
+          width: isPlaying ? 1.5 : 1.0,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: iconColor.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: iconColor, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(color: Colors.grey, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: isEnabled,
+                activeColor: iconColor,
+                onChanged: (val) async {
+                  await SoundService.instance.toggleSound(type: soundKey, enabled: val);
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.black38,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  isCustom ? Icons.cloud_done : Icons.folder,
+                  color: isCustom ? Colors.greenAccent : Colors.grey,
+                  size: 16,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    soundName,
+                    style: const TextStyle(color: Colors.white70, fontSize: 12, fontFamily: 'monospace'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: isCustom ? Colors.blue.withOpacity(0.2) : Colors.grey.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    isCustom ? 'Personalizado' : 'Por defecto',
+                    style: TextStyle(
+                      color: isCustom ? Colors.blueAccent : Colors.grey,
+                      fontSize: 10,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ElevatedButton.icon(
+                onPressed: () async {
+                  if (isPlaying) {
+                    await SoundService.instance.stopPreview();
+                    if (mounted) setState(() => _currentlyPlayingSound = null);
+                  } else {
+                    if (mounted) setState(() => _currentlyPlayingSound = soundKey);
+                    await SoundService.instance.playPreview(type: soundKey, customUrl: soundUrl);
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isPlaying ? Colors.redAccent : iconColor,
+                  foregroundColor: Colors.black87,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                ),
+                icon: Icon(isPlaying ? Icons.stop : Icons.play_arrow, size: 16),
+                label: Text(
+                  isPlaying ? 'Detener' : 'Probar sonido',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: isUploading ? null : () => _pickAndUploadSound(soundKey),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: Colors.grey),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                ),
+                icon: isUploading
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.upload_file, size: 16),
+                label: Text(
+                  isUploading ? 'Subiendo...' : 'Cambiar MP3',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+              if (isCustom)
+                TextButton.icon(
+                  onPressed: () async {
+                    await SoundService.instance.resetToDefault(soundKey);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Melodía restablecida a la predeterminada.'),
+                          backgroundColor: Colors.blueAccent,
+                        ),
+                      );
+                    }
+                  },
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.redAccent,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  ),
+                  icon: const Icon(Icons.restore, size: 14),
+                  label: const Text('Restablecer original', style: TextStyle(fontSize: 11)),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSoundSettingsSection() {
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance.collection('app_settings').doc('sounds').snapshots(),
+      builder: (context, snapshot) {
+        final data = snapshot.data?.data() ?? {};
+        final appSoundName = data['appEntrySoundName'] as String? ?? 'melodia_app.mp3';
+        final appSoundUrl = data['appEntrySoundUrl'] as String?;
+        final appSoundEnabled = data['appEntrySoundEnabled'] as bool? ?? true;
+
+        final notifSoundName = data['notificationSoundName'] as String? ?? 'melodia_notificacion.mp3';
+        final notifSoundUrl = data['notificationSoundUrl'] as String?;
+        final notifSoundEnabled = data['notificationSoundEnabled'] as bool? ?? true;
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 24),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E1E),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey[850]!),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.music_note, color: Colors.amberAccent, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Melodías y Sonidos de la App',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Personaliza la melodía de bienvenida al entrar a la app y la alerta sonora para notificaciones masivas',
+                            style: TextStyle(color: Colors.grey, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isNarrow = constraints.maxWidth < 700;
+                    final sound1 = _buildSingleSoundCard(
+                      title: 'Melodía al Ingresar a la App',
+                      subtitle: 'Suena automáticamente cuando el pasajero o conductor abre la app (melodia_app.mp3)',
+                      soundKey: 'app',
+                      soundName: appSoundName,
+                      soundUrl: appSoundUrl,
+                      isEnabled: appSoundEnabled,
+                      icon: Icons.directions_car_filled,
+                      iconColor: Colors.amberAccent,
+                    );
+                    final sound2 = _buildSingleSoundCard(
+                      title: 'Melodía de Notificaciones Push',
+                      subtitle: 'Suena cuando llega una notificación push masiva o alerta de viaje (melodia_notificacion.mp3)',
+                      soundKey: 'notification',
+                      soundName: notifSoundName,
+                      soundUrl: notifSoundUrl,
+                      isEnabled: notifSoundEnabled,
+                      icon: Icons.notifications_active,
+                      iconColor: Colors.blueAccent,
+                    );
+
+                    if (isNarrow) {
+                      return Column(
+                        children: [
+                          sound1,
+                          const SizedBox(height: 16),
+                          sound2,
+                        ],
+                      );
+                    } else {
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: sound1),
+                          const SizedBox(width: 16),
+                          Expanded(child: sound2),
+                        ],
+                      );
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -99,7 +460,9 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 30),
+            const SizedBox(height: 24),
+            _buildSoundSettingsSection(),
+            const SizedBox(height: 12),
             Container(
               decoration: BoxDecoration(
                 color: const Color(0xFF1E1E1E),
@@ -325,6 +688,28 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen> {
                                     style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                                   ),
                                 ),
+                                if (audience == 'DRIVER') ...[
+                                  Builder(
+                                    builder: (context) {
+                                      final targetVehicle = (data['targetVehicleType'] ?? 'ALL').toString().toUpperCase();
+                                      String vehicleLabel = 'Todos';
+                                      if (targetVehicle == 'MOTOTAXI') vehicleLabel = '🛺 Mototaxis';
+                                      if (targetVehicle == 'AUTO') vehicleLabel = '🚗 Autos';
+                                      return Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.amber.withOpacity(0.15),
+                                          borderRadius: BorderRadius.circular(4),
+                                          border: Border.all(color: Colors.amber.withOpacity(0.4)),
+                                        ),
+                                        child: Text(
+                                          vehicleLabel,
+                                          style: const TextStyle(color: Colors.amberAccent, fontSize: 10, fontWeight: FontWeight.bold),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ],
                                 Text(
                                   '$dateStr$repeatStr',
                                   style: const TextStyle(color: Colors.grey, fontSize: 12),
@@ -383,6 +768,7 @@ class _NewCampaignDialogState extends State<NewCampaignDialog> {
   final _messageController = TextEditingController();
 
   String _selectedAudience = 'PASSENGER';
+  String _targetVehicleType = 'ALL';
   String _filterType = 'none';
 
   double _minAge = 18;
@@ -534,13 +920,14 @@ class _NewCampaignDialogState extends State<NewCampaignDialog> {
       final body = _messageController.text.trim();
       final audience = _selectedAudience;
 
-      final status = _scheduleType == 'now' ? 'sending' : 'scheduled';
+      final status = _scheduleType == 'now' ? 'sent' : 'scheduled';
       final scheduledAt = scheduledUtc != null ? Timestamp.fromDate(scheduledUtc) : null;
 
       await FirebaseFirestore.instance.collection('push_campaigns').add({
         'title': title,
         'message': body,
         'audience': audience,
+        'targetVehicleType': audience == 'DRIVER' ? _targetVehicleType : 'ALL',
         'filterType': _filterType,
         'filterDetails': _getFilterDetailsMap(),
         'createdAt': FieldValue.serverTimestamp(),
@@ -688,6 +1075,70 @@ class _NewCampaignDialogState extends State<NewCampaignDialog> {
                 ],
               ),
               const SizedBox(height: 16),
+
+              if (_selectedAudience == 'DRIVER') ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.black26,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.amber.withOpacity(0.4)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.directions_car, color: Colors.amberAccent, size: 18),
+                          SizedBox(width: 8),
+                          Text(
+                            'Tipo de Vehículo (Solo Conductores)',
+                            style: TextStyle(
+                              color: Colors.amberAccent,
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Selecciona qué tipo de conductores recibirán la notificación:',
+                        style: TextStyle(color: Colors.grey, fontSize: 12),
+                      ),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        value: _targetVehicleType,
+                        isExpanded: true,
+                        dropdownColor: const Color(0xFF2C2C2C),
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: Colors.black45,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'ALL',
+                            child: Text('🚖 Todos los conductores (Auto y Mototaxi)'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'MOTOTAXI',
+                            child: Text('🛺 Solo Mototaxis'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'AUTO',
+                            child: Text('🚗 Solo Autos / Carros'),
+                          ),
+                        ],
+                        onChanged: (val) => setState(() => _targetVehicleType = val ?? 'ALL'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
 
               if (_scheduleType == 'scheduled') ...[
                 Container(

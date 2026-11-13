@@ -4,6 +4,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'services/notification_service.dart';
+import 'services/sound_service.dart';
 import 'firebase_options.dart';
 import 'theme.dart';
 import 'admin/admin_app.dart' as admin;
@@ -48,6 +49,8 @@ Future<void> main() async {
   try {
     await NotificationService.init();
     await NotificationService.requestPermissions();
+    await SoundService.instance.init();
+    await NotificationService.startMassCampaignListener();
   } catch (_) {}
   
   runApp(const MijanoDriveApp());
@@ -212,6 +215,7 @@ class _SplashScreenState extends State<SplashScreen>
     );
 
     _controller.forward();
+    SoundService.instance.playAppEntrySound();
     _go();
   }
 

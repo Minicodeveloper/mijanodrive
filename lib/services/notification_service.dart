@@ -1,9 +1,13 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
+import 'package:hive_flutter/hive_flutter.dart';
+import '../models/user_model.dart';
 import '../screens/driver/driver_trip_chat_screen.dart';
 import 'auth_service.dart';
+import 'sound_service.dart';
 
 class NotificationService {
   // LLAVE GLOBAL DECLARADA AQUÍ PARA EVITAR ERRORES DE REFERENCIA
@@ -21,7 +25,7 @@ class NotificationService {
         InitializationSettings(android: initializationSettingsAndroid);
 
     await _notificationsPlugin.initialize(
-      settings: initializationSettings,
+      initializationSettings,
       onDidReceiveNotificationResponse: (NotificationResponse response) {
         // Manejar el clic en la notificación
         if (response.payload != null) {
@@ -31,12 +35,13 @@ class NotificationService {
     );
 
     // Canal de ALTA IMPORTANCIA para que flote sobre la pantalla (Heads-up / Banner)
-    AndroidNotificationChannel channel = AndroidNotificationChannel(
+    const AndroidNotificationChannel channel = AndroidNotificationChannel(
       'trip_alerts_channel', // ID del canal
       'Alertas de Viaje', // Nombre visible para el usuario
       description: 'Notificaciones flotantes de solicitudes y estados de viaje',
       importance: Importance.max,
       playSound: true,
+      sound: RawResourceAndroidNotificationSound('melodia_notificacion'),
       enableVibration: true,
     );
 
@@ -52,6 +57,7 @@ class NotificationService {
       description: 'Notificaciones de mensajes de chat en viajes activos',
       importance: Importance.max,
       playSound: true,
+      sound: RawResourceAndroidNotificationSound('melodia_notificacion'),
       enableVibration: true,
     );
 
@@ -212,6 +218,7 @@ class NotificationService {
       priority: Priority.high,
       color: Color(0xFFF9D408),
       icon: '@mipmap/ic_launcher',
+      sound: RawResourceAndroidNotificationSound('melodia_notificacion'),
       fullScreenIntent: true, // Forzar banner emergente flotante arriba
       styleInformation: BigTextStyleInformation(''),
     );
@@ -220,12 +227,122 @@ class NotificationService {
         NotificationDetails(android: androidDetails);
 
     await _notificationsPlugin.show(
-      id: DateTime.now().millisecond,
-      title: title,
-      body: body,
-      notificationDetails: platformDetails,
+      DateTime.now().millisecond,
+      title,
+      body,
+      platformDetails,
       payload: 'general_campaign',
     );
+
+    // Reproducir melodía configurada de notificación
+    unawaited(SoundService.instance.playNotificationSound());
+  }
+
+  // ===========================================================================
+  // ESCUCHADOR EN TIEMPO REAL DE CAMPAÑAS PUSH MASIVAS
+  // ===========================================================================
+  static StreamSubscription? _campaignsSubscription;
+  static final Set<String> _seenCampaignIds = {};
+
+  static Future<void> startMassCampaignListener() async {
+    _campaignsSubscription?.cancel();
+
+    try {
+      // Cargar IDs ya vistos desde Hive
+      Box? box;
+      try {
+        if (Hive.isBoxOpen('notifications_cache')) {
+          box = Hive.box('notifications_cache');
+        } else {
+          box = await Hive.openBox('notifications_cache');
+        }
+        final List<dynamic>? stored = box.get('seen_campaigns');
+        if (stored != null) {
+          _seenCampaignIds.addAll(stored.map((e) => e.toString()));
+        }
+      } catch (_) {}
+
+      // Escuchar campañas en tiempo real en Firestore
+      _campaignsSubscription = FirebaseFirestore.instance
+          .collection('push_campaigns')
+          .orderBy('createdAt', descending: true)
+          .limit(10)
+          .snapshots()
+          .listen((snapshot) async {
+        for (final doc in snapshot.docs) {
+          final campaignId = doc.id;
+          if (_seenCampaignIds.contains(campaignId)) continue;
+
+          final data = doc.data();
+          final status = (data['status'] ?? '').toString().toLowerCase();
+
+          // Ignorar campañas creadas hace más de 2 horas para evitar spam histórico al iniciar
+          final createdAt = (data['createdAt'] as Timestamp?)?.toDate();
+          if (createdAt != null) {
+            final age = DateTime.now().difference(createdAt);
+            if (age.inHours > 2) {
+              _seenCampaignIds.add(campaignId);
+              continue;
+            }
+          }
+
+          // Solo procesar si está activa o enviándose
+          if (status != 'sending' && status != 'sent' && status != 'active') {
+            continue;
+          }
+
+          // Verificar si aplica al usuario actual
+          final audience = (data['audience'] ?? 'ALL').toString().toUpperCase();
+          final targetVehicle = (data['targetVehicleType'] ?? 'ALL').toString().toUpperCase();
+
+          final currentUser = AuthService.instance.currentUser;
+          final userRole = currentUser?.role;
+
+          bool matches = false;
+
+          if (audience == 'ALL') {
+            matches = true;
+          } else if (audience == 'PASSENGER' || audience == 'PASAJERO') {
+            if (userRole == UserRole.passenger || currentUser == null) {
+              matches = true;
+            }
+          } else if (audience == 'DRIVER' || audience == 'CONDUCTOR') {
+            if (userRole == UserRole.driver) {
+              // Validar tipo de vehículo si es conductor (Auto vs Mototaxi)
+              if (targetVehicle == 'ALL') {
+                matches = true;
+              } else {
+                final userVehicle = (currentUser?.vehicleType ?? '').toUpperCase();
+                if (targetVehicle == 'MOTOTAXI' && userVehicle.contains('MOTO')) {
+                  matches = true;
+                } else if ((targetVehicle == 'AUTO' || targetVehicle == 'CARRO') &&
+                    (userVehicle.contains('AUTO') || userVehicle.contains('CARRO'))) {
+                  matches = true;
+                }
+              }
+            }
+          }
+
+          if (matches) {
+            _seenCampaignIds.add(campaignId);
+            try {
+              if (box != null && box.isOpen) {
+                await box.put('seen_campaigns', _seenCampaignIds.toList());
+              }
+            } catch (_) {}
+
+            final title = data['title']?.toString() ?? 'Mijano Drive';
+            final body = data['message']?.toString() ?? data['body']?.toString() ?? '';
+
+            await showGeneralCampaignNotification(title: title, body: body);
+          }
+        }
+      }, onError: (e) {
+        debugPrint('Aviso: Escucha de push_campaigns: $e');
+      });
+    } catch (e) {
+      debugPrint('Error iniciando escucha de push campaigns: $e');
+    }
   }
 
   // ===========================================================================
@@ -246,6 +363,7 @@ class NotificationService {
       priority: Priority.high,
       color: Color(0xFFF9D408), // Color amarillo de Mijano Drive
       icon: '@mipmap/ic_launcher',
+      sound: RawResourceAndroidNotificationSound('melodia_notificacion'),
       fullScreenIntent: true, // Permite mostrar sobre la pantalla de bloqueo
       styleInformation: BigTextStyleInformation(''), // Permite textos de varias líneas
     );
@@ -254,12 +372,15 @@ class NotificationService {
         NotificationDetails(android: androidDetails);
 
     await _notificationsPlugin.show(
-      id: id,
-      title: title,
-      body: body,
-      notificationDetails: platformDetails,
+      id,
+      title,
+      body,
+      platformDetails,
       payload: payload,
     );
+
+    // Reproducir melodía configurada de notificación
+    unawaited(SoundService.instance.playNotificationSound());
   }
 
   static void _handleNotificationClick(String payload) {
@@ -344,10 +465,10 @@ class NotificationService {
         NotificationDetails(android: androidDetails);
 
     await _notificationsPlugin.show(
-      id: ('chat_$tripId'.hashCode),
-      title: title,
-      body: body,
-      notificationDetails: platformDetails,
+      'chat_$tripId'.hashCode,
+      title,
+      body,
+      platformDetails,
       payload: 'trip_chat:$tripId:$senderName:$conversationTitle',
     );
   }

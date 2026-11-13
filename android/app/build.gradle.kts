@@ -18,7 +18,7 @@ plugins {
 
 android {
     namespace = "net.mijano_drive_app"
-    compileSdk = runCatching { flutter.compileSdkVersion }.getOrNull() ?: 35
+    compileSdk = 36
     ndkVersion = "30.0.16248370"
 
     compileOptions {
@@ -33,7 +33,7 @@ android {
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = runCatching { flutter.minSdkVersion }.getOrNull() ?: 21
-        targetSdk = runCatching { flutter.targetSdkVersion }.getOrNull() ?: 34
+        targetSdk = 36
         versionCode = runCatching { flutter.versionCode }.getOrNull() ?: 1
         versionName = runCatching { flutter.versionName }.getOrNull() ?: "1.0"
         multiDexEnabled = true
@@ -75,4 +75,13 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+}
+
+subprojects {
+    afterEvaluate {
+        val androidExtension = extensions.findByName("android")
+        if (androidExtension != null && androidExtension is com.android.build.gradle.BaseExtension) {
+            androidExtension.compileSdkVersion(36)
+        }
+    }
 }
