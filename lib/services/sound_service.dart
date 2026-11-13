@@ -40,6 +40,9 @@ class SoundService {
   bool get appEntrySoundEnabled => _appEntrySoundEnabled;
   bool get notificationSoundEnabled => _notificationSoundEnabled;
 
+  bool get isAppEntryPlaying => _appPlayer?.state == PlayerState.playing;
+  bool get isNotificationPlaying => _notificationPlayer?.state == PlayerState.playing;
+
   Future<void> init() async {
     _init();
   }
@@ -168,6 +171,41 @@ class SoundService {
   Future<void> stopPreview() async {
     try {
       await _previewPlayer?.stop();
+    } catch (_) {}
+  }
+
+  /// Detiene la melodía de bienvenida al entrar a la cuenta
+  Future<void> stopAppEntrySound() async {
+    try {
+      if (_appPlayer != null) {
+        await _appPlayer!.stop();
+        debugPrint('[SoundService] Melodía de bienvenida detenida al entrar a la cuenta.');
+      }
+    } catch (e) {
+      debugPrint('Error al detener melodía de entrada: $e');
+    }
+  }
+
+  /// Detiene la melodía de notificación (por ejemplo al descartar/borrar la notificación)
+  Future<void> stopNotificationSound() async {
+    try {
+      if (_notificationPlayer != null) {
+        await _notificationPlayer!.stop();
+        debugPrint('[SoundService] Melodía de notificación detenida.');
+      }
+    } catch (e) {
+      debugPrint('Error al detener melodía de notificación: $e');
+    }
+  }
+
+  /// Detiene todas las melodías activas
+  Future<void> stopAll() async {
+    try {
+      await Future.wait([
+        stopAppEntrySound(),
+        stopNotificationSound(),
+        stopPreview(),
+      ]);
     } catch (_) {}
   }
 

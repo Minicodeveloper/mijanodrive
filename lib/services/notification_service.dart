@@ -54,59 +54,35 @@ class NotificationService {
     await _notificationsPlugin.initialize(
       initializationSettings,
       onDidReceiveNotificationResponse: (NotificationResponse response) {
+        _stopDismissMonitorAndSound();
         if (response.payload != null) {
           _handleNotificationClick(response.payload!);
         }
       },
     );
 
-    // Canal de ALTA IMPORTANCIA para solicitudes de viaje (Heads-up / Banner)
-    const AndroidNotificationChannel channel = AndroidNotificationChannel(
-      'trip_alerts_channel',
-      'Alertas de Viaje',
-      description: 'Notificaciones flotantes de solicitudes y estados de viaje',
+    // Canal principal de ALTA IMPORTANCIA para alertas, viajes y campañas
+    const AndroidNotificationChannel channelV3 = AndroidNotificationChannel(
+      'trip_alerts_channel_v3',
+      'Alertas y Notificaciones Mijano',
+      description: 'Notificaciones flotantes de solicitudes, viajes y campañas',
       importance: Importance.max,
-      playSound: true,
-      sound: RawResourceAndroidNotificationSound('melodia_notificacion'),
+      playSound: false, // Sonido controlado por SoundService para detener al borrar
       enableVibration: true,
     );
 
-    await _notificationsPlugin
+    final androidPlugin = _notificationsPlugin
         .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(channel);
+            AndroidFlutterLocalNotificationsPlugin>();
 
-    // Canal V2 para Campañas Masivas y Alertas (Garantiza Banner flotante de alta prioridad)
-    const AndroidNotificationChannel channelV2 = AndroidNotificationChannel(
-      'trip_alerts_channel_v2',
-      'Alertas y Campañas Masivas',
-      description: 'Notificaciones flotantes de anuncios, campañas y alertas de viaje',
-      importance: Importance.max,
-      playSound: true,
-      sound: RawResourceAndroidNotificationSound('melodia_notificacion'),
-      enableVibration: true,
-    );
-
-    await _notificationsPlugin
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(channelV2);
-
-    // Canal para MENSAJES DE CHAT en viaje activo
-    const AndroidNotificationChannel chatChannel = AndroidNotificationChannel(
-      'trip_chat_channel',
-      'Mensajes de Chat',
-      description: 'Notificaciones de mensajes de chat en viajes activos',
-      importance: Importance.max,
-      playSound: true,
-      sound: RawResourceAndroidNotificationSound('melodia_notificacion'),
-      enableVibration: true,
-    );
-
-    await _notificationsPlugin
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(chatChannel);
+    if (androidPlugin != null) {
+      try {
+        await androidPlugin.deleteNotificationChannel('trip_alerts_channel');
+        await androidPlugin.deleteNotificationChannel('trip_alerts_channel_v2');
+        await androidPlugin.deleteNotificationChannel('trip_chat_channel');
+      } catch (_) {}
+      await androidPlugin.createNotificationChannel(channelV3);
+    }
 
     // Configuración de Firebase Cloud Messaging (FCM)
     try {
@@ -132,6 +108,7 @@ class NotificationService {
       // Manejar clic cuando la notificación abre la app desde segundo plano
       FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
         debugPrint('[FCM OpenedApp] Notificación abierta por el usuario');
+        _stopDismissMonitorAndSound();
         final payload = message.data['payload']?.toString() ?? 'general_campaign';
         _handleNotificationClick(payload);
       });
@@ -139,6 +116,7 @@ class NotificationService {
       // Si la app estaba terminada y se abrió al pulsar una notificación FCM
       final RemoteMessage? initialMessage = await messaging.getInitialMessage();
       if (initialMessage != null) {
+        _stopDismissMonitorAndSound();
         final payload = initialMessage.data['payload']?.toString() ?? 'general_campaign';
         Future.delayed(const Duration(milliseconds: 700), () {
           _handleNotificationClick(payload);
@@ -388,16 +366,16 @@ class NotificationService {
   }) async {
     final id = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-      'trip_alerts_channel_v2', // Usa el canal v2 con Importance.max
-      'Alertas y Campañas Masivas',
+      'trip_alerts_channel_v3', // Canal de alta prioridad Mijano
+      'Alertas y Notificaciones Mijano',
       channelDescription: 'Notificaciones flotantes del sistema y anuncios',
       importance: Importance.max,
       priority: Priority.high,
-      playSound: true,
+      playSound: false, // Sonido gestionado por SoundService
       enableVibration: true,
       color: Color(0xFFF9D408),
       icon: '@mipmap/ic_launcher',
-      sound: RawResourceAndroidNotificationSound('melodia_notificacion'),
+      fullScreenIntent: true,
       styleInformation: BigTextStyleInformation(''),
     );
 
@@ -412,8 +390,9 @@ class NotificationService {
       payload: 'general_campaign',
     );
 
-    // Reproducir melodía configurada de notificación
+    // Reproducir melodía configurada y vigilar cuando el usuario la borra/descarta
     unawaited(SoundService.instance.playNotificationSound());
+    _startDismissMonitorFor(id);
   }
 
   // ===========================================================================
@@ -537,6 +516,62 @@ class NotificationService {
   // MÉTODOS INTERNOS Y MANEJO DE NAVEGACIÓN
   // ===========================================================================
 
+  static Timer? _dismissMonitorTimer;
+  static final Set<int> _activeNotificationIds = {};
+
+  /// Detiene el monitor y apaga el sonido de notificación de inmediato
+  static void _stopDismissMonitorAndSound() {
+    _dismissMonitorTimer?.cancel();
+    _dismissMonitorTimer = null;
+    _activeNotificationIds.clear();
+    unawaited(SoundService.instance.stopNotificationSound());
+  }
+
+  /// Cancela el sonido si se borra o descarta externamente
+  static void stopNotificationSound() {
+    _stopDismissMonitorAndSound();
+  }
+
+  /// Registra el ID de la notificación y vigila cuándo el usuario la borra/desliza del centro de notificaciones
+  static void _startDismissMonitorFor(int id) {
+    _activeNotificationIds.add(id);
+    _dismissMonitorTimer?.cancel();
+    _dismissMonitorTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) async {
+      // Si el sonido ya terminó naturalmente o no está sonando, cancelamos
+      if (!SoundService.instance.isNotificationPlaying) {
+        timer.cancel();
+        _dismissMonitorTimer = null;
+        _activeNotificationIds.clear();
+        return;
+      }
+
+      if (_activeNotificationIds.isEmpty) {
+        timer.cancel();
+        _dismissMonitorTimer = null;
+        await SoundService.instance.stopNotificationSound();
+        return;
+      }
+
+      try {
+        final activeList = await _notificationsPlugin.getActiveNotifications();
+        final currentActiveIds = activeList.map((n) => n.id).whereType<int>().toSet();
+
+        // Si ninguna de las notificaciones que generaron el sonido sigue en la bandeja de notificaciones
+        final hasAnyActive = _activeNotificationIds.any((activeId) => currentActiveIds.contains(activeId));
+
+        if (!hasAnyActive) {
+          debugPrint('[NotificationService] Notificación borrada/descartada de la barra del sistema. Deteniendo sonido.');
+          timer.cancel();
+          _dismissMonitorTimer = null;
+          _activeNotificationIds.clear();
+          await SoundService.instance.stopNotificationSound();
+        }
+      } catch (e) {
+        debugPrint('[NotificationService] Error comprobando notificaciones activas: $e');
+      }
+    });
+  }
+
   static Future<void> _showNotification({
     required int id,
     required String title,
@@ -544,14 +579,15 @@ class NotificationService {
     String? payload,
   }) async {
     const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-      'trip_alerts_channel',
-      'Alertas de Viaje',
+      'trip_alerts_channel_v3',
+      'Alertas y Notificaciones Mijano',
       channelDescription: 'Notificaciones flotantes de solicitudes y estados de viaje',
       importance: Importance.max,
       priority: Priority.high,
       color: Color(0xFFF9D408), // Color amarillo de Mijano Drive
       icon: '@mipmap/ic_launcher',
-      sound: RawResourceAndroidNotificationSound('melodia_notificacion'),
+      playSound: false, // Sonido gestionado por SoundService
+      enableVibration: true,
       fullScreenIntent: true, // Permite mostrar sobre la pantalla de bloqueo
       styleInformation: BigTextStyleInformation(''), // Permite textos de varias líneas
     );
@@ -567,11 +603,14 @@ class NotificationService {
       payload: payload,
     );
 
-    // Reproducir melodía configurada de notificación
+    // Reproducir melodía configurada y vigilar cuando el usuario la borra/descarta
     unawaited(SoundService.instance.playNotificationSound());
+    _startDismissMonitorFor(id);
   }
 
   static void _handleNotificationClick(String payload) {
+    _stopDismissMonitorAndSound();
+
     // El payload viene estructurado con el tipo y el ID
     final parts = payload.split(':');
     if (parts.isEmpty) return;
@@ -635,14 +674,15 @@ class NotificationService {
   }) async {
     final title = '💬 Mensaje de $senderName';
     final body = messageText;
+    final id = 'chat_$tripId'.hashCode;
 
     const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-      'trip_chat_channel',
-      'Mensajes de Chat',
+      'trip_alerts_channel_v3',
+      'Alertas y Notificaciones Mijano',
       channelDescription: 'Notificaciones de mensajes de chat en viajes activos',
       importance: Importance.max,
       priority: Priority.high,
-      playSound: true,
+      playSound: false, // Sonido gestionado por SoundService
       enableVibration: true,
       color: Color(0xFFF9D408),
       icon: '@mipmap/ic_launcher',
@@ -653,11 +693,14 @@ class NotificationService {
         NotificationDetails(android: androidDetails);
 
     await _notificationsPlugin.show(
-      'chat_$tripId'.hashCode,
+      id,
       title,
       body,
       platformDetails,
       payload: 'trip_chat:$tripId:$senderName:$conversationTitle',
     );
+
+    unawaited(SoundService.instance.playNotificationSound());
+    _startDismissMonitorFor(id);
   }
 }

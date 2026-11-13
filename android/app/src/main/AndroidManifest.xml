@@ -22,7 +22,7 @@
         <!-- Configuración Firebase Cloud Messaging (FCM) -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="trip_alerts_channel_v2" />
+            android:value="trip_alerts_channel_v3" />
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@mipmap/ic_launcher" />

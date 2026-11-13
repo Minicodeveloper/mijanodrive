@@ -216,8 +216,7 @@ class FcmSenderService {
             'android': {
               'priority': 'HIGH',
               'notification': {
-                'channel_id': 'trip_alerts_channel_v2',
-                'sound': 'melodia_notificacion',
+                'channel_id': 'trip_alerts_channel_v3',
                 'click_action': 'FLUTTER_NOTIFICATION_CLICK',
                 'default_vibrate_timings': true,
                 'notification_priority': 'PRIORITY_MAX',
@@ -268,8 +267,7 @@ class FcmSenderService {
           'notification': {
             'title': title,
             'body': message,
-            'sound': 'melodia_notificacion',
-            'android_channel_id': 'trip_alerts_channel_v2',
+            'android_channel_id': 'trip_alerts_channel_v3',
             'click_action': 'FLUTTER_NOTIFICATION_CLICK',
           },
           'data': {

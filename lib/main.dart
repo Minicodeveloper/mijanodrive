@@ -242,6 +242,9 @@ class _SplashScreenState extends State<SplashScreen>
       return;
     }
 
+    // El usuario ya tiene sesión iniciada y entra a su cuenta: detener melodía de bienvenida
+    SoundService.instance.stopAppEntrySound();
+
     if (user.name == null || user.name!.trim().isEmpty) {
       Navigator.of(context).pushReplacementNamed('/profile-setup');
     } else if (user.role == UserRole.admin ||

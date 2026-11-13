@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
+import '../../services/sound_service.dart';
 import '../../theme.dart';
 import '../passenger/passenger_available_cars_screen.dart';
 import 'driver_account_screen.dart';
@@ -24,6 +25,8 @@ class _DriverMainLayoutState extends State<DriverMainLayout> {
   @override
   void initState() {
     super.initState();
+    // Asegurar que la melodía de bienvenida se detenga al cargar la pantalla del conductor
+    unawaited(SoundService.instance.stopAppEntrySound());
     _resolveDriverVehicleType();
   }
 

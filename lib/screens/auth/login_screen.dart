@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:mijano_drive_app/services/auth_service.dart';
 import 'package:mijano_drive_app/services/firestore_service.dart';
+import 'package:mijano_drive_app/services/sound_service.dart';
 import 'package:mijano_drive_app/models/user_model.dart';
 import 'package:mijano_drive_app/screens/driver/pending_account_screen.dart';
 import 'package:mijano_drive_app/utils/validators.dart';
@@ -513,6 +514,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _routeAfterAuth() async {
+    // Detener la melodía de bienvenida al entrar a la cuenta
+    unawaited(SoundService.instance.stopAppEntrySound());
+
     final user = _auth.currentUser;
     if (user == null || user.name == null || user.name!.trim().isEmpty) {
       Navigator.of(context).pushReplacementNamed('/profile-setup');

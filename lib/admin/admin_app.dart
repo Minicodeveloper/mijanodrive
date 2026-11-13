@@ -5,6 +5,7 @@ import '../theme.dart';
 import '../models/trip_model.dart';
 import '../models/driver_model.dart';
 import '../services/firestore_service.dart';
+import '../services/sound_service.dart';
 import 'modules/users_module.dart';
 import 'modules/tariffs_module.dart';
 import 'modules/reports_module.dart';
@@ -57,6 +58,8 @@ class _AdminShellState extends State<AdminShell> {
   @override
   void initState() {
     super.initState();
+    // Detener la melodía de bienvenida al cargar el panel administrativo
+    SoundService.instance.stopAppEntrySound();
     _verifyRole();
   }
 

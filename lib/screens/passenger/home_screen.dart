@@ -9,6 +9,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/auth_service.dart';
 import '../../services/location_service.dart';
 import '../../services/firestore_service.dart';
+import '../../services/sound_service.dart';
 import 'passenger_account_screen.dart';
 import 'passenger_available_cars_screen.dart';
 import 'passenger_history_screen.dart';
@@ -108,6 +109,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    // Asegurar que la melodía de bienvenida se detenga al cargar la pantalla principal del pasajero
+    unawaited(SoundService.instance.stopAppEntrySound());
     _originController.text = '';
 
     _originFocus.addListener(() {

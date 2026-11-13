@@ -8,6 +8,7 @@ import 'package:mijano_drive_app/models/user_model.dart';
 import 'package:mijano_drive_app/services/auth_service.dart';
 import 'package:mijano_drive_app/services/document_service.dart';
 import 'package:mijano_drive_app/services/firestore_service.dart';
+import 'package:mijano_drive_app/services/sound_service.dart';
 import 'package:mijano_drive_app/screens/driver/pending_account_screen.dart';
 import 'package:mijano_drive_app/screens/passenger/passenger_dni_verification_screen.dart';
 import 'package:mijano_drive_app/utils/validators.dart';
@@ -722,6 +723,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 setState(() => _isLoading = false);
 
                 if (!parentContext.mounted) return;
+                unawaited(SoundService.instance.stopAppEntrySound());
                 if (roleEnum == UserRole.driver) {
                   Navigator.of(parentContext).pushAndRemoveUntil(
                     MaterialPageRoute(builder: (context) => const PendingAccountScreen()),
