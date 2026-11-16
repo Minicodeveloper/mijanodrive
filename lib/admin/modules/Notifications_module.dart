@@ -161,6 +161,7 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen> {
     required String soundName,
     required String? soundUrl,
     required bool isEnabled,
+    required double volume,
     required IconData icon,
     required Color iconColor,
   }) {
@@ -260,6 +261,88 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen> {
               ],
             ),
           ),
+          const SizedBox(height: 12),
+          // Control de Volumen interactivo e independiente
+          StatefulBuilder(
+            builder: (context, setLocalState) {
+              double localVol = volume.clamp(0.0, 1.0);
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.black26,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              localVol <= 0.01
+                                  ? Icons.volume_off
+                                  : localVol < 0.5
+                                      ? Icons.volume_down
+                                      : Icons.volume_up,
+                              color: iconColor,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Volumen:',
+                              style: TextStyle(color: Colors.white70, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                        Text(
+                          '${(localVol * 100).round()}%',
+                          style: TextStyle(
+                            color: iconColor,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                    SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 4,
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                        overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                        activeTrackColor: iconColor,
+                        inactiveTrackColor: Colors.white24,
+                        thumbColor: iconColor,
+                        overlayColor: iconColor.withOpacity(0.2),
+                      ),
+                      child: Slider(
+                        value: localVol,
+                        min: 0.0,
+                        max: 1.0,
+                        divisions: 20,
+                        label: '${(localVol * 100).round()}%',
+                        onChanged: (newVal) {
+                          setLocalState(() => localVol = newVal);
+                          SoundService.instance.setRealtimeVolume(
+                            type: soundKey,
+                            volume: newVal,
+                          );
+                        },
+                        onChangeEnd: (finalVal) async {
+                          await SoundService.instance.setVolume(
+                            type: soundKey,
+                            volume: finalVal,
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
           const SizedBox(height: 14),
           Wrap(
             spacing: 8,
@@ -268,7 +351,7 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen> {
               ElevatedButton.icon(
                 onPressed: () async {
                   if (isPlaying) {
-                    await SoundService.instance.stopPreview();
+                    await SoundService.instance.stopPreview(type: soundKey);
                     if (mounted) setState(() => _currentlyPlayingSound = null);
                   } else {
                     if (mounted) setState(() => _currentlyPlayingSound = soundKey);
@@ -342,10 +425,12 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen> {
         final appSoundName = data['appEntrySoundName'] as String? ?? 'melodia_app.mp3';
         final appSoundUrl = data['appEntrySoundUrl'] as String?;
         final appSoundEnabled = data['appEntrySoundEnabled'] as bool? ?? true;
+        final appSoundVolume = (data['appEntryVolume'] as num?)?.toDouble() ?? 1.0;
 
         final notifSoundName = data['notificationSoundName'] as String? ?? 'melodia_notificacion.mp3';
         final notifSoundUrl = data['notificationSoundUrl'] as String?;
         final notifSoundEnabled = data['notificationSoundEnabled'] as bool? ?? true;
+        final notifSoundVolume = (data['notificationVolume'] as num?)?.toDouble() ?? 1.0;
 
         return Container(
           margin: const EdgeInsets.only(bottom: 24),
@@ -403,6 +488,7 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen> {
                       soundName: appSoundName,
                       soundUrl: appSoundUrl,
                       isEnabled: appSoundEnabled,
+                      volume: appSoundVolume,
                       icon: Icons.directions_car_filled,
                       iconColor: Colors.amberAccent,
                     );
@@ -413,6 +499,7 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen> {
                       soundName: notifSoundName,
                       soundUrl: notifSoundUrl,
                       isEnabled: notifSoundEnabled,
+                      volume: notifSoundVolume,
                       icon: Icons.notifications_active,
                       iconColor: Colors.blueAccent,
                     );

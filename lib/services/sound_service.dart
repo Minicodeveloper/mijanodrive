@@ -16,7 +16,8 @@ class SoundService {
 
   AudioPlayer? _appPlayer;
   AudioPlayer? _notificationPlayer;
-  AudioPlayer? _previewPlayer;
+  AudioPlayer? _appPreviewPlayer;
+  AudioPlayer? _notificationPreviewPlayer;
 
   // Rutas por defecto en assets (audioplayers agrega "assets/" automáticamente con AssetSource)
   static const String defaultAppEntryAsset = 'sounds/melodia_app.mp3';
@@ -29,6 +30,8 @@ class SoundService {
   String _notificationSoundName = 'melodia_notificacion.mp3';
   bool _appEntrySoundEnabled = true;
   bool _notificationSoundEnabled = true;
+  double _appEntryVolume = 1.0;
+  double _notificationVolume = 1.0;
 
   bool _initialized = false;
   StreamSubscription? _settingsSub;
@@ -39,6 +42,8 @@ class SoundService {
   String get notificationSoundName => _notificationSoundName;
   bool get appEntrySoundEnabled => _appEntrySoundEnabled;
   bool get notificationSoundEnabled => _notificationSoundEnabled;
+  double get appEntryVolume => _appEntryVolume;
+  double get notificationVolume => _notificationVolume;
 
   bool get isAppEntryPlaying => _appPlayer?.state == PlayerState.playing;
   bool get isNotificationPlaying => _notificationPlayer?.state == PlayerState.playing;
@@ -51,7 +56,8 @@ class SoundService {
     _settingsSub?.cancel();
     _appPlayer?.dispose();
     _notificationPlayer?.dispose();
-    _previewPlayer?.dispose();
+    _appPreviewPlayer?.dispose();
+    _notificationPreviewPlayer?.dispose();
   }
 
   void _init() {
@@ -61,12 +67,14 @@ class SoundService {
     try {
       _appPlayer = AudioPlayer();
       _notificationPlayer = AudioPlayer();
-      _previewPlayer = AudioPlayer();
+      _appPreviewPlayer = AudioPlayer();
+      _notificationPreviewPlayer = AudioPlayer();
 
       // Configurar modo de audio seguro
       _appPlayer?.setReleaseMode(ReleaseMode.stop);
       _notificationPlayer?.setReleaseMode(ReleaseMode.stop);
-      _previewPlayer?.setReleaseMode(ReleaseMode.stop);
+      _appPreviewPlayer?.setReleaseMode(ReleaseMode.stop);
+      _notificationPreviewPlayer?.setReleaseMode(ReleaseMode.stop);
 
       _listenSettings();
     } catch (e) {
@@ -89,6 +97,19 @@ class SoundService {
           _notificationSoundName = data['notificationSoundName'] ?? 'melodia_notificacion.mp3';
           _appEntrySoundEnabled = data['appEntrySoundEnabled'] ?? true;
           _notificationSoundEnabled = data['notificationSoundEnabled'] ?? true;
+
+          final rawAppVol = data['appEntryVolume'];
+          if (rawAppVol is num) {
+            _appEntryVolume = rawAppVol.toDouble().clamp(0.0, 1.0);
+            _appPlayer?.setVolume(_appEntryVolume);
+            _appPreviewPlayer?.setVolume(_appEntryVolume);
+          }
+          final rawNotifVol = data['notificationVolume'];
+          if (rawNotifVol is num) {
+            _notificationVolume = rawNotifVol.toDouble().clamp(0.0, 1.0);
+            _notificationPlayer?.setVolume(_notificationVolume);
+            _notificationPreviewPlayer?.setVolume(_notificationVolume);
+          }
         }
       }, onError: (e) {
         debugPrint('Aviso: Escucha de configuración de sonidos: $e');
@@ -109,6 +130,7 @@ class SoundService {
     try {
       _appPlayer ??= AudioPlayer();
       await _appPlayer!.stop();
+      await _appPlayer!.setVolume(_appEntryVolume);
 
       if (_appEntrySoundUrl != null && _appEntrySoundUrl!.isNotEmpty) {
         await _appPlayer!.play(UrlSource(_appEntrySoundUrl!));
@@ -127,6 +149,7 @@ class SoundService {
     try {
       _notificationPlayer ??= AudioPlayer();
       await _notificationPlayer!.stop();
+      await _notificationPlayer!.setVolume(_notificationVolume);
 
       if (_notificationSoundUrl != null && _notificationSoundUrl!.isNotEmpty) {
         await _notificationPlayer!.play(UrlSource(_notificationSoundUrl!));
@@ -144,33 +167,57 @@ class SoundService {
     String? customUrl,
   }) async {
     try {
-      _previewPlayer ??= AudioPlayer();
-      await _previewPlayer!.stop();
+      if (type == 'app') {
+        // Asegurar que la prueba de notificación no suene al mismo tiempo
+        await _notificationPreviewPlayer?.stop();
 
-      if (customUrl != null && customUrl.isNotEmpty) {
-        await _previewPlayer!.play(UrlSource(customUrl));
-      } else if (type == 'app') {
-        if (_appEntrySoundUrl != null && _appEntrySoundUrl!.isNotEmpty) {
-          await _previewPlayer!.play(UrlSource(_appEntrySoundUrl!));
+        _appPreviewPlayer ??= AudioPlayer();
+        await _appPreviewPlayer!.stop();
+        _appPreviewPlayer!.setReleaseMode(ReleaseMode.stop);
+        await _appPreviewPlayer!.setVolume(_appEntryVolume);
+
+        if (customUrl != null && customUrl.isNotEmpty) {
+          await _appPreviewPlayer!.play(UrlSource(customUrl));
+        } else if (_appEntrySoundUrl != null && _appEntrySoundUrl!.isNotEmpty) {
+          await _appPreviewPlayer!.play(UrlSource(_appEntrySoundUrl!));
         } else {
-          await _previewPlayer!.play(AssetSource(defaultAppEntryAsset));
+          await _appPreviewPlayer!.play(AssetSource(defaultAppEntryAsset));
         }
       } else {
-        if (_notificationSoundUrl != null && _notificationSoundUrl!.isNotEmpty) {
-          await _previewPlayer!.play(UrlSource(_notificationSoundUrl!));
+        // Asegurar que la prueba de app no suene al mismo tiempo
+        await _appPreviewPlayer?.stop();
+
+        _notificationPreviewPlayer ??= AudioPlayer();
+        await _notificationPreviewPlayer!.stop();
+        _notificationPreviewPlayer!.setReleaseMode(ReleaseMode.stop);
+        await _notificationPreviewPlayer!.setVolume(_notificationVolume);
+
+        if (customUrl != null && customUrl.isNotEmpty) {
+          await _notificationPreviewPlayer!.play(UrlSource(customUrl));
+        } else if (_notificationSoundUrl != null && _notificationSoundUrl!.isNotEmpty) {
+          await _notificationPreviewPlayer!.play(UrlSource(_notificationSoundUrl!));
         } else {
-          await _previewPlayer!.play(AssetSource(defaultNotificationAsset));
+          await _notificationPreviewPlayer!.play(AssetSource(defaultNotificationAsset));
         }
       }
     } catch (e) {
-      debugPrint('Error al reproducir vista previa de audio: $e');
+      debugPrint('Error al reproducir vista previa de audio ($type): $e');
     }
   }
 
   /// Detiene la reproducción previa
-  Future<void> stopPreview() async {
+  Future<void> stopPreview({String? type}) async {
     try {
-      await _previewPlayer?.stop();
+      if (type == 'app') {
+        await _appPreviewPlayer?.stop();
+      } else if (type == 'notification') {
+        await _notificationPreviewPlayer?.stop();
+      } else {
+        await Future.wait([
+          _appPreviewPlayer?.stop() ?? Future.value(),
+          _notificationPreviewPlayer?.stop() ?? Future.value(),
+        ]);
+      }
     } catch (_) {}
   }
 
@@ -306,6 +353,52 @@ class SoundService {
       }
     } catch (e) {
       debugPrint('Error al cambiar estado de sonido: $e');
+    }
+  }
+
+  /// Ajusta el volumen en caliente inmediatamente sin esperar a la base de datos
+  Future<void> setRealtimeVolume({
+    required String type,
+    required double volume,
+  }) async {
+    final clamped = volume.clamp(0.0, 1.0);
+    if (type == 'app') {
+      _appEntryVolume = clamped;
+      await _appPlayer?.setVolume(clamped);
+      await _appPreviewPlayer?.setVolume(clamped);
+    } else {
+      _notificationVolume = clamped;
+      await _notificationPlayer?.setVolume(clamped);
+      await _notificationPreviewPlayer?.setVolume(clamped);
+    }
+  }
+
+  /// Ajusta y guarda el volumen de la melodía de forma 100% independiente
+  Future<void> setVolume({
+    required String type,
+    required double volume,
+  }) async {
+    final clamped = volume.clamp(0.0, 1.0);
+    try {
+      if (type == 'app') {
+        _appEntryVolume = clamped;
+        await _appPlayer?.setVolume(clamped);
+        await _appPreviewPlayer?.setVolume(clamped);
+        await _firestore.collection('app_settings').doc('sounds').set({
+          'appEntryVolume': clamped,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } else {
+        _notificationVolume = clamped;
+        await _notificationPlayer?.setVolume(clamped);
+        await _notificationPreviewPlayer?.setVolume(clamped);
+        await _firestore.collection('app_settings').doc('sounds').set({
+          'notificationVolume': clamped,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+    } catch (e) {
+      debugPrint('Error al guardar volumen de sonido ($type): $e');
     }
   }
 }

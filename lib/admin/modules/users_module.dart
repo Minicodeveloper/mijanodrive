@@ -276,12 +276,16 @@ class _UsersModuleState extends State<UsersModule> {
 
   Widget _dniBadge(Map<String, dynamic> u) {
     final dni = (u['dni'] ?? '').toString();
+    final dniStatus = (u['dniStatus'] ?? '').toString().toLowerCase();
     final hasDocs = (u['dniFrontUrl'] != null && u['dniFrontUrl'].toString().isNotEmpty) ||
         (u['documents']?['dniFront'] != null);
 
     if (dni.isEmpty) {
       return const AdminBadge('Sin DNI', Colors.grey);
     }
+
+    final isApproved = dniStatus == 'aprobado' || dniStatus == 'verificado';
+    final isRejected = dniStatus == 'rechazado';
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -292,7 +296,15 @@ class _UsersModuleState extends State<UsersModule> {
         ),
         if (hasDocs) ...[
           const SizedBox(width: 4),
-          const Icon(Icons.verified_outlined, size: 14, color: Colors.blue),
+          Icon(
+            isApproved
+                ? Icons.verified
+                : (isRejected ? Icons.warning_amber_rounded : Icons.photo_library),
+            size: 15,
+            color: isApproved
+                ? Colors.green
+                : (isRejected ? Colors.red : Colors.blue),
+          ),
         ],
       ],
     );

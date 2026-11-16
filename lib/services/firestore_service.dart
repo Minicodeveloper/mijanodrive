@@ -940,6 +940,19 @@ class FirestoreService {
   Future<void> setAccountBlocked(String uid, bool blocked) =>
       _updateAccountDocs(uid, {'isBlocked': blocked});
 
+  /// Actualiza el estado del DNI del pasajero (ej. 'aprobado', 'rechazado', 'pendiente')
+  Future<void> updatePassengerDniStatus(String uid, String status) async {
+    final updates = {
+      'dniStatus': status,
+      'documents.dniStatus': status,
+      'dniVerifiedAt': (status == 'aprobado' || status == 'verificado')
+          ? FieldValue.serverTimestamp()
+          : null,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+    await _updateAccountDocs(uid, updates);
+  }
+
   /// Notificar al conductor
   Future<void> notifyDriver(String driverId, String title, String body) async {
     await _db.collection('notifications').add({

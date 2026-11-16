@@ -586,17 +586,6 @@ class _LoginScreenState extends State<LoginScreen> {
 ),
 
                 const SizedBox(height: 20),
-                const Text(
-                  'Mijano Drive',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black,
-                  ),
-                ),
-                const SizedBox(height: 40),
-
                 // Email input
                 Form(
                   key: _formKey,
