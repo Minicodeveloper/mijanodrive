@@ -85,7 +85,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final newPasswordController = TextEditingController();
     final confirmPasswordController = TextEditingController();
 
-    int currentStep = 1; // 1 = solicitar SMS, 2 = validar código y cambiar clave
+    int currentStep = 1; 
     bool isProcessing = false;
     bool obscureNewPassword = true;
     bool obscureConfirmPassword = true;
@@ -514,7 +514,6 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _routeAfterAuth() async {
-    // Detener la melodía de bienvenida al entrar a la cuenta
     unawaited(SoundService.instance.stopAppEntrySound());
 
     final user = _auth.currentUser;
@@ -547,200 +546,287 @@ class _LoginScreenState extends State<LoginScreen> {
 
     return Scaffold(
       backgroundColor: Colors.white,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // --- BOTÓN SUPERIOR PARA ALTERNAR ROL ---
-                Align(
-                  alignment: Alignment.topRight,
-                  child: TextButton(
-                    onPressed: () {
-                      setState(() {
-                        _isDriver = !_isDriver;
-                      });
-                    },
-                    child: Text(
-                      _isDriver ? '¿Eres pasajero?' : '¿Eres conductor?',
-                      style: const TextStyle(
-                        color: Colors.black87,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
+      body: Stack(
+        children: [
+          // 1. ONDA / FORMA DECORATIVA SUPERIOR IZQUIERDA
+          Positioned(
+            top: 0,
+            left: 0,
+            child: Opacity(
+              opacity: 0.35,
+              child: Container(
+                width: 160,
+                height: 160,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF9D408),
+                  borderRadius: BorderRadius.only(
+                    bottomRight: Radius.circular(150),
                   ),
                 ),
-                const SizedBox(height: 10),
+              ),
+            ),
+          ),
 
-                Center(
-  child: Image.asset(
-    'assets/images/logo2.jpg',
-    width: 150,
-    height: 150,
-    fit: BoxFit.contain,
-  ),
-),
+          // 2. ONDA / FORMA DECORATIVA INFERIOR DERECHA (Ajustada al fondo limpio)
+          Positioned(
+            bottom: 0,
+            right: 0,
+            child: Opacity(
+              opacity: 0.25,
+              child: Container(
+                width: 200,
+                height: 200,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF9D408),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(200),
+                  ),
+                ),
+              ),
+            ),
+          ),
 
-                const SizedBox(height: 20),
-                // Email input
-                Form(
-                  key: _formKey,
+          // 3. CONTENIDO PRINCIPAL DE LA PANTALLA
+          SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
                   child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      TextFormField(
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Ingresa tu correo o número de teléfono';
-                          }
-                          final trimmed = value.trim();
-                          final isPhone = RegExp(r'^\d{9}$').hasMatch(trimmed);
-                          if (!isPhone) {
-                            return Validators.validateEmail(trimmed);
-                          }
-                          return null;
-                        },
-                        decoration: InputDecoration(
-                          hintText: 'correo@ejemplo.com o 987654321',
-                          labelText: 'Correo o Teléfono',
-                          prefixIcon: const Icon(Icons.person_outline),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
+                      // Botón superior para alternar rol
+                      Align(
+                        alignment: Alignment.topRight,
+                        child: TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _isDriver = !_isDriver;
+                            });
+                          },
+                          child: Text(
+                            _isDriver ? '¿Eres pasajero?' : '¿Eres conductor?',
+                            style: const TextStyle(
+                              color: Colors.black87,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
                           ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Logo centrado con diseño estilizado
+                      Center(
+                        child: Image.asset(
+                          'assets/images/logo2.jpg',
+                          width: 150,
+                          height: 150,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+
+                      const SizedBox(height: 30),
+
+                      // Campos del formulario con fondo sutil
+                      Form(
+                        key: _formKey,
+                        child: Column(
+                          children: [
+                            TextFormField(
+                              controller: _emailController,
+                              keyboardType: TextInputType.emailAddress,
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'Ingresa tu correo o número de teléfono';
+                                }
+                                final trimmed = value.trim();
+                                final isPhone = RegExp(r'^\d{9}$').hasMatch(trimmed);
+                                if (!isPhone) {
+                                  return Validators.validateEmail(trimmed);
+                                }
+                                return null;
+                              },
+                              decoration: InputDecoration(
+                                hintText: 'correo@ejemplo.com o 987654321',
+                                labelText: 'Correo o Teléfono',
+                                filled: true,
+                                fillColor: const Color(0xFFFFFDE7),
+                                prefixIcon: const Icon(Icons.person_outline),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: const BorderSide(color: Color(0xFFF9D408), width: 0.8),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(color: Colors.amber.shade200, width: 1),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: const BorderSide(color: Color(0xFFF9D408), width: 1.5),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+
+                            TextFormField(
+                              controller: _passwordController,
+                              obscureText: _isPasswordObscure,
+                              validator: Validators.validatePassword,
+                              decoration: InputDecoration(
+                                hintText: '******',
+                                labelText: 'Contraseña',
+                                filled: true,
+                                fillColor: const Color(0xFFFFFDE7),
+                                prefixIcon: const Icon(Icons.lock_outline),
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _isPasswordObscure
+                                        ? Icons.visibility_off
+                                        : Icons.visibility,
+                                    color: Colors.grey,
+                                  ),
+                                  onPressed: () {
+                                    setState(() {
+                                      _isPasswordObscure = !_isPasswordObscure;
+                                    });
+                                  },
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: const BorderSide(color: Color(0xFFF9D408), width: 0.8),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(color: Colors.amber.shade200, width: 1),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: const BorderSide(color: Color(0xFFF9D408), width: 1.5),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                onPressed: () {
+                                  _showPhoneRecoveryDialog(_emailController.text.trim());
+                                },
+                                child: const Text(
+                                  '¿Olvidaste tu contraseña?',
+                                  style: TextStyle(
+                                    color: Color(0xFF8A5300),
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                       const SizedBox(height: 20),
 
-                      TextFormField(
-                        controller: _passwordController,
-                        obscureText: _isPasswordObscure,
-                        validator: Validators.validatePassword,
-                        decoration: InputDecoration(
-                          hintText: '******',
-                          labelText: 'Contraseña',
-                          prefixIcon: const Icon(Icons.lock_outline),
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              _isPasswordObscure
-                                  ? Icons.visibility_off
-                                  : Icons.visibility,
-                              color: Colors.grey,
+                      // Botón Principal de Iniciar Sesión
+                      ElevatedButton(
+                        onPressed: _isLoading ? null : _login,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFF9D408),
+                          disabledBackgroundColor: Colors.grey,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: _isLoading
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation(Colors.black),
+                                ),
+                              )
+                            : Text(
+                                _isDriver ? 'Iniciar Sesión Conductor' : 'Iniciar Sesión',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black,
+                                ),
+                              ),
+                      ),
+                      const SizedBox(height: 25),
+
+                      // Divisor con la letra 'o' al centro
+                      Row(
+                        children: const [
+                          Expanded(child: Divider(thickness: 1, color: Colors.black26)),
+                          Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 12.0),
+                            child: Text(
+                              'o',
+                              style: TextStyle(color: Colors.black54, fontWeight: FontWeight.w500),
                             ),
-                            onPressed: () {
-                              setState(() {
-                                _isPasswordObscure = !_isPasswordObscure;
-                              });
-                            },
                           ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
+                          Expanded(child: Divider(thickness: 1, color: Colors.black26)),
+                        ],
+                      ),
+                      const SizedBox(height: 25),
+
+                      // Botón de huella dactilar
+                      OutlinedButton.icon(
+                        onPressed: _biometricLogin,
+                        icon: const Icon(Icons.fingerprint, color: Color(0xFF8A5300)),
+                        label: const Text(
+                          'Usar huella dactilar',
+                          style: TextStyle(color: Colors.black87, fontWeight: FontWeight.w600),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 15),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30),
                           ),
+                          side: const BorderSide(color: Color(0xFFF9D408), width: 1.5),
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          onPressed: () {
-                            _showPhoneRecoveryDialog(_emailController.text.trim());
-                          },
-                          child: const Text(
-                            '¿Olvidaste tu contraseña?',
-                            style: TextStyle(
-                              color: Color(0xFF8A5300),
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
+                      const SizedBox(height: 30),
+
+                      // Enlace inferior de registro
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            _isDriver ? '¿Nuevo conductor? ' : '¿Nuevo usuario? ',
+                            style: const TextStyle(color: Colors.black87),
+                          ),
+                          GestureDetector(
+                            onTap: () {
+                              Navigator.of(context).pushNamed(
+                                '/register',
+                                arguments: {'initialRole': currentRole},
+                              );
+                            },
+                            child: Text(
+                              _isDriver ? 'Regístrate o solicita cuenta' : 'Regístrate',
+                              style: const TextStyle(
+                                color: Color(0xFF8A5300),
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 30),
-
-                ElevatedButton(
-                  onPressed: _isLoading ? null : _login,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFF9D408),
-                    disabledBackgroundColor: Colors.grey,
-                    padding: const EdgeInsets.symmetric(vertical: 15),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: _isLoading
-                      ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation(Colors.black),
-                    ),
-                  )
-                      : Text(
-                    _isDriver ? 'Iniciar Sesión Conductor' : 'Iniciar Sesión',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 30),
-
-                const Row(
-                  children: [
-                    Expanded(child: Divider()),
-                    SizedBox(width: 10),
-                    Text('o'),
-                    SizedBox(width: 10),
-                    Expanded(child: Divider()),
-                  ],
-                ),
-                const SizedBox(height: 20),
-
-                OutlinedButton.icon(
-                  onPressed: _biometricLogin,
-                  icon: const Icon(Icons.fingerprint),
-                  label: const Text('Usar huella dactilar'),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 15),
-                    side: const BorderSide(color: Color(0xFFF9D408)),
-                  ),
-                ),
-                const SizedBox(height: 30),
-
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(_isDriver ? '¿Nuevo conductor? ' : '¿Nuevo usuario? '),
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.of(context).pushNamed(
-                          '/register',
-                          arguments: {'initialRole': currentRole},
-                        );
-                      },
-                      child: Text(
-                        _isDriver ? 'Regístrate o solicita cuenta' : 'Regístrate',
-                        style: const TextStyle(
-                          color: Color(0xFFF9D408),
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
