@@ -27,6 +27,8 @@ extension _VehicleCategoryUi on VehicleCategory {
         return Icons.two_wheeler;
       case VehicleCategory.car:
         return Icons.directions_car;
+      case VehicleCategory.combi:
+        return Icons.airport_shuttle;
     }
   }
 }
@@ -244,7 +246,7 @@ class _TariffsModuleState extends State<TariffsModule> {
         children: [
           const AdminHeader(
             'Tarifas',
-            'Cotización dinámica del servicio de mototaxis y autos interurbanos',
+            'Cotización dinámica del servicio de mototaxis, autos y combis interurbanas',
           ),
           if (_loading)
             const Padding(
@@ -384,6 +386,13 @@ class _TariffsModuleState extends State<TariffsModule> {
         ),
     ];
 
+    String subtitleText = 'Parámetros de cotización para mototaxis';
+    if (category == VehicleCategory.car) {
+      subtitleText = 'Parámetros de cotización para autos y precio por asiento interurbano';
+    } else if (category == VehicleCategory.combi) {
+      subtitleText = 'Parámetros de cotización para combis y transporte interurbano';
+    }
+
     return adminCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -391,9 +400,7 @@ class _TariffsModuleState extends State<TariffsModule> {
           _cardTitle(
             category.icon,
             'Tarifario: ${category.label}',
-            category == VehicleCategory.moto
-                ? 'Parámetros de cotización para mototaxis'
-                : 'Parámetros de cotización para autos y precio por asiento interurbano',
+            subtitleText,
           ),
           const SizedBox(height: 20),
           ..._inPairs(fields),
@@ -416,7 +423,7 @@ class _TariffsModuleState extends State<TariffsModule> {
           _cardTitle(
             Icons.nights_stay_outlined,
             'Configuración global (compartida)',
-            'Horario nocturno y radio de alcance para mototaxis y autos',
+            'Horario nocturno y radio de alcance para todas las unidades',
           ),
           const SizedBox(height: 20),
           ..._inPairs([
@@ -443,7 +450,7 @@ class _TariffsModuleState extends State<TariffsModule> {
           ]),
           const SizedBox(height: 16),
           _hint(
-            'Esta configuración aplica para todas las categorías de vehículo (mototaxis y autos).',
+            'Esta configuración aplica para todas las categorías de vehículo (mototaxis, autos y combis).',
           ),
         ],
       ),
