@@ -321,7 +321,7 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen> {
                         value: localVol,
                         min: 0.0,
                         max: 1.0,
-                        divisions: 20,
+                        divisions: 100,
                         label: '${(localVol * 100).round()}%',
                         onChanged: (newVal) {
                           setLocalState(() => localVol = newVal);

@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart' as fbs;
 import 'package:local_auth/local_auth.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:mijano_drive_app/models/user_model.dart';
 import '../models/tariff_model.dart';
 import 'firestore_service.dart';
@@ -1105,28 +1106,90 @@ class AuthService {
   }
 
   // ==========================================
-  // 8. MÉTODOS DE BIOMETRÍA
+  // 8. MÉTODOS DE BIOMETRÍA Y HUELLA DACTILAR
   // ==========================================
+  static const String _biometricBoxName = 'biometric_credentials_box';
+
+  Future<Box> _getBiometricBox() async {
+    if (Hive.isBoxOpen(_biometricBoxName)) {
+      return Hive.box(_biometricBoxName);
+    }
+    return await Hive.openBox(_biometricBoxName);
+  }
+
+  /// Guarda de forma local las credenciales del usuario tras un login exitoso
+  Future<void> saveBiometricCredentials({
+    required String emailOrPhone,
+    required String password,
+  }) async {
+    try {
+      final box = await _getBiometricBox();
+      await box.put('saved_login', emailOrPhone.trim());
+      await box.put('saved_password', password);
+      await box.put('saved_at', DateTime.now().toIso8601String());
+    } catch (e) {
+      debugPrint('Error guardando credenciales biométricas: $e');
+    }
+  }
+
+  /// Recupera las credenciales guardadas para el login por huella
+  Future<Map<String, String>?> getBiometricCredentials() async {
+    try {
+      final box = await _getBiometricBox();
+      final login = box.get('saved_login') as String?;
+      final password = box.get('saved_password') as String?;
+      if (login != null && login.isNotEmpty && password != null && password.isNotEmpty) {
+        return {
+          'emailOrPhone': login,
+          'password': password,
+        };
+      }
+    } catch (e) {
+      debugPrint('Error leyendo credenciales biométricas: $e');
+    }
+    return null;
+  }
+
+  /// Verifica si el usuario ya tiene credenciales guardadas en este dispositivo
+  Future<bool> hasBiometricCredentials() async {
+    final creds = await getBiometricCredentials();
+    return creds != null;
+  }
+
+  /// Limpia las credenciales biométricas guardadas
+  Future<void> clearBiometricCredentials() async {
+    try {
+      final box = await _getBiometricBox();
+      await box.clear();
+    } catch (_) {}
+  }
+
+  /// Verifica si el hardware soporta biometría y si hay huellas registradas
   Future<bool> canUseBiometrics() async {
     try {
       final bool canCheck = await _localAuth.canCheckBiometrics;
       final bool isSupported = await _localAuth.isDeviceSupported();
-      return canCheck || isSupported;
+      if (!canCheck && !isSupported) return false;
+      final available = await _localAuth.getAvailableBiometrics();
+      return canCheck || isSupported || available.isNotEmpty;
     } catch (e) {
+      debugPrint('Error al verificar biometría: $e');
       return false;
     }
   }
 
-  Future<bool> authenticateBiometric() async {
+  /// Solicita el escaneo de la huella dactilar al usuario
+  Future<bool> authenticateBiometric({String? reason}) async {
     try {
       return await _localAuth.authenticate(
-        localizedReason: 'Autentícate para ingresar a Mijano Drive',
+        localizedReason: reason ?? 'Coloca tu huella dactilar para iniciar sesión en Mijano Drive',
         options: const AuthenticationOptions(
           stickyAuth: true,
-          biometricOnly: true,
+          biometricOnly: false,
         ),
       );
     } catch (e) {
+      debugPrint('Error al autenticar biometría: $e');
       return false;
     }
   }

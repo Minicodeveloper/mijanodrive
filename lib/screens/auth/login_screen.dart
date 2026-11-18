@@ -28,6 +28,25 @@ class _LoginScreenState extends State<LoginScreen> {
   final _auth = AuthService.instance;
 
   @override
+  void initState() {
+    super.initState();
+    _checkSavedBiometrics();
+  }
+
+  Future<void> _checkSavedBiometrics() async {
+    try {
+      final creds = await _auth.getBiometricCredentials();
+      if (creds != null && mounted) {
+        if (_emailController.text.isEmpty) {
+          setState(() {
+            _emailController.text = creds['emailOrPhone'] ?? '';
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
@@ -50,6 +69,11 @@ class _LoginScreenState extends State<LoginScreen> {
     if (ok) {
       _failedAttempts = 0;
       _lastAttemptEmail = null;
+      // Guardar credenciales para permitir iniciar sesión con huella dactilar
+      unawaited(_auth.saveBiometricCredentials(
+        emailOrPhone: email,
+        password: password,
+      ));
       _snack(msg);
       _routeAfterAuth();
     } else {
@@ -501,15 +525,52 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _biometricLogin() async {
     final can = await _auth.canUseBiometrics();
     if (!can) {
-      _snack('Tu dispositivo no tiene biometría configurada');
+      _snack('Tu dispositivo no tiene sensor de huella dactilar o no está configurado en los ajustes de Android.');
       return;
     }
-    final ok = await _auth.authenticateBiometric();
+
+    final savedCreds = await _auth.getBiometricCredentials();
+    String? emailToUse = savedCreds?['emailOrPhone'];
+    String? passwordToUse = savedCreds?['password'];
+
+    // Si aún no hay credenciales guardadas, pero el usuario ya escribió en pantalla
+    if (emailToUse == null || passwordToUse == null) {
+      final currentEmail = _emailController.text.trim();
+      final currentPass = _passwordController.text;
+      if (currentEmail.isNotEmpty && currentPass.isNotEmpty) {
+        emailToUse = currentEmail;
+        passwordToUse = currentPass;
+      }
+    }
+
+    if (emailToUse == null || passwordToUse == null) {
+      _snack('Para usar tu huella dactilar, primero inicia sesión una vez con tu correo/teléfono y contraseña.');
+      return;
+    }
+
+    final ok = await _auth.authenticateBiometric(
+      reason: 'Coloca tu huella dactilar para iniciar sesión en Mijano Drive',
+    );
     if (!mounted) return;
-    if (ok && _auth.currentUser != null) {
-      _routeAfterAuth();
-    } else if (ok) {
-      _snack('Primero inicia sesión con tu correo una vez');
+
+    if (ok) {
+      setState(() => _isLoading = true);
+
+      final (loginOk, msg, role, status) = await _auth.login(emailToUse, passwordToUse);
+
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+
+      if (loginOk) {
+        unawaited(_auth.saveBiometricCredentials(
+          emailOrPhone: emailToUse,
+          password: passwordToUse,
+        ));
+        _snack('¡Bienvenido! Acceso por huella dactilar concedido.');
+        _routeAfterAuth();
+      } else {
+        _snack('No se pudo iniciar sesión: $msg');
+      }
     }
   }
 
@@ -620,7 +681,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       // Logo centrado con diseño estilizado
                       Center(
                         child: Image.asset(
-                          'assets/images/logo2.jpg',
+                          'assets/images/logo.png',
                           width: 150,
                           height: 150,
                           fit: BoxFit.contain,

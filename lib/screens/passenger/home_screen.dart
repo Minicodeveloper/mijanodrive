@@ -1986,7 +1986,7 @@ class _HomeScreenState extends State<HomeScreen> {
           IgnorePointer(
             child: Center(
               child: Padding(
-                padding: const EdgeInsets.only(bottom: 38),
+                padding: const EdgeInsets.only(bottom: 140),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [

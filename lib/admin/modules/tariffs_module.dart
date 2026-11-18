@@ -217,7 +217,17 @@ class _TariffsModuleState extends State<TariffsModule> {
 
   String _amount(double value) => value.toStringAsFixed(2);
 
-  String _soles(double value) => 'S/ ${value.toStringAsFixed(2)}';
+  // --- FUNCIÓN ACTUALIZADA PARA MOSTRAR ENTEROS CON LA REGLA DE .51 ---
+  String _soles(double value) {
+    double fractionalPart = value - value.floor();
+    int roundedValue;
+    if (fractionalPart > 0.50) {
+      roundedValue = value.ceil();
+    } else {
+      roundedValue = value.floor();
+    }
+    return 'S/ $roundedValue';
+  }
 
   String _plain(double value) =>
       value == value.roundToDouble() ? value.toStringAsFixed(0) : '$value';
