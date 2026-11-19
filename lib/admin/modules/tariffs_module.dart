@@ -52,6 +52,7 @@ class _TariffsModuleState extends State<TariffsModule> {
       },
   };
   final _carPricePerSeatCtrl = TextEditingController();
+  final _luggageFeeCtrl = TextEditingController();
   final _nightStartCtrl = TextEditingController();
   final _nightEndCtrl = TextEditingController();
   final _radiusCtrl = TextEditingController();
@@ -80,6 +81,7 @@ class _TariffsModuleState extends State<TariffsModule> {
       }
     }
     _carPricePerSeatCtrl.dispose();
+    _luggageFeeCtrl.dispose();
     _nightStartCtrl.dispose();
     _nightEndCtrl.dispose();
     _radiusCtrl.dispose();
@@ -130,6 +132,7 @@ class _TariffsModuleState extends State<TariffsModule> {
     final carBase = settings.tariffFor(VehicleCategory.car).baseFare;
     final seatPrice = (carBase > 0) ? carBase : settings.carPricePerSeat;
     _carPricePerSeatCtrl.text = _amount(seatPrice);
+    _luggageFeeCtrl.text = _amount(settings.luggageFee);
     _nightStartCtrl.text = '${settings.nightStartHour}';
     _nightEndCtrl.text = '${settings.nightEndHour}';
     _radiusCtrl.text = settings.maxOfferRadiusKm.toString();
@@ -190,10 +193,11 @@ class _TariffsModuleState extends State<TariffsModule> {
     final carSeatPrice = (carBaseFare != null && carBaseFare > 0)
         ? carBaseFare
         : (_parse(_carPricePerSeatCtrl.text) ?? PricingSettings.defaultCarPricePerSeat);
+    final luggageFee = _parse(_luggageFeeCtrl.text) ?? PricingSettings.defaultLuggageFee;
     final nightStart = int.tryParse(_nightStartCtrl.text.trim());
     final nightEnd = int.tryParse(_nightEndCtrl.text.trim());
     final radius = _parse(_radiusCtrl.text);
-    if (nightStart == null || nightEnd == null || radius == null || carSeatPrice < 0) return null;
+    if (nightStart == null || nightEnd == null || radius == null || carSeatPrice < 0 || luggageFee < 0) return null;
     if (nightStart > 23 || nightEnd > 23 || radius <= 0) return null;
 
     return PricingSettings(
@@ -202,6 +206,7 @@ class _TariffsModuleState extends State<TariffsModule> {
       nightEndHour: nightEnd,
       maxOfferRadiusKm: radius,
       carPricePerSeat: carSeatPrice,
+      luggageFee: luggageFee,
     );
   }
 
@@ -456,6 +461,12 @@ class _TariffsModuleState extends State<TariffsModule> {
               label: 'Radio de solicitudes',
               suffix: 'km',
               validator: _validateRadius,
+            ),
+            _numberField(
+              controller: _luggageFeeCtrl,
+              label: 'Costo base bulto / carga',
+              prefix: 'S/ ',
+              validator: _validateAmount,
             ),
           ]),
           const SizedBox(height: 16),

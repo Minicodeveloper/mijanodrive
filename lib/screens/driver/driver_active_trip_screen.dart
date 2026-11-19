@@ -438,6 +438,168 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
     });
   }
 
+  void _showLuggageFeeDialog(Trip trip) {
+    double initialExtra = trip.luggageExtraAmount ?? 2.0;
+    final ctrl = TextEditingController(text: initialExtra.toStringAsFixed(1));
+    bool isSaving = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final currentExtra = double.tryParse(ctrl.text.replaceAll(',', '.')) ?? 0.0;
+          final proposedTotal = trip.fareAmount + currentExtra;
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: MijanoTheme.sol.withValues(alpha: 0.25),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.luggage, color: MijanoTheme.ink),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Costo adicional por bulto',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Acuerda el precio con el pasajero antes de enviarlo. El pasajero deberá aceptarlo en su teléfono para continuar con la carrera; si no lo acepta, la carrera se cancelará.',
+                    style: TextStyle(fontSize: 13, color: Colors.black87),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Tarifa inicial:'),
+                            Text('S/ ${trip.fareAmount.toStringAsFixed(2)}',
+                                style: const TextStyle(fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Adicional por bulto:'),
+                            Text('+ S/ ${currentExtra.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold, color: Colors.orange)),
+                          ],
+                        ),
+                        const Divider(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Nuevo total a pagar:',
+                                style: TextStyle(fontWeight: FontWeight.bold)),
+                            Text('S/ ${proposedTotal.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w900,
+                                    color: MijanoTheme.ink)),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: ctrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(
+                      labelText: 'Monto adicional acordado (S/)',
+                      prefixText: 'S/ ',
+                      hintText: 'Ej. 2.00, 3.50, 5.00',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onChanged: (_) => setDialogState(() {}),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isSaving ? null : () => Navigator.pop(ctx),
+                child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: MijanoTheme.sol,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: isSaving
+                    ? null
+                    : () async {
+                        final extra = double.tryParse(ctrl.text.replaceAll(',', '.'));
+                        if (extra == null || extra <= 0) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Ingresa un monto adicional válido')),
+                          );
+                          return;
+                        }
+
+                        final messenger = ScaffoldMessenger.of(context);
+                        final navigator = Navigator.of(ctx);
+                        setDialogState(() => isSaving = true);
+                        try {
+                          await FirestoreService.instance.updateTrip(trip.id, {
+                            'luggageExtraAmount': extra,
+                            'luggageExtraStatus': 'pending',
+                            'carriesCargo': true,
+                          });
+                          if (!mounted) return;
+                          navigator.pop();
+                          messenger.showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                  'Solicitud enviada: S/ ${extra.toStringAsFixed(2)} por bulto. Esperando respuesta del pasajero.'),
+                              backgroundColor: Colors.blue.shade700,
+                            ),
+                          );
+                        } catch (e) {
+                          setDialogState(() => isSaving = false);
+                          messenger.showSnackBar(
+                            SnackBar(content: Text('Error al enviar solicitud: $e')),
+                          );
+                        }
+                      },
+                child: isSaving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Enviar al pasajero', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<Trip?>(
@@ -459,7 +621,7 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
                 barrierDismissible: false,
                 builder: (ctx) => AlertDialog(
                   title: const Text('Viaje Cancelado'),
-                  content: const Text('El pasajero ha cancelado el viaje.'),
+                  content: Text(trip.cancellationReason ?? 'El pasajero ha cancelado el viaje.'),
                   actions: [
                     TextButton(
                       onPressed: () {
@@ -659,6 +821,52 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
                               ),
                             ],
                           ),
+                          // Indicadores de estado de negociación por bulto
+                          if (trip.luggageExtraStatus == 'pending') ...[
+                            Container(
+                              margin: const EdgeInsets.only(top: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFF8E1),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: const Color(0xFFFFD54F)),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.hourglass_top, color: Color(0xFF8A5300), size: 18),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Esperando que el pasajero acepte recargo de S/ ${trip.luggageExtraAmount?.toStringAsFixed(2)} por bulto',
+                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF8A5300)),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ] else if (trip.luggageExtraStatus == 'accepted') ...[
+                            Container(
+                              margin: const EdgeInsets.only(top: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.green.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.green.shade300),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.check_circle, color: Colors.green.shade700, size: 18),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Recargo de bulto aceptado (+S/ ${trip.luggageExtraAmount?.toStringAsFixed(2)}). Total: S/ ${trip.fareAmount.toStringAsFixed(2)}',
+                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green.shade900),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 10),
                           SizedBox(
                             width: double.infinity,
@@ -691,6 +899,29 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
                             ),
                           ),
                           if (status == TripStatus.accepted || status == TripStatus.arrived) ...[
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Icons.luggage, color: Color(0xFF8A5300)),
+                                label: Text(
+                                  trip.luggageExtraStatus == 'pending'
+                                      ? 'Modificar recargo por bulto'
+                                      : (trip.carriesCargo
+                                          ? 'Ajustar recargo por bulto'
+                                          : 'Cobrar adicional por bulto'),
+                                  style: const TextStyle(
+                                    color: Color(0xFF8A5300),
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  side: const BorderSide(color: Color(0xFFF9D408), width: 1.5),
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                ),
+                                onPressed: () => _showLuggageFeeDialog(trip),
+                              ),
+                            ),
                             const SizedBox(height: 8),
                             SizedBox(
                               width: double.infinity,
@@ -828,7 +1059,70 @@ class DriverActiveTripScreen extends StatelessWidget {
                     label: 'Carga',
                     value: 'Sí, lleva carga adicional',
                   ),
+                if (trip.luggageExtraStatus == 'pending')
+                  _TripDetail(
+                    label: 'Negociación de bulto',
+                    value: 'Esperando respuesta del pasajero (+S/ ${trip.luggageExtraAmount?.toStringAsFixed(2)})',
+                  )
+                else if (trip.luggageExtraStatus == 'accepted')
+                  _TripDetail(
+                    label: 'Recargo por bulto acordado',
+                    value: '+ S/ ${trip.luggageExtraAmount?.toStringAsFixed(2)} (Total: S/ ${trip.fareAmount.toStringAsFixed(2)})',
+                  ),
                 const Spacer(),
+                if (isAccepted || isArrived) ...[
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.luggage, color: Color(0xFF8A5300)),
+                    label: Text(
+                      trip.luggageExtraStatus == 'pending'
+                          ? 'Modificar recargo por bulto'
+                          : 'Cobrar adicional por bulto',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    onPressed: () {
+                      final ctrl = TextEditingController(text: (trip.luggageExtraAmount ?? 2.0).toStringAsFixed(1));
+                      showDialog(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Costo adicional por bulto'),
+                          content: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text('Acuerda el precio con el pasajero antes de enviarlo. Si no acepta, el viaje se cancela.'),
+                              const SizedBox(height: 12),
+                              TextField(
+                                controller: ctrl,
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                decoration: const InputDecoration(
+                                  labelText: 'Monto adicional (S/)',
+                                  prefixText: 'S/ ',
+                                ),
+                              ),
+                            ],
+                          ),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+                            ElevatedButton(
+                              onPressed: () async {
+                                final extra = double.tryParse(ctrl.text.replaceAll(',', '.'));
+                                if (extra != null && extra > 0) {
+                                  await FirestoreService.instance.updateTrip(trip.id, {
+                                    'luggageExtraAmount': extra,
+                                    'luggageExtraStatus': 'pending',
+                                    'carriesCargo': true,
+                                  });
+                                  if (context.mounted) Navigator.pop(ctx);
+                                }
+                              },
+                              child: const Text('Enviar'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 if (isAccepted)
                   FilledButton.icon(
                     onPressed: () => _updateStatus(context, 'arrived'),

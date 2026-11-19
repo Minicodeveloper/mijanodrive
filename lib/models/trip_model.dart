@@ -36,6 +36,10 @@ class Trip {
   final bool dispatchExhausted;
   final bool carriesCargo;
   final String? city;
+  final double? luggageExtraAmount;
+  final String? luggageExtraStatus; // 'pending', 'accepted', 'rejected'
+  final String? luggageExtraNote;
+  final String? cancellationReason;
 
   Trip({
     required this.id,
@@ -69,6 +73,10 @@ class Trip {
     this.dispatchExhausted = false,
     this.carriesCargo = false,
     this.city,
+    this.luggageExtraAmount,
+    this.luggageExtraStatus,
+    this.luggageExtraNote,
+    this.cancellationReason,
   });
 
   Map<String, dynamic> toMap() {
@@ -103,6 +111,10 @@ class Trip {
       'dispatchExhausted': dispatchExhausted,
       'carriesCargo': carriesCargo,
       if (city != null) 'city': city,
+      if (luggageExtraAmount != null) 'luggageExtraAmount': luggageExtraAmount,
+      if (luggageExtraStatus != null) 'luggageExtraStatus': luggageExtraStatus,
+      if (luggageExtraNote != null) 'luggageExtraNote': luggageExtraNote,
+      if (cancellationReason != null) 'cancellationReason': cancellationReason,
     };
   }
 
@@ -139,6 +151,10 @@ class Trip {
       dispatchExhausted: map['dispatchExhausted'] ?? false,
       carriesCargo: map['carriesCargo'] ?? false,
       city: map['city'],
+      luggageExtraAmount: (map['luggageExtraAmount'] as num?)?.toDouble(),
+      luggageExtraStatus: map['luggageExtraStatus'],
+      luggageExtraNote: map['luggageExtraNote'],
+      cancellationReason: map['cancellationReason'],
     );
   }
 
@@ -206,6 +222,10 @@ class Trip {
     bool? dispatchExhausted,
     bool? carriesCargo,
     String? city,
+    double? luggageExtraAmount,
+    String? luggageExtraStatus,
+    String? luggageExtraNote,
+    String? cancellationReason,
   }) {
     return Trip(
       id: id ?? this.id,
@@ -239,6 +259,10 @@ class Trip {
       dispatchExhausted: dispatchExhausted ?? this.dispatchExhausted,
       carriesCargo: carriesCargo ?? this.carriesCargo,
       city: city ?? this.city,
+      luggageExtraAmount: luggageExtraAmount ?? this.luggageExtraAmount,
+      luggageExtraStatus: luggageExtraStatus ?? this.luggageExtraStatus,
+      luggageExtraNote: luggageExtraNote ?? this.luggageExtraNote,
+      cancellationReason: cancellationReason ?? this.cancellationReason,
     );
   }
 }

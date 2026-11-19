@@ -35,6 +35,7 @@ class SoundService {
 
   bool _initialized = false;
   StreamSubscription? _settingsSub;
+  Completer<void>? _initialSettingsCompleter;
 
   String? get appEntrySoundUrl => _appEntrySoundUrl;
   String? get notificationSoundUrl => _notificationSoundUrl;
@@ -48,8 +49,30 @@ class SoundService {
   bool get isAppEntryPlaying => _appPlayer?.state == PlayerState.playing;
   bool get isNotificationPlaying => _notificationPlayer?.state == PlayerState.playing;
 
+  void _ensureCompleter() {
+    _initialSettingsCompleter ??= Completer<void>();
+  }
+
+  void _completeInitialSettings() {
+    if (_initialSettingsCompleter != null &&
+        !_initialSettingsCompleter!.isCompleted) {
+      _initialSettingsCompleter!.complete();
+    }
+  }
+
+  Future<void> _waitForInitialSettings() async {
+    _ensureCompleter();
+    if (_initialSettingsCompleter!.isCompleted) return;
+    try {
+      await _initialSettingsCompleter!.future.timeout(
+        const Duration(milliseconds: 1500),
+      );
+    } catch (_) {}
+  }
+
   Future<void> init() async {
     _init();
+    await _waitForInitialSettings();
   }
 
   void dispose() {
@@ -63,6 +86,7 @@ class SoundService {
   void _init() {
     if (_initialized) return;
     _initialized = true;
+    _ensureCompleter();
 
     try {
       _appPlayer = AudioPlayer();
@@ -79,6 +103,7 @@ class SoundService {
       _listenSettings();
     } catch (e) {
       debugPrint('Error al inicializar SoundService: $e');
+      _completeInitialSettings();
     }
   }
 
@@ -94,7 +119,8 @@ class SoundService {
           _appEntrySoundUrl = data['appEntrySoundUrl'];
           _notificationSoundUrl = data['notificationSoundUrl'];
           _appEntrySoundName = data['appEntrySoundName'] ?? 'melodia_app.mp3';
-          _notificationSoundName = data['notificationSoundName'] ?? 'melodia_notificacion.mp3';
+          _notificationSoundName =
+              data['notificationSoundName'] ?? 'melodia_notificacion.mp3';
           _appEntrySoundEnabled = data['appEntrySoundEnabled'] ?? true;
           _notificationSoundEnabled = data['notificationSoundEnabled'] ?? true;
 
@@ -110,12 +136,18 @@ class SoundService {
             _notificationPlayer?.setVolume(_notificationVolume);
             _notificationPreviewPlayer?.setVolume(_notificationVolume);
           }
+        } else {
+          _appEntrySoundEnabled = true;
+          _notificationSoundEnabled = true;
         }
+        _completeInitialSettings();
       }, onError: (e) {
         debugPrint('Aviso: Escucha de configuración de sonidos: $e');
+        _completeInitialSettings();
       });
     } catch (e) {
       debugPrint('Error conectando a app_settings/sounds: $e');
+      _completeInitialSettings();
     }
   }
 
@@ -125,6 +157,7 @@ class SoundService {
 
   /// Reproduce el sonido de bienvenida al ingresar a la app
   Future<void> playAppEntrySound() async {
+    await _waitForInitialSettings();
     if (!_appEntrySoundEnabled) return;
 
     try {
@@ -144,6 +177,7 @@ class SoundService {
 
   /// Reproduce el sonido de notificación de la app
   Future<void> playNotificationSound() async {
+    await _waitForInitialSettings();
     if (!_notificationSoundEnabled) return;
 
     try {
@@ -168,7 +202,6 @@ class SoundService {
   }) async {
     try {
       if (type == 'app') {
-        // Asegurar que la prueba de notificación no suene al mismo tiempo
         await _notificationPreviewPlayer?.stop();
 
         _appPreviewPlayer ??= AudioPlayer();
@@ -184,7 +217,6 @@ class SoundService {
           await _appPreviewPlayer!.play(AssetSource(defaultAppEntryAsset));
         }
       } else {
-        // Asegurar que la prueba de app no suene al mismo tiempo
         await _appPreviewPlayer?.stop();
 
         _notificationPreviewPlayer ??= AudioPlayer();
@@ -194,7 +226,8 @@ class SoundService {
 
         if (customUrl != null && customUrl.isNotEmpty) {
           await _notificationPreviewPlayer!.play(UrlSource(customUrl));
-        } else if (_notificationSoundUrl != null && _notificationSoundUrl!.isNotEmpty) {
+        } else if (_notificationSoundUrl != null &&
+            _notificationSoundUrl!.isNotEmpty) {
           await _notificationPreviewPlayer!.play(UrlSource(_notificationSoundUrl!));
         } else {
           await _notificationPreviewPlayer!.play(AssetSource(defaultNotificationAsset));
@@ -226,7 +259,8 @@ class SoundService {
     try {
       if (_appPlayer != null) {
         await _appPlayer!.stop();
-        debugPrint('[SoundService] Melodía de bienvenida detenida al entrar a la cuenta.');
+        debugPrint(
+            '[SoundService] Melodía de bienvenida detenida al entrar a la cuenta.');
       }
     } catch (e) {
       debugPrint('Error al detener melodía de entrada: $e');
@@ -268,7 +302,8 @@ class SoundService {
   }) async {
     try {
       final cleanFileName = fileName.replaceAll(RegExp(r'\s+'), '_');
-      final path = 'app_sounds/${type}_${DateTime.now().millisecondsSinceEpoch}_$cleanFileName';
+      final path =
+          'app_sounds/${type}_${DateTime.now().millisecondsSinceEpoch}_$cleanFileName';
       final ref = _storage.ref().child(path);
 
       final metadata = SettableMetadata(

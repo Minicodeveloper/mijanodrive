@@ -50,6 +50,10 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
   bool _isChatOpen = false;
   bool _isInitialChatSnapshot = true;
   final Set<String> _notifiedMessageIds = {};
+  bool _isShowingLuggageDialog = false;
+  double? _lastNotifiedLuggageAmount;
+  bool _hasCancelledNavigation = false;
+  bool _hasShownCancelDialog = false;
 
   @override
   void initState() {
@@ -153,6 +157,208 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
           _driver = driver;
         });
       }
+    });
+  }
+
+  void _showLuggageNegotiationDialog(Trip trip) {
+    if (_isShowingLuggageDialog) return;
+    _isShowingLuggageDialog = true;
+    _lastNotifiedLuggageAmount = trip.luggageExtraAmount;
+
+    final extra = trip.luggageExtraAmount ?? 0.0;
+    final total = trip.fareAmount + extra;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) {
+        bool isProcessing = false;
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: MijanoTheme.sol.withValues(alpha: 0.25),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.luggage, color: MijanoTheme.ink),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Recargo por bulto / carga',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'El conductor ha indicado que llevas bulto o carga adicional y propone un costo extra acordado para la carrera.',
+                    style: TextStyle(fontSize: 13, color: Colors.black87),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Tarifa inicial:'),
+                            Text('S/ ${trip.fareAmount.toStringAsFixed(2)}',
+                                style: const TextStyle(fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Adicional por bulto:'),
+                            Text('+ S/ ${extra.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold, color: Colors.orange)),
+                          ],
+                        ),
+                        const Divider(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Total a pagar:',
+                                style: TextStyle(fontWeight: FontWeight.bold)),
+                            Text('S/ ${total.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w900,
+                                    color: MijanoTheme.ink)),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Si aceptas, la carrera iniciará con el nuevo precio. Si rechazas, el viaje se cancelará automáticamente.',
+                    style: TextStyle(fontSize: 11.5, color: Colors.black54),
+                  ),
+                ],
+              ),
+              actions: [
+                // ── RECHAZAR Y CANCELAR ──────────────────────────────
+                OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red,
+                    side: const BorderSide(color: Colors.red),
+                  ),
+                  onPressed: isProcessing
+                      ? null
+                      : () async {
+                          // Capturar todo ANTES del await
+                          final rootNav = Navigator.of(context, rootNavigator: true);
+                          final localNav = Navigator.of(ctx);
+                          setModalState(() => isProcessing = true);
+                          try {
+                            await FirestoreService.instance.updateTrip(trip.id, {
+                              'status': 'cancelled',
+                              'cancellationReason':
+                                  'No se llegó a un acuerdo por el costo del bulto',
+                              'luggageExtraStatus': 'rejected',
+                            });
+                          } catch (_) {
+                            setModalState(() => isProcessing = false);
+                            return;
+                          }
+                          // Marcar flags ANTES de navegar
+                          _isShowingLuggageDialog = false;
+                          _hasCancelledNavigation = true;
+                          _hasShownCancelDialog = true;
+                          // Cerrar diálogo y volver al home
+                          if (localNav.canPop()) localNav.pop();
+                          rootNav.pushNamedAndRemoveUntil(
+                              '/home', (route) => false);
+                        },
+                  child: const Text('Rechazar y cancelar'),
+                ),
+                // ── ACEPTAR ──────────────────────────────────────────
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: MijanoTheme.sol,
+                    foregroundColor: Colors.black,
+                  ),
+                  onPressed: isProcessing
+                      ? null
+                      : () async {
+                          final rootNav = Navigator.of(
+                            context,
+                            rootNavigator: true,
+                          );
+                          final messenger = ScaffoldMessenger.of(context);
+                          setModalState(() => isProcessing = true);
+                          try {
+                            await FirestoreService.instance.updateTrip(trip.id, {
+                              'fareAmount': total,
+                              'carriesCargo': true,
+                              'luggageExtraStatus': 'accepted',
+                            });
+                          } catch (e) {
+                            if (ctx.mounted) {
+                              setModalState(() => isProcessing = false);
+                            }
+                            if (mounted) {
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'No se pudo actualizar la tarifa: $e',
+                                  ),
+                                ),
+                              );
+                            }
+                            return;
+                          }
+                          _isShowingLuggageDialog = false;
+                          if (rootNav.canPop()) {
+                            rootNav.pop();
+                          }
+                          if (mounted) {
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Recargo aceptado. Nueva tarifa: S/ ${total.toStringAsFixed(2)}',
+                                ),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          }
+                        },
+                  child: isProcessing
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(
+                          'Aceptar (S/ ${total.toStringAsFixed(2)})',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    ).then((_) {
+      _isShowingLuggageDialog = false;
     });
   }
 
@@ -434,6 +640,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
           }
 
           WidgetsBinding.instance.addPostFrameCallback((_) async {
+             final nav = Navigator.of(context);
              if (resolvedName == 'tu conductor' && trip.driverId != null) {
                 try {
                   final doc = await FirebaseFirestore.instance.collection('users').doc(trip.driverId).get();
@@ -446,7 +653,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                 } catch (_) {}
              }
              if (!mounted) return;
-             Navigator.of(context).pushReplacementNamed(
+             nav.pushReplacementNamed(
               '/rating',
               arguments: {
                 'driverName': resolvedName,
@@ -456,27 +663,52 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
           });
         }
 
-        if (trip != null && trip.status == TripStatus.cancelled) {
+        // ── Viaje cancelado por el CONDUCTOR (no por el pasajero) ───────
+        if (trip != null &&
+            trip.status == TripStatus.cancelled &&
+            !_hasShownCancelDialog &&
+            !_hasCancelledNavigation) {
+          _hasShownCancelDialog = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              final nav = Navigator.of(context);
-              showDialog(
-                context: context,
-                barrierDismissible: false,
-                builder: (ctx) => AlertDialog(
-                  title: const Text('Viaje Cancelado'),
-                  content: const Text('Tu conductor canceló el viaje.'),
-                  actions: [
-                    TextButton(
-                      onPressed: () {
-                        Navigator.pop(ctx);
-                        nav.pushNamedAndRemoveUntil('/home', (route) => false);
-                      },
-                      child: const Text('Aceptar'),
-                    ),
-                  ],
-                ),
-              );
+            if (!mounted) return;
+            final nav = Navigator.of(context);
+            final reason = trip.cancellationReason;
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Viaje Cancelado'),
+                content: Text(reason ?? 'Tu conductor canceló el viaje.'),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      nav.pushNamedAndRemoveUntil('/home', (route) => false);
+                    },
+                    child: const Text('Aceptar'),
+                  ),
+                ],
+              ),
+            );
+          });
+        }
+
+        // Si el conductor propone un adicional por bulto acordado
+        // Solo mostrar si el viaje ya fue aceptado (conductor en camino o llegó)
+        if (trip != null &&
+            trip.luggageExtraStatus == 'pending' &&
+            !_isShowingLuggageDialog &&
+            !_hasCancelledNavigation &&
+            _lastNotifiedLuggageAmount != trip.luggageExtraAmount &&
+            (trip.status == TripStatus.accepted ||
+                trip.status == TripStatus.arrived ||
+                trip.status == TripStatus.active)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted &&
+                trip.luggageExtraStatus == 'pending' &&
+                !_isShowingLuggageDialog &&
+                !_hasCancelledNavigation) {
+              _showLuggageNegotiationDialog(trip);
             }
           });
         }
@@ -516,6 +748,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
         final fareValue = rawFare is num
             ? rawFare.toDouble()
             : double.tryParse(rawFare.toString()) ?? 0.0;
+
+        // Siempre usar el fareAmount actualizado del stream (incluye recargo aceptado)
+        final displayFare = trip?.fareAmount ?? fareValue;
 
         final destLat = trip?.destination.latitude ?? -6.4869;
         final destLng = trip?.destination.longitude ?? -76.3654;
@@ -584,9 +819,25 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Tarifa: S/. ${fareValue.toStringAsFixed(2)}',
-                        style: const TextStyle(fontSize: 14),
+                        'Tarifa: S/. ${displayFare.toStringAsFixed(2)}',
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                       ),
+                      if (trip?.luggageExtraStatus == 'accepted')
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            '✓ Incluye recargo de bulto: +S/ ${(trip?.luggageExtraAmount ?? 0).toStringAsFixed(2)}',
+                            style: TextStyle(fontSize: 12, color: Colors.green.shade800, fontWeight: FontWeight.w600),
+                          ),
+                        )
+                      else if (trip?.carriesCargo == true)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 2),
+                          child: Text(
+                            '📦 Lleva bulto / carga adicional',
+                            style: TextStyle(fontSize: 12, color: Colors.black54),
+                          ),
+                        ),
                     ],
                   ),
                 ),

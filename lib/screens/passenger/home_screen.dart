@@ -1317,9 +1317,14 @@ class _HomeScreenState extends State<HomeScreen> {
                           'Sí, llevo carga adicional',
                           style: TextStyle(color: Colors.white, fontSize: 13),
                         ),
-                        subtitle: const Text(
-                          'Opcional',
-                          style: TextStyle(color: Colors.white54, fontSize: 11),
+                        subtitle: Text(
+                          carriesCargo
+                              ? 'Costo base sugerido: S/ ${livePricing.luggageFee.toStringAsFixed(2)} (negociable con el conductor)'
+                              : 'Opcional (bultos, maletas o paquetes grandes)',
+                          style: TextStyle(
+                            color: carriesCargo ? const Color(0xFFF9D408) : Colors.white54,
+                            fontSize: 11,
+                          ),
                         ),
                       ),
                     ),

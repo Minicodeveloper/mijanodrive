@@ -112,12 +112,14 @@ class PricingSettings {
   static const int defaultNightEndHour = 6;
   static const double defaultMaxOfferRadiusKm = 5.0;
   static const double defaultCarPricePerSeat = 30.0;
+  static const double defaultLuggageFee = 2.0;
 
   final Map<VehicleCategory, VehicleTariff> tariffs;
   final int nightStartHour;
   final int nightEndHour;
   final double maxOfferRadiusKm;
   final double carPricePerSeat;
+  final double luggageFee;
   final DateTime? updatedAt;
 
   const PricingSettings({
@@ -126,6 +128,7 @@ class PricingSettings {
     required this.nightEndHour,
     required this.maxOfferRadiusKm,
     required this.carPricePerSeat,
+    this.luggageFee = defaultLuggageFee,
     this.updatedAt,
   });
 
@@ -149,6 +152,7 @@ class PricingSettings {
       maxOfferRadiusKm: (data['max_offer_radius_km'] as num?)?.toDouble() ??
           defaultMaxOfferRadiusKm,
       carPricePerSeat: resolvedSeatPrice,
+      luggageFee: (data['luggageFee'] as num?)?.toDouble() ?? defaultLuggageFee,
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
     );
   }
@@ -160,6 +164,7 @@ class PricingSettings {
       'nightEndHour': nightEndHour,
       'max_offer_radius_km': maxOfferRadiusKm,
       'car_pricePerSeat': carPricePerSeat,
+      'luggageFee': luggageFee,
     };
   }
 
@@ -169,6 +174,7 @@ class PricingSettings {
     int? nightEndHour,
     double? maxOfferRadiusKm,
     double? carPricePerSeat,
+    double? luggageFee,
     DateTime? updatedAt,
   }) {
     return PricingSettings(
@@ -177,6 +183,7 @@ class PricingSettings {
       nightEndHour: nightEndHour ?? this.nightEndHour,
       maxOfferRadiusKm: maxOfferRadiusKm ?? this.maxOfferRadiusKm,
       carPricePerSeat: carPricePerSeat ?? this.carPricePerSeat,
+      luggageFee: luggageFee ?? this.luggageFee,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
@@ -214,6 +221,7 @@ class PricingSettings {
     final subtotal =
         tariff.baseFare + distanceCost + timeCost + nightSurcharge;
     final minFareApplied = subtotal < tariff.minFare;
+    final rawTotal = minFareApplied ? tariff.minFare : subtotal;
 
     return FareQuote(
       baseFare: tariff.baseFare,
@@ -221,11 +229,21 @@ class PricingSettings {
       timeCost: timeCost,
       nightSurcharge: nightSurcharge,
       subtotal: subtotal,
-      total: _round2(minFareApplied ? tariff.minFare : subtotal),
+      total: _roundFare(rawTotal),
       isNight: isNight,
       minFareApplied: minFareApplied,
     );
   }
+  double _round2(double value) => (value * 100).round() / 100;
+
+  double _roundFare(double value) {
+    final rounded2 = _round2(value);
+    final fractionalPart = _round2(rounded2 - rounded2.floor());
+    if (fractionalPart > 0.50) {
+      return rounded2.ceilToDouble();
+    }
+    return rounded2;
+  }
 }
 
-double _round2(double value) => (value * 100).round() / 100;
+
