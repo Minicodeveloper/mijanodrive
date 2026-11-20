@@ -238,7 +238,7 @@ class _SearchingTripScreenState extends State<SearchingTripScreen>
                 Padding(
                   padding: const EdgeInsets.only(top: 8.0),
                   child: Text(
-                    'Buscando conductor… (${_currentTrip!.dispatchIndex + 1} de $queueLength)',
+                    'Buscando conductores cercanos…',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 12,

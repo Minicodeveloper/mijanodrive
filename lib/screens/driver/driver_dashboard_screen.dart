@@ -57,6 +57,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
   final Set<String> _shownAlertTripIds = {};
 
   final Set<String> _shownNotificationIds = {};
+  final Set<String> _dismissedTripIds = {};
 
   static const CameraPosition _initialPosition = CameraPosition(
     target: LatLng(-6.48694, -76.36472),
@@ -274,13 +275,24 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
       debugPrint('[DRIVER-DISPATCH] tripId: ${trip.id}, dispatchIndex: ${trip.dispatchIndex}, currentDispatchDriverId: ${trip.currentDispatchDriverId}, mi uid: $_uid -> inelegible: _available ($_available) o _hasActivePlan ($_hasActivePlan) es falso');
       return false;
     }
-    final bool isMyTurn = trip.currentDispatchDriverId == _uid;
-    final bool isOpenRequest = trip.currentDispatchDriverId == null ||
-        trip.dispatchExhausted ||
-        trip.dispatchQueue.isEmpty;
+    // Si fue descartada o rechazada localmente, no mostrarla
+    if (_dismissedTripIds.contains(trip.id)) {
+      debugPrint('[DRIVER-DISPATCH] tripId: ${trip.id} -> inelegible: descartada/rechazada localmente');
+      return false;
+    }
+    // Si este conductor ya rechazó esta carrera, no mostrársela de nuevo
+    if (trip.rejectedDriverIds.contains(_uid)) {
+      debugPrint('[DRIVER-DISPATCH] tripId: ${trip.id} -> inelegible: el conductor ya rechazó esta solicitud');
+      return false;
+    }
+
+    final bool isMyTurn = trip.currentDispatchDriverIds.contains(_uid) ||
+        trip.currentDispatchDriverId == _uid;
+    final bool isOpenRequest = (trip.currentDispatchDriverIds.isEmpty && trip.currentDispatchDriverId == null) ||
+        trip.dispatchExhausted;
 
     if (!isMyTurn && !isOpenRequest) {
-      debugPrint('[DRIVER-DISPATCH] tripId: ${trip.id}, dispatchIndex: ${trip.dispatchIndex}, currentDispatchDriverId: ${trip.currentDispatchDriverId}, mi uid: $_uid -> inelegible: en turno de otro driver');
+      debugPrint('[DRIVER-DISPATCH] tripId: ${trip.id}, dispatchIndex: ${trip.dispatchIndex}, plan: ${trip.currentDispatchPlan}, mi uid: $_uid -> inelegible: en fase de otro plan o conductores');
       return false;
     }
 
@@ -322,6 +334,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
         }
         return false;
       });
+      _dismissedTripIds.removeWhere((id) => !activeTripIds.contains(id));
 
       for (final trip in trips) {
         final key = '${trip.id}_${trip.dispatchIndex}';
@@ -638,10 +651,14 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
       if (!tripDoc.exists) return;
       final currentTrip = Trip.fromMap(tripDoc.data()!, tripDoc.id);
 
-      if (currentTrip.status != TripStatus.pending || currentTrip.currentDispatchDriverId != _uid) {
+      final bool isEligible = currentTrip.currentDispatchDriverIds.contains(_uid) ||
+          currentTrip.currentDispatchDriverId == _uid ||
+          currentTrip.dispatchExhausted;
+
+      if (currentTrip.status != TripStatus.pending || !isEligible) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Este viaje ya no está disponible')),
+          const SnackBar(content: Text('Este viaje ya no está disponible o ya fue tomado')),
         );
         return;
       }
@@ -697,11 +714,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
   bool _isDriverEligibleForTrip(Trip trip) {
     if (_driverPosition == null) return false;
     if (!_available || !_hasActivePlan) return false;
+    if (_dismissedTripIds.contains(trip.id)) return false;
+    if (trip.rejectedDriverIds.contains(_uid)) return false;
 
-    final bool isMyTurn = trip.currentDispatchDriverId == _uid;
-    final bool isOpenRequest = trip.currentDispatchDriverId == null ||
-        trip.dispatchExhausted ||
-        trip.dispatchQueue.isEmpty;
+    final bool isMyTurn = trip.currentDispatchDriverIds.contains(_uid) ||
+        trip.currentDispatchDriverId == _uid;
+    final bool isOpenRequest = (trip.currentDispatchDriverIds.isEmpty && trip.currentDispatchDriverId == null) ||
+        trip.dispatchExhausted;
 
     if (!isMyTurn && !isOpenRequest) return false;
 
@@ -713,6 +732,20 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
     if (distance == null || distance > _maxTripDistanceKm) return false;
 
     return true;
+  }
+
+  void _onTripRejected(Trip trip) {
+    setState(() {
+      _dismissedTripIds.add(trip.id);
+    });
+    _fs.rejectDispatch(trip.id, _uid);
+  }
+
+  void _onTripTimeout(Trip trip) {
+    setState(() {
+      _dismissedTripIds.add(trip.id);
+    });
+    _fs.advanceDispatch(trip.id, expectedIndex: trip.dispatchIndex);
   }
 
   List<Trip> _nearbyTrips(List<Trip> trips) {
@@ -741,7 +774,11 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
               await _accept(trip);
             },
             onReject: () {
-              _fs.rejectDispatch(trip.id, _uid);
+              // Cierra únicamente el diálogo flotante.
+              // La tarjeta en el panel de fondo continúa activa mostrando el temporizador de 30s.
+            },
+            onTimeout: () {
+              _onTripTimeout(trip);
             },
           );
         },
@@ -1605,7 +1642,15 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
                             itemCount: nearbyTrips.length,
                             separatorBuilder: (_, _) => const SizedBox(height: 12),
                             itemBuilder: (_, i) {
-                              return _tripCard(nearbyTrips[i]);
+                              final tripItem = nearbyTrips[i];
+                              return _DriverTripCard(
+                                key: ValueKey('${tripItem.id}_${tripItem.dispatchIndex}'),
+                                trip: tripItem,
+                                distance: _tripDistanceKm(tripItem),
+                                onAccept: () => _accept(tripItem),
+                                onReject: () => _onTripRejected(tripItem),
+                                onTimeout: () => _onTripTimeout(tripItem),
+                              );
                             },
                           );
                         },
@@ -1782,9 +1827,96 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
     );
   }
 
-  Widget _tripCard(Trip trip) {
-    final distance = _tripDistanceKm(trip);
+}
 
+class _DriverTripCard extends StatefulWidget {
+  final Trip trip;
+  final double? distance;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+  final VoidCallback onTimeout;
+
+  const _DriverTripCard({
+    super.key,
+    required this.trip,
+    this.distance,
+    required this.onAccept,
+    required this.onReject,
+    required this.onTimeout,
+  });
+
+  @override
+  State<_DriverTripCard> createState() => _DriverTripCardState();
+}
+
+class _DriverTripCardState extends State<_DriverTripCard> {
+  Timer? _cardTimer;
+  late int _secondsRemaining;
+
+  void _initSeconds() {
+    if (widget.trip.dispatchDeadline != null) {
+      final diff = widget.trip.dispatchDeadline!.difference(DateTime.now()).inSeconds;
+      _secondsRemaining = (diff > 0 && diff <= AppConfig.kDispatchTimeoutSeconds)
+          ? diff
+          : (diff <= 0 ? 0 : AppConfig.kDispatchTimeoutSeconds);
+    } else {
+      _secondsRemaining = AppConfig.kDispatchTimeoutSeconds;
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _initSeconds();
+    _startTimer();
+  }
+
+  void _startTimer() {
+    _cardTimer?.cancel();
+    if (_secondsRemaining <= 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onTimeout();
+      });
+      return;
+    }
+
+    _cardTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_secondsRemaining > 1) {
+        setState(() {
+          _secondsRemaining--;
+        });
+      } else {
+        timer.cancel();
+        setState(() {
+          _secondsRemaining = 0;
+        });
+        widget.onTimeout();
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _DriverTripCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.trip.id != widget.trip.id ||
+        oldWidget.trip.dispatchIndex != widget.trip.dispatchIndex) {
+      _initSeconds();
+      _startTimer();
+    }
+  }
+
+  @override
+  void dispose() {
+    _cardTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1795,11 +1927,40 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Pasajero: ${trip.passengerName ?? "Cliente"}',
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  'Pasajero: ${widget.trip.passengerName ?? "Cliente"}',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.timer_outlined, size: 14, color: Colors.red),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${_secondsRemaining}s',
+                      style: const TextStyle(
+                        color: Colors.red,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          if (trip.carriesCargo) ...[
+          if (widget.trip.carriesCargo) ...[
             const SizedBox(height: 6),
             Row(
               children: const [
@@ -1817,7 +1978,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
             children: [
               const Icon(Icons.trip_origin, size: 16),
               const SizedBox(width: 8),
-              Expanded(child: Text(trip.originAddress ?? 'Origen')),
+              Expanded(child: Text(widget.trip.originAddress ?? 'Origen')),
             ],
           ),
           const Padding(
@@ -1837,7 +1998,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  trip.destinationAddress ?? 'Destino',
+                  widget.trip.destinationAddress ?? 'Destino',
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
@@ -1851,15 +2012,15 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'S/ ${trip.fareAmount.toStringAsFixed(2)}',
+                    'S/ ${widget.trip.fareAmount.toStringAsFixed(2)}',
                     style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                  if (distance != null)
+                  if (widget.distance != null)
                     Text(
-                      '${distance.toStringAsFixed(2)} km de distancia',
+                      '${widget.distance!.toStringAsFixed(2)} km de distancia',
                       style: const TextStyle(
                         fontSize: 12,
                         color: Colors.black54,
@@ -1867,9 +2028,19 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> with Widg
                     ),
                 ],
               ),
-              ElevatedButton(
-                onPressed: () => _accept(trip),
-                child: const Text('Aceptar'),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextButton(
+                    onPressed: widget.onReject,
+                    child: const Text('Rechazar', style: TextStyle(color: Colors.red)),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: widget.onAccept,
+                    child: const Text('Aceptar'),
+                  ),
+                ],
               ),
             ],
           ),
@@ -1884,12 +2055,14 @@ class _TripAlertDialog extends StatefulWidget {
   final double? distance;
   final VoidCallback onAccept;
   final VoidCallback onReject;
+  final VoidCallback onTimeout;
 
   const _TripAlertDialog({
     required this.trip,
     this.distance,
     required this.onAccept,
     required this.onReject,
+    required this.onTimeout,
   });
 
   @override
@@ -1904,33 +2077,54 @@ class _TripAlertDialogState extends State<_TripAlertDialog> {
   @override
   void initState() {
     super.initState();
-    _secondsRemaining = AppConfig.kDispatchTimeoutSeconds;
+    if (widget.trip.dispatchDeadline != null) {
+      final diff = widget.trip.dispatchDeadline!.difference(DateTime.now()).inSeconds;
+      _secondsRemaining = (diff > 0 && diff <= AppConfig.kDispatchTimeoutSeconds)
+          ? diff
+          : (diff <= 0 ? 0 : AppConfig.kDispatchTimeoutSeconds);
+    } else {
+      _secondsRemaining = AppConfig.kDispatchTimeoutSeconds;
+    }
 
-    if (_secondsRemaining > 0) {
+    if (_secondsRemaining <= 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (Navigator.canPop(context)) Navigator.pop(context);
+        widget.onTimeout();
+      });
+    } else {
       _alertTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
         if (!mounted) {
           timer.cancel();
           return;
         }
-        
-        _secondsRemaining--;
-        if (_secondsRemaining <= 0) {
+        if (_secondsRemaining > 1) {
+          setState(() {
+            _secondsRemaining--;
+          });
+        } else {
           timer.cancel();
           if (Navigator.canPop(context)) {
             Navigator.pop(context);
           }
-          widget.onReject();
-        } else {
-          setState(() {}); // Actualiza la UI
+          widget.onTimeout();
         }
       });
     }
 
     _tripSub = FirestoreService.instance.tripStream(widget.trip.id).listen((updatedTrip) {
       if (!mounted) return;
+      final myUid = AuthService.instance.currentUser?.uid;
+      final bool isEligible = updatedTrip != null &&
+          (updatedTrip.currentDispatchDriverIds.contains(myUid) ||
+           updatedTrip.currentDispatchDriverId == myUid ||
+           updatedTrip.dispatchExhausted);
+      final bool wasRejectedByMe = updatedTrip != null && myUid != null &&
+          updatedTrip.rejectedDriverIds.contains(myUid);
+
       if (updatedTrip == null || 
           updatedTrip.status != TripStatus.pending || 
-          updatedTrip.currentDispatchDriverId != AuthService.instance.currentUser?.uid) {
+          !isEligible ||
+          wasRejectedByMe) {
         if (Navigator.canPop(context)) {
           Navigator.pop(context);
         }

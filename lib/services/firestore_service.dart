@@ -400,22 +400,23 @@ class FirestoreService {
       }
     }
 
-    final dispatchQueue = buildDispatchOrder(candidates);
-    
-    final currentDispatchDriverId = dispatchQueue.isNotEmpty ? dispatchQueue.first : null;
-    String? currentDispatchPlan;
-    if (currentDispatchDriverId != null) {
-       currentDispatchPlan = candidateTiers[currentDispatchDriverId]?.key;
-    }
+    final tierPlan = buildTierDispatchPlan(candidates);
+    final tierQueue = tierPlan.tierQueue;
+    final tierDrivers = tierPlan.tierDrivers;
+
+    final String? firstTier = tierQueue.isNotEmpty ? tierQueue.first : null;
+    final List<String> firstTierDrivers = firstTier != null ? (tierDrivers[firstTier] ?? []) : [];
 
     return {
-      'dispatchQueue': dispatchQueue,
+      'dispatchQueue': tierQueue,
+      'dispatchTierDrivers': tierDrivers,
       'dispatchIndex': 0,
-      'currentDispatchDriverId': currentDispatchDriverId,
-      'currentDispatchPlan': currentDispatchPlan,
+      'currentDispatchPlan': firstTier,
+      'currentDispatchDriverIds': firstTierDrivers,
+      'currentDispatchDriverId': firstTierDrivers.isNotEmpty ? firstTierDrivers.first : null,
       'dispatchDeadline': Timestamp.fromDate(DateTime.now().add(const Duration(seconds: AppConfig.kDispatchTimeoutSeconds))),
       'rejectedDriverIds': [],
-      'dispatchExhausted': dispatchQueue.isEmpty,
+      'dispatchExhausted': tierQueue.isEmpty,
     };
   }
 
@@ -444,27 +445,25 @@ class FirestoreService {
   }
 
   Future<void> _advanceDispatchInTx(Transaction tx, DocumentReference tripRef, Map<String, dynamic> data, int nextIndex) async {
-    List<dynamic> queueDyn = data['dispatchQueue'] ?? [];
-    if (nextIndex < queueDyn.length) {
-      final nextDriverId = queueDyn[nextIndex].toString();
-      final nextDriverUserDoc = await tx.get(_db.collection('users').doc(nextDriverId));
-      final nextDriverDoc = nextDriverUserDoc.exists
-          ? nextDriverUserDoc
-          : await tx.get(_db.collection('drivers').doc(nextDriverId));
-      String planKey = 'diario';
-      if (nextDriverDoc.exists) {
-        final driverData = nextDriverDoc.data();
-        planKey = PlanTier.resolve(driverData).key;
-      }
+    List<dynamic> tierQueueDyn = data['dispatchQueue'] ?? [];
+    Map<String, dynamic> tierDriversMap = Map<String, dynamic>.from(data['dispatchTierDrivers'] ?? {});
+
+    if (nextIndex < tierQueueDyn.length) {
+      final nextTier = tierQueueDyn[nextIndex].toString();
+      final List<dynamic> driversDyn = tierDriversMap[nextTier] ?? [];
+      final List<String> nextDriverIds = driversDyn.map((e) => e.toString()).toList();
 
       tx.update(tripRef, {
         'dispatchIndex': nextIndex,
-        'currentDispatchDriverId': nextDriverId,
-        'currentDispatchPlan': planKey,
+        'currentDispatchPlan': nextTier,
+        'currentDispatchDriverIds': nextDriverIds,
+        'currentDispatchDriverId': nextDriverIds.isNotEmpty ? nextDriverIds.first : null,
         'dispatchDeadline': Timestamp.fromDate(DateTime.now().add(const Duration(seconds: AppConfig.kDispatchTimeoutSeconds))),
       });
     } else {
       tx.update(tripRef, {
+        'currentDispatchPlan': null,
+        'currentDispatchDriverIds': [],
         'currentDispatchDriverId': null,
         'dispatchExhausted': true,
       });
@@ -498,15 +497,28 @@ class FirestoreService {
       final data = doc.data()!;
       if (data['status'] != 'pending') return;
       
-      final currentDriverId = data['currentDispatchDriverId'];
+      final currentDriverIds = List<String>.from(
+        data['currentDispatchDriverIds'] ?? (data['currentDispatchDriverId'] != null ? [data['currentDispatchDriverId']] : []),
+      );
       final currentIndex = data['dispatchIndex'] ?? 0;
+      final rejected = List<String>.from(data['rejectedDriverIds'] ?? []);
+      if (!rejected.contains(driverUid)) {
+        rejected.add(driverUid);
+      }
       
       tx.update(tripRef, {
         'rejectedDriverIds': FieldValue.arrayUnion([driverUid])
       });
       
-      if (currentDriverId == driverUid) {
-        await _advanceDispatchInTx(tx, tripRef, data, currentIndex + 1);
+      // Si el conductor que rechazó estaba en la fase actual
+      if (currentDriverIds.contains(driverUid)) {
+        // Verificar si TODOS los conductores de esta fase ya rechazaron
+        final allCurrentRejected = currentDriverIds.isNotEmpty &&
+            currentDriverIds.every((id) => rejected.contains(id));
+
+        if (allCurrentRejected) {
+          await _advanceDispatchInTx(tx, tripRef, data, currentIndex + 1);
+        }
       }
     });
   }

@@ -68,6 +68,54 @@ class DispatchCandidate {
   });
 }
 
+/// Representa el plan de despacho agrupado por fases según la prioridad de planes
+class TierDispatchPlan {
+  /// Lista de claves de planes activos en orden de prioridad (ej: ['mensual', 'semanal', 'diario'])
+  final List<String> tierQueue;
+
+  /// Mapa de lista de IDs de conductores para cada fase de plan
+  /// ej: {'mensual': ['uid1', 'uid2'], 'semanal': ['uid3']}
+  final Map<String, List<String>> tierDrivers;
+
+  const TierDispatchPlan({
+    required this.tierQueue,
+    required this.tierDrivers,
+  });
+}
+
+/// Construye el plan de despacho por oleadas (batches):
+/// Agrupa a todos los conductores disponibles por su plan (Mensual > Semanal > Diario).
+/// A cada fase le corresponden TODOS los conductores de ese plan al mismo tiempo.
+TierDispatchPlan buildTierDispatchPlan(List<DispatchCandidate> candidates) {
+  final Map<PlanTier, List<DispatchCandidate>> grouped = {};
+  for (final c in candidates) {
+    grouped.putIfAbsent(c.tier, () => []).add(c);
+  }
+
+  // Ordenar dentro de cada tier por distancia para consistencia
+  for (final list in grouped.values) {
+    list.sort((a, b) => a.distanceKm.compareTo(b.distanceKm));
+  }
+
+  // Prioridad estricta: Mensual (rank 3) -> Semanal (rank 2) -> Diario (rank 1)
+  final sortedTiers = [PlanTier.mensual, PlanTier.semanal, PlanTier.diario];
+  final List<String> tierQueue = [];
+  final Map<String, List<String>> tierDrivers = {};
+
+  for (final tier in sortedTiers) {
+    final list = grouped[tier];
+    if (list != null && list.isNotEmpty) {
+      tierQueue.add(tier.key);
+      tierDrivers[tier.key] = list.map((c) => c.id).toList();
+    }
+  }
+
+  return TierDispatchPlan(
+    tierQueue: tierQueue,
+    tierDrivers: tierDrivers,
+  );
+}
+
 List<String> buildDispatchOrder(List<DispatchCandidate> candidates) {
   final list = List<DispatchCandidate>.from(candidates);
   list.sort((a, b) {

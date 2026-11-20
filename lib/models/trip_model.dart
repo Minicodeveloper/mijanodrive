@@ -30,6 +30,7 @@ class Trip {
   final List<String> dispatchQueue;
   final int dispatchIndex;
   final String? currentDispatchDriverId;
+  final List<String> currentDispatchDriverIds;
   final String? currentDispatchPlan;
   final DateTime? dispatchDeadline;
   final List<String> rejectedDriverIds;
@@ -67,6 +68,7 @@ class Trip {
     this.dispatchQueue = const [],
     this.dispatchIndex = 0,
     this.currentDispatchDriverId,
+    this.currentDispatchDriverIds = const [],
     this.currentDispatchPlan,
     this.dispatchDeadline,
     this.rejectedDriverIds = const [],
@@ -105,6 +107,7 @@ class Trip {
       'dispatchQueue': dispatchQueue,
       'dispatchIndex': dispatchIndex,
       'currentDispatchDriverId': currentDispatchDriverId,
+      'currentDispatchDriverIds': currentDispatchDriverIds,
       'currentDispatchPlan': currentDispatchPlan,
       'dispatchDeadline': dispatchDeadline,
       'rejectedDriverIds': rejectedDriverIds,
@@ -145,6 +148,10 @@ class Trip {
       dispatchQueue: List<String>.from(map['dispatchQueue'] ?? []),
       dispatchIndex: map['dispatchIndex'] ?? 0,
       currentDispatchDriverId: map['currentDispatchDriverId'],
+      currentDispatchDriverIds: List<String>.from(
+        map['currentDispatchDriverIds'] ??
+            (map['currentDispatchDriverId'] != null ? [map['currentDispatchDriverId']] : []),
+      ),
       currentDispatchPlan: map['currentDispatchPlan'],
       dispatchDeadline: (map['dispatchDeadline'] as Timestamp?)?.toDate(),
       rejectedDriverIds: List<String>.from(map['rejectedDriverIds'] ?? []),
@@ -216,6 +223,7 @@ class Trip {
     List<String>? dispatchQueue,
     int? dispatchIndex,
     String? currentDispatchDriverId,
+    List<String>? currentDispatchDriverIds,
     String? currentDispatchPlan,
     DateTime? dispatchDeadline,
     List<String>? rejectedDriverIds,
@@ -253,6 +261,7 @@ class Trip {
       dispatchQueue: dispatchQueue ?? this.dispatchQueue,
       dispatchIndex: dispatchIndex ?? this.dispatchIndex,
       currentDispatchDriverId: currentDispatchDriverId ?? this.currentDispatchDriverId,
+      currentDispatchDriverIds: currentDispatchDriverIds ?? this.currentDispatchDriverIds,
       currentDispatchPlan: currentDispatchPlan ?? this.currentDispatchPlan,
       dispatchDeadline: dispatchDeadline ?? this.dispatchDeadline,
       rejectedDriverIds: rejectedDriverIds ?? this.rejectedDriverIds,
