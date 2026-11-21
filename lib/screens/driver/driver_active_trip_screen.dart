@@ -18,6 +18,7 @@ import '../../theme.dart';
 import '../../config/app_config.dart';
 import '../../utils/marker_icons.dart';
 import 'driver_trip_chat_screen.dart';
+import 'driver_rating_screen.dart';
 
 class DriverActiveMapScreen extends StatefulWidget {
   final Trip trip;
@@ -37,6 +38,7 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
   bool _sendingSos = false;
   bool _sosSent = false;
   bool _updatingStatus = false;
+  bool _hasNavigatedToRating = false;
   TripStatus? _optimisticStatus;
   TripStatus? _lastRouteStatus;
   LatLng? _lastRouteOrigin;
@@ -366,6 +368,18 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
         'status': nextStatus.name,
         if (nextStatus == TripStatus.completed) 'completedAt': DateTime.now(),
       });
+      if (nextStatus == TripStatus.completed && mounted && !_hasNavigatedToRating) {
+        _hasNavigatedToRating = true;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => DriverRatingPassengerScreen(
+              tripId: trip.id,
+              passengerName: _passenger?.name ?? trip.passengerName ?? 'Pasajero',
+              passengerId: trip.passengerId,
+            ),
+          ),
+        );
+      }
     } catch (_) {
       if (mounted) {
         setState(() => _optimisticStatus = null);
@@ -631,6 +645,23 @@ class _DriverActiveMapScreenState extends State<DriverActiveMapScreen> {
                       child: const Text('Aceptar'),
                     ),
                   ],
+                ),
+              );
+            }
+          });
+        }
+
+        if (trip.status == TripStatus.completed && !_hasNavigatedToRating) {
+          _hasNavigatedToRating = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(
+                  builder: (_) => DriverRatingPassengerScreen(
+                    tripId: trip.id,
+                    passengerName: _passenger?.name ?? trip.passengerName ?? 'Pasajero',
+                    passengerId: trip.passengerId,
+                  ),
                 ),
               );
             }
@@ -979,7 +1010,15 @@ class DriverActiveTripScreen extends StatelessWidget {
         if (status == 'completed') 'completedAt': DateTime.now(),
       });
       if (context.mounted && status == 'completed') {
-        Navigator.of(context).pop();
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => DriverRatingPassengerScreen(
+              tripId: tripId,
+              passengerName: 'Pasajero',
+              passengerId: '',
+            ),
+          ),
+        );
       }
     } catch (_) {
       if (context.mounted) {

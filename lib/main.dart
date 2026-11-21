@@ -24,6 +24,7 @@ import 'screens/passenger/chat_screen.dart';
 import 'screens/shared/profile_screen.dart';
 import 'screens/auth/role-select.dart';
 import 'screens/driver/driver_main_layout.dart';
+import 'screens/driver/driver_rating_screen.dart';
 import 'screens/driver/pending_account_screen.dart';
 import 'models/user_model.dart';
 import 'services/auth_service.dart';
@@ -159,6 +160,13 @@ class _MijanoDriveAppState extends State<MijanoDriveApp> with WidgetsBindingObse
         page = RatingScreen(
           driverName: args['driverName'] ?? 'Conductor',
           tripId: args['tripId'] ?? '',
+        );
+        break;
+      case '/driver-rating':
+        page = DriverRatingPassengerScreen(
+          passengerName: args['passengerName'] ?? 'Pasajero',
+          tripId: args['tripId'] ?? '',
+          passengerId: args['passengerId'] ?? '',
         );
         break;
       case '/wallet':

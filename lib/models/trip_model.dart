@@ -41,6 +41,8 @@ class Trip {
   final String? luggageExtraStatus; // 'pending', 'accepted', 'rejected'
   final String? luggageExtraNote;
   final String? cancellationReason;
+  final double? passengerRating;
+  final String? passengerFeedback;
 
   Trip({
     required this.id,
@@ -79,6 +81,8 @@ class Trip {
     this.luggageExtraStatus,
     this.luggageExtraNote,
     this.cancellationReason,
+    this.passengerRating,
+    this.passengerFeedback,
   });
 
   Map<String, dynamic> toMap() {
@@ -103,6 +107,8 @@ class Trip {
       'completedAt': completedAt,
       'rating': rating,
       'feedback': feedback,
+      if (passengerRating != null) 'passengerRating': passengerRating,
+      if (passengerFeedback != null) 'passengerFeedback': passengerFeedback,
       'distanceKm': distanceKm,
       'dispatchQueue': dispatchQueue,
       'dispatchIndex': dispatchIndex,
@@ -144,6 +150,8 @@ class Trip {
       completedAt: (map['completedAt'] as Timestamp?)?.toDate(),
       rating: (map['rating'] ?? 0).toDouble(),
       feedback: map['feedback'],
+      passengerRating: (map['passengerRating'] as num?)?.toDouble(),
+      passengerFeedback: map['passengerFeedback'],
       distanceKm: (map['distanceKm'] ?? 0).toDouble(),
       dispatchQueue: List<String>.from(map['dispatchQueue'] ?? []),
       dispatchIndex: map['dispatchIndex'] ?? 0,
@@ -234,6 +242,8 @@ class Trip {
     String? luggageExtraStatus,
     String? luggageExtraNote,
     String? cancellationReason,
+    double? passengerRating,
+    String? passengerFeedback,
   }) {
     return Trip(
       id: id ?? this.id,
@@ -257,6 +267,8 @@ class Trip {
       completedAt: completedAt ?? this.completedAt,
       rating: rating ?? this.rating,
       feedback: feedback ?? this.feedback,
+      passengerRating: passengerRating ?? this.passengerRating,
+      passengerFeedback: passengerFeedback ?? this.passengerFeedback,
       distanceKm: distanceKm ?? this.distanceKm,
       dispatchQueue: dispatchQueue ?? this.dispatchQueue,
       dispatchIndex: dispatchIndex ?? this.dispatchIndex,
